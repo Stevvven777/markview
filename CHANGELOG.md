@@ -43,6 +43,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep a high-resolution wheel stream moving across the gaps between its packets: a Windows touchpad hands its inertia over as a few large packets, each arriving a quarter of a second after the motion it describes, so the reader now carries a speed between them instead of easing every packet from a standstill, which made a fast two-finger scroll crawl and then lurch. Whole-detent wheels and stream events are untouched.
+
 - Keep PDF code-block text selectable with glyph-level mappings; leave copied whitespace reconstruction to the viewer.
 
 - Compress PDF images with bounded loading and rayon instead of retaining all decoded pixels; abort export with a source-specific error if an image resource is missing.
