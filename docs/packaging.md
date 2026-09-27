@@ -12,12 +12,21 @@ each platform. The build procedure a contributor runs day to day is in the
 | Linux x86_64 | `markview-x86_64-unknown-linux-gnu.tar.gz` | cargo-dist |
 | Linux x86_64 | `markview_<version>_amd64.deb` | `scripts/package_deb.sh` |
 | Linux x86_64 | `markview-<version>-x86_64.AppImage` | `scripts/package_appimage.sh` |
+| Linux aarch64 | `markview-aarch64-unknown-linux-gnu.tar.gz` | cargo-dist |
 | Windows x86_64 | `markview-x86_64-pc-windows-msvc.zip` | cargo-dist |
 | Windows x86_64 | `markview-x86_64-pc-windows-msvc.msi` | cargo-dist |
+| Windows aarch64 | `markview-aarch64-pc-windows-msvc.zip` | cargo-dist |
+| Windows aarch64 | `markview-aarch64-pc-windows-msvc.msi` | cargo-dist |
+| macOS x86_64 | `markview-x86_64-apple-darwin.tar.gz` | cargo-dist |
 | macOS aarch64 | `markview-aarch64-apple-darwin.tar.gz` | cargo-dist |
 | macOS aarch64 | `markview-<version>-aarch64.app.zip` | `scripts/package_macos_app.sh` |
 | All | `markview-installer.sh`, `markview-installer.ps1` | cargo-dist |
 | All | `<asset>.sha256`, `source.tar.gz` | cargo-dist |
+
+The six cargo-dist archives are the engine for the six VS Code platforms the
+editor plugin ships for; `editors/vscode/package-vsix.sh` maps one set of names
+to the other. The `.deb`, AppImage, and `.app` bundles are the reader's own and
+stay on the platforms they were written for.
 
 Every portable archive carries `LICENSE`, `README.md`, `THIRD_PARTY.md`, and
 `licenses/KaTeX-OFL.txt`. The Linux packages additionally carry `third-party-notices.html`, which lists the complete dependency tree and
@@ -138,14 +147,32 @@ cannot be shipped meaningfully.
 
 | Platform | Required |
 | --- | --- |
-| Linux | glibc 2.35+, `libfontconfig1`, `libvulkan1` (loader plus any working Vulkan driver), X11 or Wayland client libraries, `xdg-desktop-portal` with a backend, and system fonts |
-| Windows | Windows 10 or newer with a Direct3D 12 driver; the MSVC runtime is linked statically |
-| macOS | macOS 11 or newer on Apple Silicon |
+| Linux | glibc 2.35+ (both `x86_64` and `aarch64`), `libfontconfig1`, `libvulkan1` (loader plus any working Vulkan driver), X11 or Wayland client libraries, `xdg-desktop-portal` with a backend, and system fonts |
+| Windows | Windows 10 or newer (both `x64` and `arm64`) with a Direct3D 12 driver; the MSVC runtime is linked statically |
+| macOS | macOS 11 or newer, on Intel or Apple Silicon |
 
 The Debian package declares these as `Depends`, so `apt` resolves them. The
 AppImage declares nothing and shows a wgpu backend error when no Vulkan driver
 is present. `fonts-noto-cjk` is a recommendation rather than a requirement,
 because Markview falls back to whatever CJK faces the system provides.
+
+### The headless server
+
+The editor plugin runs the same binary as `markview serve`, which puts three
+of those requirements into a different shape:
+
+- **glibc and fontconfig are unchanged.** The server links them either way, and
+  it is what discovers the fonts the document is shaped with.
+- **No display is opened**, so no X11 or Wayland connection and no
+  `xdg-desktop-portal` are needed; `serve` never starts a `winit` event loop.
+- **A rasterizing device is still required.** Tiles are drawn with the same
+  `wgpu` renderer, so a Vulkan loader and driver must be present on Linux even
+  though nothing is shown. A machine without one can be served layout and text
+  but not pixels.
+
+The oldest supported glibc is 2.35 on both Linux targets, which
+`dist.min-glibc-version` declares and `scripts/verify_linux_packages.sh`
+checks against the built binary's symbol versions.
 
 ## macOS signing
 
@@ -188,3 +215,37 @@ them after changing the source SVG and commit the result:
 cargo run -p xtask -- icons
 cargo run -p xtask -- icons --check
 ```
+
+## The editor plugin
+
+The VS Code extension in `editors/vscode/` is packaged separately from the
+reader, one VSIX per platform, because it carries the engine as a native binary
+at `bin/<platform>/`. The `Preview extension packages` workflow builds six VSIX artifacts on pushes, pull
+requests or manual dispatch. It does not publish to the Marketplace. The script
+below builds the same packages locally and validates each executable header.
+
+`package-vsix.sh` maps the two sets of platform names — VS Code's, which the
+extension looks up at runtime, and cargo's, which the release archives are
+named for:
+
+| VS Code | cargo | engine |
+| --- | --- | --- |
+| `win32-x64` | `x86_64-pc-windows-msvc` | `markview.exe` |
+| `win32-arm64` | `aarch64-pc-windows-msvc` | `markview.exe` |
+| `linux-x64` | `x86_64-unknown-linux-gnu` | `markview` |
+| `linux-arm64` | `aarch64-unknown-linux-gnu` | `markview` |
+| `darwin-x64` | `x86_64-apple-darwin` | `markview` |
+| `darwin-arm64` | `aarch64-apple-darwin` | `markview` |
+
+Unpack each archive from the release into `target/<cargo-name>/release/`, or
+build the host's own with `cargo build --release`, then:
+
+```sh
+editors/vscode/package-vsix.sh --check     # which engines are in place
+editors/vscode/package-vsix.sh             # every one that is
+editors/vscode/package-vsix.sh darwin-arm64
+```
+
+`--check` exits non-zero when an engine is missing, so it is also the way a
+release job asserts that all six were built. The script refuses to take the
+host's own `target/release/` binary for another platform's package.

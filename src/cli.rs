@@ -205,7 +205,7 @@ struct Reading {
 	reason = "one parsed command, then dropped"
 )]
 enum Command {
-	/// Serve editor-owned buffers for PDF and PNG export over JSON lines.
+	/// Serve editor-owned buffers for pixel previews and PDF/PNG export.
 	Serve {
 		/// Private engine storage; never use the desktop reader settings.
 		#[arg(long)]

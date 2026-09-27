@@ -18,6 +18,16 @@ jobs:
       - run: npm run compile && node test/pickers.js
         working-directory: editors/vscode-export
 
+  preview-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm ci && npm run compile
+        working-directory: editors/vscode
+
   packaging:
     runs-on: ubuntu-latest
     steps:
@@ -38,7 +48,7 @@ jobs:
             https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color .github/workflows/ci.yml \
             .github/workflows/packages.yml .github/workflows/packaging.yml \
-            .github/workflows/checks.yml
+            .github/workflows/checks.yml .github/workflows/preview-extension.yml
       - name: Generated release files match the configuration
         # `cargo install cargo-dist` installs the bare `dist` binary, which
         # cargo will not resolve as a subcommand.
@@ -56,7 +66,7 @@ jobs:
   # packaging input.
   ci:
     if: always()
-    needs: [check, packaging, export-extension]
+    needs: [check, packaging, export-extension, preview-extension]
     runs-on: ubuntu-latest
     steps:
       - name: Fail unless every job succeeded
