@@ -1,66 +1,249 @@
-# Standalone VS Code export requirements
+# VS Code plugin requirements (Path B)
 
-This submission extracts the export-only subset of the Path B editor work.
-The native reader stays unchanged in purpose; this extension has no WebView,
-preview panel, selection layer or editing surface. The full preview work is
-outside this branch. Requirement IDs retain their original meanings below.
+Status: draft, awaiting approval. This document states what must hold. How each
+requirement is verified is the reviewer's call; see [Review gate](#review-gate).
 
-## Acceptance baseline
+## Architecture
+
+An extension activates a long-lived, windowless Markview process and displays
+its output in a VS Code webview. The native engine keeps every typography
+decision; the webview is a display surface. The WebView exception in
+[AGENTS.md](../AGENTS.md) governs this mode.
+
+```text
+VS Code window
+├── extension host ── stdio ──> markview serve --headless
+│                                    │ layout + offscreen render
+│                                    ▼
+└── webview  <──── tiles, block map, text layer ────┘
+```
+
+The plugin instance is private: it never discovers, attaches to, or shares
+state with a Markview the user launched.
+
+## INV — invariants
+
+Violating any of these is a defect regardless of behavior.
 
 | ID | Requirement |
 |:--|:--|
 | INV-1 | Line breaking, microtypography, shaping, math, image handling, and stylesheet resolution happen in `markview-core` only. No second layout implementation may exist in the extension. |
+| INV-2 | Text reaches the screen as pixels the engine rasterized. The webview text layer is a transparent overlay for selection and source mapping, and never an input to measurement or positioning. |
 | INV-3 | The editor owns the document text. The server exposes no method that mutates document text. |
 | INV-4 | Plugin mode reads and writes no existing Markview user state: not `settings.toml`, not the user stylesheet directory, not the user font directory. All state lives under the extension's storage. |
 | INV-5 | The extension works when Markview is not separately installed. |
 | INV-6 | The webview owns no document, no layout, and no command surface. |
-| ENG-1 | `--serve` runs a windowless server that needs no display and no `winit` event loop. |
+
+## ENG — engine side
+
+| ID | Requirement |
+|:--|:--|
+| ENG-1 | `serve` runs a windowless server that needs no display and no `winit` event loop. |
 | ENG-2 | A document's text can come from the client instead of the filesystem, and an unsaved buffer renders exactly as its bytes would from disk. |
 | ENG-3 | A document keeps a path or base directory, so relative images and relative links resolve for a buffer that has never been saved. |
+| ENG-4 | File observation is suspended while the client owns the text and restored when the client reports a save, so a save never reverts the preview to stale content. |
+| ENG-5 | A tile request returns an encoded image for a given viewport rectangle at a given scroll offset, cropped and scaled as requested. |
+| ENG-6 | The server publishes a whole-document block map `{id, source_start, source_end, y, height}`, growing as layout progresses. |
+| ENG-7 | The server publishes a text layer over rendered regions, carrying per-cluster geometry, text, and source range. |
+| ENG-8 | Two mappings exist and are separately correct: a rendered point maps to a byte offset, and a byte offset maps to a rendered vertical position. Neither is defined as the inverse of the other. |
+| ENG-9 | Source ranges reach `TextCluster`, extending the block-level `PlacedBlock.source`, so a position inside a block resolves to a range inside that block. |
+| ENG-10 | Appearance is set by the client. Plugin mode reads neither the host operating system's theme nor any user configuration. |
+| ENG-11 | Configuration applies per document or view rather than per process, so two documents under different settings render differently from one server. |
 | ENG-12 | One `--state-dir` relocates the font directory, the stylesheet directory, and the image cache together. |
 | ENG-13 | The process terminates when stdin reaches end of file, so an extension host that crashes or is killed cannot orphan it. |
 | ENG-14 | Export is triggerable over the protocol and produces the same output as the existing CLI path for the same input. |
+| ENG-15 | Math errors, degradation, and deferred remote images are reported to the client. |
 | ENG-16 | An export names its format and its template: the server renders PDF or PNG, layers a template the client names or the rules it holds, and lists the templates it can name. |
+
+## EXT — extension side
+
+| ID | Requirement |
+|:--|:--|
+| EXT-1 | The server starts lazily on first use and is reused across documents for the life of a VS Code window. |
+| EXT-2 | A webview panel shows the document, opens from the command palette and the editor title, and can sit beside the source. |
+| EXT-3 | Scrolling is virtualized: the scrollable extent matches the document height and only the visible band is fetched. |
+| EXT-4 | Edits to an unsaved buffer update the preview, coalesced so a burst of keystrokes converges on the latest state. |
+| EXT-5 | Scroll synchronization is bidirectional, moves the view without moving the caret, and does not oscillate between the two surfaces. |
+| EXT-6 | Native drag selection, clipboard copy, and in-panel find work over the rendered content. |
+| EXT-7 | Clicking in the preview reveals the corresponding source range in the editor. |
 | EXT-8 | Every setting comes from VS Code configuration, resolved per document, including workspace-folder and language-scoped layers. |
 | EXT-9 | Commands live in the command palette, menus, and user keybindings. The preview surface binds no keys of its own. |
+| EXT-10 | Appearance follows the editor's color theme. |
+| EXT-11 | Local Markdown links open in the editor and remote links open in the browser. The preview opens no tabs of its own. |
 | EXT-12 | Export commands run and reveal the result. |
 | EXT-13 | The reader exports the document as PDF or PNG under a template of their choosing: one of the engine's own, or a `.mvss.toml` of their own that never has to be installed. |
+
+## NFR — non-functional
+
+| ID | Requirement |
+|:--|:--|
+| NFR-1 | An edit reaches the visible preview fast enough to read as live. The measurement boundary is the keystroke to the updated pixels, including coalescing, transport, encoding, decoding, and paint. |
+| NFR-2 | A screenful of preview costs few enough bytes to stay off the critical path. The boundary includes every message the client needs to paint that screenful. |
+| NFR-3 | Typing does not move the reader's place in the document. |
 | NFR-4 | No server process survives the VS Code session that owns it, under graceful quit and under a kill of the host. |
 | NFR-5 | The cost of starting the engine is paid once per window, not once per document. |
+| NFR-6 | Six targets ship: `win32-x64`, `win32-arm64`, `linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`. |
+| NFR-7 | The engine's Linux runtime requirements are documented, including any system library and the oldest supported glibc. |
 
-## Verification and review gate
+## EXC — excluded from v1
 
-Run the locked Rust workspace checks, compile the extension, package the newly
-built engine, and run the installed-VSIX tests. Close a requirement only after
-`scripts/review-gate/review.sh` returns `approve`, using completed logs.
-The review command is `codex review` with `gpt-6-astra` at medium effort.
+| ID | Exclusion |
+|:--|:--|
+| EXC-1 | `vscode.dev` and browser-based editors: no extension host and no native process. |
+| EXC-2 | Remote-SSH and dev containers: rendering needs a GPU where the server runs. |
+| EXC-3 | Editing in the preview. The editor remains the only editing surface. |
+| EXC-4 | Window placement, grouping, and chrome: this architecture owns no window. |
+
+## TST — verification surface
+
+| ID | Requirement |
+|:--|:--|
+| TST-1 | Layout, parsing, and the protocol state machine are testable from text alone, with no display and no GPU. Anything that rasterizes or reads back a GPU texture is not part of that set. |
+| TST-2 | Deterministic runs use offline mode and a fixed font set, matching the existing diagnostic modes. |
+| TST-3 | A stylesheet change that only affects colors reports no reflow, and one that affects geometry reports a reflow. |
+| TST-4 | Where a behavior is only observable in a running VS Code, it is verified by launching a real VS Code instance and driving the extension programmatically, not asserted from source alone. |
+
+## Review gate
+
+The gold standard is whether a requirement is fully satisfied, and the reviewer
+decides what evidence establishes that. A requirement is done when a review by
+`gpt-6-astra` at medium reasoning effort returns `verdict: "approve"`.
+
+```sh
+echo "<review prompt naming the requirement IDs>" | scripts/review-gate/review.sh
+```
+
+Exit status 0 approves, 1 rejects and prints findings, 2 means the review did not
+usably run. A rejection returns the work to the implementer; an approval is the
+only thing that closes a requirement.
+
+Where a requirement is only observable in a running editor, the reviewer
+launches a real VS Code instance and drives the extension programmatically.
+Screen-driven review is not available here: `computer_use` is a Desktop-app
+capability and is not exposed to `codex exec`, and `screencapture` fails for
+want of the macOS Screen Recording grant (`could not create image from
+display`). If that grant is given to the terminal later, screenshot review can
+be added, but nothing in this plan may depend on it.
 
 ## Progress
 
-| Scope | Result |
+The records below describe the original preview implementation. The port onto
+main `67f1955` plus the published export extension is in progress; affected
+requirements need fresh tests and review before this branch is accepted.
+The independently published export subset retains its history in
+[export-plugin-requirements.md](export-plugin-requirements.md).
+
+
+| Port scope | Result |
 |:--|:--|
-| INV-1/3/4/5/6, ENG-1/2/3/12/13/14/16, EXT-8/9/12/13, NFR-4/5 | **Approve, round 4**, on main 67f1955. Round 1 interrupted for main refresh; round 2 caught template geometry, read-only sources, path headers, blocked EOF and SVG scaling; round 3 caught multi-tile SVG demand loss. Round 4 verified per-tile settling and found no remaining export regressions. 758 Rust tests and installed-VSIX tests pass. |
+| TST-1, TST-2, TST-3, ENG-10 | **Approve, round 2**, 2026-09-27. Round 1 caught stale Mermaid images and missing diagram reflow; round 2 verified refreshed pixels, preserved palette geometry and published size changes. 794 default tests and 11 server GPU tests pass; clippy passes. |
+| EXT-8, EXT-9 | **Approve, round 1**, 2026-09-27. `review-settings.log` verifies document-scoped configuration and host-owned commands against the completed installed-VSIX integration run. |
+| NFR-7 | **Approve, round 1**, 2026-09-27. `review-platform.log` verifies Linux dependencies and the glibc 2.35 baseline on both architectures. NFR-6 remains open until all six packages build. |
+| INV-1..6, ENG-1..16 | **Approve, round 2**, 2026-09-27. Round 1 found source maps lost when adjacent text merged and entity clusters colliding in the overlay. Round 2 independently probed the fixes and ran 40 CPU protocol tests; `review-engine-2.log` approves the port invariants and engine requirements. |
+| EXT-10..13 | **Approve, round 2**, 2026-09-27. Round 1 found relative templates resolved at the filesystem root. Round 2 verifies document-relative paths, workspace fallback, theme/link behavior and export using `installed-preview-2.log`, GPU tests and native export parity. |
+| EXT-1..5, NFR-2..5 | **Approve, round 2**, 2026-09-27. Round 1 found edits lost while initial open was awaiting the engine. Round 2 independently reproduces the fix and approves the completed installed-VSIX/lifecycle evidence in `review-preview-2.log`. |
+| EXT-6, EXT-7, TST-4 | **Approve, round 3**, 2026-09-27. Round 1 rejected injected find matches; round 2 found duplicate overlay matches after selection and block-start navigation inside tall blocks. Round 3 approves Chromium find next/previous/wrap, row-level navigation and host clipboard tests in `installed-preview-4.log`. The workbench query field itself remains undriven. |
 
-| Publisher preparation: INV-4/5, EXT-9/12/13, NFR-4 | **Approve**, first round, 2026-09-27. Manifest-derived installed-package discovery and PDF/PNG lifecycle tests pass under `Stevvven.markview-export`; native binary unchanged. |
+Requirements closed by an approving review, in order. A later change that
+touches one of these reopens it.
 
-| Display name: EXT-9/12/13 | **Approve**, 2026-09-27: **Better markdown PDF** across the manifest, command/settings titles and README; installed-VSIX tests pass. |
+| Requirement | Verdict | Notes |
+|:--|:--|:--|
+| ENG-1, ENG-2, ENG-13 | approve | `serve` + block map, 2026-09-21. ENG-2 needed two rounds: the first missed the image pipeline, the second the syntax-highlighting settle. |
+| ENG-3, ENG-12 | approve | Link classification and `--state-dir`, 2026-09-21, first attempt. |
+| ENG-5 | approve | Tile rendering, 2026-09-21. Three rounds: margins were re-inset per tile, parameters were clamped rather than refused, then a present-but-wrongly-typed parameter still fell back to a default. |
+| ENG-6 | approve | Progressive block map, 2026-09-21. Three rounds: the map used `start`/`end` rather than the specified `source_start`/`source_end`, the default `settle` path left nothing to grow, and a tile absorbed the rasters it settled without telling the client. |
+| ENG-8 | approve | The two mappings, 2026-09-21, after three reviews, none of which the tests caught. The text layer first published unclipped rectangles, so a point in the blank margin beside a wide block resolved to a character the reader cannot see; clipping them then removed the only per-row position for the bytes they covered. It now publishes `clusters` clipped for hit testing and `rows` unclipped for every byte that is drawn. |
+| EXT-1 | approve | One engine per window, 2026-09-21, first attempt, established in a real VS Code: nothing runs before the first preview, two documents leave exactly one engine, closing the panel keeps it, and the window's end leaves none. |
+| NFR-5 | approve | Starting the engine once per window, 2026-09-21, after the earlier review rightly rejected the engine-side probe. The same real-editor run establishes it. |
+| NFR-2 | approve (engine part) | A screenful costs 444 KB of measured bytes, inside the 500 KB target: 191 KB of PNG, 163 KB of text layer, 27 KB of block map. The independent count of complete responses was 427,641 bytes. |
+| NFR-4 | approve | No orphaned sessions, 2026-09-21, first attempt. scripts/serve_lifecycle.py runs three cases — a closed pipe, a host killed outright, and an empty pipe — and checks that no session survives each. |
+| ENG-14 | approve | Protocol export, 2026-09-21, after two reviews. The first pass wrote the client's bytes to a temporary and let the reader derive its title from that temporary's name, so a headingless document carried the temporary into its metadata and differed from the command line. |
+| ENG-4 | approve | Observation and saves, 2026-09-21, after three reviews. Two were bugs in `saved` itself — it resolved resources through the stored directory instead of the document path, and it read a new document without taking its newly named resources again. The first pass also misread the requirement: never observing the file is not the same as suspending observation and restoring it. The regression the approval left owed — a newly named image settling after an observed reload — is now in `serve::tests::a_save_restores_observation_of_the_file`. |
+| ENG-10 | approve | Client-set appearance, 2026-09-21, after two reviews. A theme changed nothing until it was installed into the effective stylesheet rather than the renderer's fallback, and a served session still listed the reader's stylesheet directory for a named style. |
+| ENG-15 | approve | Diagnostics, 2026-09-21, first attempt: `degraded`, `math_errors`, and `deferred` travel with every published state. |
+| ENG-11 | approve | Per-document settings, 2026-09-21, after two reviews. Both leaks were places that still read session options: the re-layout a settling image triggers, and a tile's centring. |
+| ENG-9, ENG-7 | approve | Source ranges and the text layer, 2026-09-21, after six reviews. Each round found a real defect: absolute offsets in a content-keyed cache, a panic on a multi-character entity, two decoders that disagreed about entities, a byte search that matched a fence's language or a container's marker, a blank literal line that consumed no source line, and three separate holes in the cache key (inline spelling, inline placement, container placement). |
+| ENG-2 | approve (again) | Re-reviewed with ENG-6. A served SVG shown larger than its intrinsic size was drawn from an unsettled raster until the render path's second pass was mirrored. |
+| EXT-5, NFR-3 | approve | Scrolling that follows the reader, and a place that survives typing, 2026-09-21, after nine reviews between them. Each round found a real defect: a block-granularity sync that could not see a line inside a block; a byte-versus-code-unit mix-up; a hold that dropped a real scroll; a source-distance dead zone that swallowed short lines; a block-start fallback that lost a position deep inside a block; a search that could not find a line in a block with uneven lines; an anchor read across an await while the webview's temporary move replaced it; an edit that crossed the anchor without moving it; and finally three rounds on the reveal that answers a scroll — an answer that moves nothing, an answer identified by arrival time, and an answer identified by a byte that was still on screen. Positions are now resolved through the engine to the row they are drawn at, and the panel only reveals a byte the editor is not already showing, so every reveal it makes is one the editor answers. |
+| ENG-16, EXT-13 | approve | Export by template, 2026-09-22, after three reviews, all of them real. The first found that picking "None" in the template picker fell back to the configured template, and that the setting was read without the exported document's scope, so a `[markdown]` or folder override never reached it. The second found that a templated PNG export left its stylesheet installed on the session's shared renderer, so the next preview tile was drawn in the export's appearance. The test now draws a band before and after such an export and asserts the pixels are unchanged. |
+| EXT-4 | approve | Live buffer updates, 2026-09-21, after two reviews. The first found that five of the six edits in the burst were refused by the editor and that one update opened the document twice; the second approved it with six applied edits, seven buffer changes and one layout. |
+| EXT-2, EXT-3 | approve | The panel and virtualized scrolling, 2026-09-21, after three reviews in a real VS Code. The first found a preview that stayed hidden behind another tab and bands that accumulated and were refetched; the second found a previously previewed document's change listener outliving the switch, so editing it blanked the panel now showing another document and replaced its extent. The panel now reveals itself when asked for, keeps one tile per band and drops the ones it has scrolled past, asks for every band the viewport shows rather than only the one its offset falls in, drops tile answers whose document id is not the one on screen, and watches one document at a time. |
+| INV-1..5, ENG-16, EXT-8, EXT-12, EXT-13, NFR-4, TST-4 (export-only package scope) | approve | 2026-09-26, first completed review of `editors/vscode-export`; an earlier connection attempt did not run. The installed darwin-arm64 VSIX exports dirty buffers with bundled/custom templates and scoped defaults, explicitly bypasses defaults for None, and leaves no engine after graceful close. Picker sequencing uses mocked dialogs; actual dialog driving and host-kill behavior were not re-established. This does not close the full preview extension's outstanding requirements. |
+| EXT-8, EXT-9, EXT-12, EXT-13, TST-4 (export-only context menu) | approve | 2026-09-26, first review of 0.1.1. Native UI driving verified both Markdown editor context-menu entries go directly to Save and export under the workspace template. Installed-VSIX tests verify scoped defaults and dirty buffers; a command regression verifies the menu's URI wins over a different active editor. Full-preview requirements remain pending. |
 
-| README: EXT-8/9/12/13 | **Approve**, 2026-09-27: documented commands, scoped settings and MVSS authoring; linked guide verified and starter template exports PDF/PNG. |
 
-| Final Marketplace README: EXT-9/12/13 | **Approve**, 2026-09-27: removed installation instructions; final installed-VSIX tests pass. |
+
+## Not yet established
+
+Requirements that no engine probe can settle, to be established by driving a
+real editor, which `editors/vscode/run-tests.sh` does: it loads the extension
+into the VS Code installed on the machine and runs `test/run.js` inside a real
+extension host. See [State of play](#state-of-play) for what is left.
 
 ## State of play
 
-The export-only baseline passed the review gate on 2026-09-26; the registered publisher package passed its metadata review on 2026-09-27.
-**Better markdown PDF** (`Stevvven.markview-export`) exposes PDF, PNG and template export commands, document-scoped
-settings, and editor context-menu entries. The bundled private engine accepts
-`open`, `close`, `styles` and `export` over JSON lines. The packaged target is
-currently Apple Silicon macOS. Marketplace submission is recorded separately from code review; platform verification was still running at the last check.
+The full Path B implementation is being ported on `feat/vscode-path-b`, based on
+main `67f1955` plus the published standalone export extension. Better markdown
+PDF remains a separate package. Both hosts use `editors/shared/sidecar.ts` and
+the same native rendering/export engine.
 
-## Known limitations and open questions
+Implemented and approved in the fresh port reviews (NFR-1 and NFR-6 remain open):
 
-- Six-platform VSIX packaging and fresh-machine distribution testing remain future work.
-- The user has registered publisher `Stevvven`; its installation identity is `Stevvven.markview-export`. Version 0.1.2 was submitted on 2026-09-27; the publisher management page shows Public / Verifying.
-- Templates are native MVSS, not CSS; remote, virtual and untrusted workspaces are unsupported.
-- Automated dialog-sequence tests mock VS Code pickers. Installed-VSIX tests
-  exercise their export implementation with explicit destinations.
+- Preview, virtualization, source mapping, editing and scroll synchronization;
+  document-scoped settings, theme following, links and template export.
+  EXT-8/9 passed the first fresh review against the installed package;
+  EXT-10..13 and all engine/invariant requirements passed round 2.
+- Fixed-font/offline server fixtures with eleven GPU tests separated from the
+  default suite. The first port review found stale Mermaid appearance; round 2 approved the fix
+  that refreshes pixels, preserves palette-only geometry and publishes reflow.
+- Compact rendered-text requests for find. The host no longer fetches the entire
+  document's cluster geometry or sends the source buffer to the webview.
+- A host-owned Copy Preview Selection command, exercised through VS Code's real
+  clipboard API. Native find now uses Chromium `window.find`, matching VS Code’s
+  implementation, with real-webview next/previous/wrap regression coverage.
+  The workbench input field itself has not been driven. EXT-6/7 and TST-4 passed round 3.
+- Local Apple Silicon VSIX packaging and a six-target artifact workflow. The
+  other five platform builds have not run for this port. Linux runtime
+  documentation passed NFR-7 review; the build matrix alone does not close NFR-6.
+
+## Known defects and missing evidence
+
+- **NFR-1** remains open: the test host refuses `type`/`default:type` commands even
+  with the source editor active. Automated timing measures `TextEditor.edit` to
+  decoded visible tiles after a paint frame, including the host acknowledgment;
+  it does not include keyboard dispatch or physical display scanout.
+- Before compact find transport, 1 MB edit-to-paint median was 1,780 ms; afterward
+  it was 357 ms (seven samples, 775 ms maximum). These are diagnostic results,
+  not approval of NFR-1. The completed installed-VSIX run measured medians of 80/88/340 ms at
+  10 KB/100 KB/1 MB, with respective maxima of 90/122/709 ms.
+- Six platform packages need distribution evidence. A local macOS artifact
+  alone does not close **NFR-6**. Native find input-field driving remains a
+  manual check; the Chromium search/navigation path is now exercised.
+- Fresh reviews caught relative template resolution, merged source-map gaps,
+  entity-cluster collisions and edits lost during initial open. Fixes and
+  regression tests are implemented. Engine/invariant and EXT-10..13 reviews
+  approved round 2; live-preview round 2 and input round 3 also passed. The completed
+  installed-preview suite includes find after selection, wrapping, deep
+  paragraph matches, entity copying and initial-open replay.
+- No port requirement is closed until its own review gate returns approve.
+
+## Open questions
+
+The user authorized committing and pushing `feat/vscode-path-b` to the personal
+fork on 2026-09-27 to run the six-platform packaging workflow. Publishing the
+full preview extension to Marketplace remains a separate decision.
+
+## Port verification
+
+Run `cargo test --workspace --locked --all-targets` for the non-GPU set.
+The server's eleven raster/readback tests are explicitly ignored in that set;
+run them on a GPU with `cargo test --locked -p markview --lib serve::tests -- --ignored --test-threads=1`.
+Server unit fixtures and subprocess protocol tests use committed font subsets
+and offline mode. An invalid-tile request that checks the device limit belongs
+to the GPU set too. Existing renderer GPU tests retain their own ignore markers.
+
+The extension's latency test applies VS Code's `TextEditor.edit` and waits
+for the matching document version's visible tiles to decode and pass two
+animation frames. Its interval includes the return message to the host. This
+is an application paint-frame measurement, not a physical display scanout probe.

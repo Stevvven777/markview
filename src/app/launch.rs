@@ -26,7 +26,12 @@ pub(super) fn run() -> Result<()> {
 	crate::logging::init(&args.mode);
 	if args.mode == Mode::Serve {
 		crate::settings::set_state_dir(args.state_dir.take().unwrap());
-		return crate::serve::run(args.offline);
+		args.options.stylesheet = crate::stylesheet::load_for_run(
+			None,
+			crate::stylesheet::directory().as_deref(),
+			args.cjk_type.unwrap_or(CjkType::Sc),
+		)?;
+		return crate::serve::run(&args);
 	}
 	if let Some(command) = &args.fonts {
 		return super::fonts_command::run(command, args.offline);

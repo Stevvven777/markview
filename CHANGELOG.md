@@ -21,6 +21,9 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+- Add Path B previews with a shared protocol client, native find, host clipboard commands, stable theme geometry and six-platform packaging.
+- Preserve source maps and entity selections, replay edits during initial open, and resolve export templates relative to the document.
+
 ### Added
 
 - Streamline the Marketplace README by removing redundant installation instructions.
