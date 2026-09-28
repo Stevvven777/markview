@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+## 0.1.9 - 2026-09-29
+
+This release adds in-document text search with a bottom search bar, MVSS `table.border_collapse` modes, and artist-template font downloads through international mirrors. It also brings a reusable single-line text input with IME support and fixes a long tail of scrolling, PDF export and font-loading issues.
+
 ### Added
 
 - Offer artist-template font downloads through international CTAN and TUNA mirrors, with matching SHA-256 pins and template fonts preferred over system alternatives.
