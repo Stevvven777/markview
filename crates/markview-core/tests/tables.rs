@@ -1,10 +1,22 @@
 use markview_core::{
 	document,
+	fonts::FontConfig,
 	layout::{LayoutEngine, LayoutOptions, LayoutSnapshot},
 	scene::{BoxDecoration, Draw, Rect},
 	style::{Condition, Stylesheet},
 };
 use std::sync::Arc;
+
+fn fonts() -> FontConfig {
+	FontConfig {
+		ignore_system_fonts: true,
+		directories: vec![
+			std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+				.join("tests/fonts"),
+		],
+		..Default::default()
+	}
+}
 
 fn sheet(extra: &str) -> Arc<Stylesheet> {
 	let mut sheet = (*Stylesheet::bundled(false)).clone();
@@ -47,6 +59,7 @@ fn table_grid_has_single_borders_and_mode_changes_invalidate_reuse() {
 	for sheet in [Stylesheet::bundled(false), Stylesheet::bundled_print()] {
 		let opts = LayoutOptions {
 			stylesheet: sheet.clone(),
+			fonts: fonts(),
 			..Default::default()
 		};
 		let collapsed = engine.layout(&doc, &opts);
@@ -135,6 +148,7 @@ fn collapsed_borders_keep_the_wider_cells_style_and_respect_row_gaps() {
 			&doc,
 			&LayoutOptions {
 				stylesheet,
+				fonts: fonts(),
 				..Default::default()
 			},
 		);

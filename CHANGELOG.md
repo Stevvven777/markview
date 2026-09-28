@@ -39,6 +39,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Pin table border integration tests to committed fonts so they pass with system fonts hidden in Linux CI.
+
 - Keep screen geometry and theme flags out of PDF commands, restrict `--scroll` to `render`, and reject reader arguments before subcommands.
 
 - Update screenshot callers for the render-only `--scroll` option and abort capture when the reader exits or fails to initialize.
