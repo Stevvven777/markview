@@ -1,52 +1,85 @@
 format_version = 2
-version = 1
+version = 4
 targets = ["pdf"]
 
 [meta]
 name = "Qi Baishi"
-description = "Ink and vermilion, open white paper and quiet literary headings"
+description = "Qi Baishi-inspired document layout"
 
 [[fontdef]]
 id = "serif"
-lookfor = ["Iowan Old Style", "Palatino Linotype", "Palatino", "Noto Serif", "Georgia", "serif"]
+lookfor = ["Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "serif"]
+
+[[fontdef]]
+id = "assignment-heading"
+lookfor = ["Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "serif"]
+
+[[fontdef]]
+id = "monospace"
+lookfor = ["Menlo", "Consolas", "Liberation Mono", "monospace"]
 
 [page]
-margin = [22, 22, 24, 22]
-header_left = "{title}"
+size = "a4"
+margin = [18, 20, 22, 20]
+header_left = ""
+header_center = ""
+header_right = ""
+footer_left = ""
 footer_center = ""
-footer_right = "{page} / {pages}"
+footer_right = ""
+
+[page.header]
+rule_width = 1.5
+rule_color = "#343C35"
 
 [[rule]]
 when = ["body"]
-color = "#2C332E"
-line_height = 1.65
+color = "#272B30"
+background = "#FFFFFF"
+font = [{ family = "serif" }, { family = "serif", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+line_height = 1.55
+
+[[rule]]
+when = ["p"]
+space_before = 0.0
+space_after = 0.7826
+orphans = 3
+widows = 3
 
 [[rule]]
 when = ["h1"]
-font = [{ family = "serif" }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
-size = 2.1
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 2.1739
 weight = 400
-color = "#343C35"
-space_before = 0.15
-space_after = 0.65
+color = "#2C332E"
+line_height = 1.28
+space_before = 0.0
+space_after = 1.5652
+border_edges = [0, 0, 1, 0]
+border_color = "#A23C35"
+padding = [0, 0, 1.5652, 0]
 
 [[rule]]
 when = ["h2"]
-font = [{ family = "serif" }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
-size = 1.4
-weight = 700
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 1.3043
+weight = 600
 color = "#343C35"
-space_before = 0.85
-space_after = 0.45
+line_height = 1.28
+space_before = 1.1739
+space_after = 0.9130
+heading_marker = [0.5217, 1.0435, 0.7826]
+marker_color = "#A23C35"
 
 [[rule]]
 when = ["h3"]
-font = [{ family = "serif" }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
-size = 1.12
-weight = 700
-color = "#343C35"
-space_before = 0.85
-space_after = 0.45
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 1.0435
+weight = 600
+color = "#272B30"
+line_height = 1.28
+space_before = 0.7826
+space_after = 0.6522
 
 [[rule]]
 when = ["link"]
@@ -55,80 +88,104 @@ decoration = ["underline"]
 
 [[rule]]
 when = ["blockquote"]
-color = "#2C332E"
-border_color = "#A23C35"
-border_width = 1.2
-padding = [0.5, 0.8, 0.5, 1.0]
+color = "#272B30"
 background = "#FFFFFF"
+border_edges = [0, 0, 0, 2]
+border_color = "#A23C35"
+padding = [0.7826, 1.1739, 0.7826, 1.1739]
+space_before = 0.7826
+space_after = 1.5652
+corner_radii = [0, 0, 0, 0]
+keep_together = true
 
 [[rule]]
-when = ["marker"]
-color = "#A23C35"
-shape = ["disc", "minus"]
+when = ["blockquote", "p"]
+size = 0.8696
+line_height = 1.55
+space_before = 0.0
+space_after = 0.2609
 
 [[rule]]
-when = ["task_marker"]
-accent = "#A23C35"
-border_color = "#A23C35"
-color = "#FFFFFF"
-background = "#FFFFFF"
-radius = 0.0
+when = ["blockquote", "p", "first_child", "strong"]
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 0.825
+weight = 600
+letter_spacing = 0.09
+
+[[rule]]
+when = ["table"]
+size = 0.8696
+line_height = 1.5
+space_before = 0.3913
+space_after = 1.1739
 
 [[rule]]
 when = ["table", "cell"]
-border_color = "#DED9C9"
-border_width = 0.6
+padding = [0.5870, 0.7826, 0.5870, 0.7826]
+border_edges = [0, 0, 1, 0]
+border_color = "#D9D8D2"
+background = "#FFFFFF"
 
 [[rule]]
 when = ["table", "header"]
 color = "#343C35"
-background = "#F8F7F3"
+background = "#FFFFFF"
+border_edges = [2, 0, 1, 0]
+border_color = "#343C35"
+
+[[rule]]
+when = ["table", "cell", "last_child"]
+border_edges = [0, 0, 2, 0]
+border_color = "#343C35"
+
+[[rule]]
+when = ["table", "header", "last_child"]
+border_edges = [2, 0, 2, 0]
 
 [[rule]]
 when = ["hr"]
 color = "#DED9C9"
-border_width = 0.7
+border_width = 1
+space_before = 1.1739
+space_after = 1.9565
 
 [[rule]]
 when = ["code"]
-background = "#F4F3EF"
+size = 0.88
+background = "#00000000"
+padding = 0
 
 [[rule]]
 when = ["code_block"]
+wrap = true
+size = 0.88
+line_height = 1.5
+padding = 1.0435
+background = "#F2F1ED"
 theme = "none"
-background = "#F4F3EF"
-border_color = "#DED9C9"
-border_width = 0.0
 
 [[rule]]
 when = ["code_block", "label"]
-color = "#555D55"
-
-[[rule]]
-when = ["img", "caption"]
-color = "#555D55"
-
-[[rule]]
-when = ["img", "placeholder"]
-color = "#555D55"
-background = "#F3F3F3"
-
-[[rule]]
-when = ["page_header"]
-color = "#555D55"
-
-[[rule]]
-when = ["page_footer"]
-color = "#555D55"
-
-[[rule]]
-when = ["page_number"]
-color = "#343C35"
+show = false
 
 [[rule]]
 when = ["ui"]
-color = "#2C332E"
+color = "#272B30"
+background = "#F7F5EF"
 muted = "#555D55"
-accent = "#A23C35"
-error = "#A23C35"
+accent = "#343C35"
 border_color = "#DED9C9"
+error = "#A23C35"
+
+[[rule]]
+when = ["selection"]
+background = "#343C3540"
+
+[[rule]]
+when = ["task_marker"]
+accent = "#343C35"
+border_color = "#343C35"
+
+[[rule]]
+when = ["link", "hover"]
+color = "#A23C35"

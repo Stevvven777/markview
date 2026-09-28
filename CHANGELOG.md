@@ -31,6 +31,8 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Replace the Qi Baishi, Van Gogh and Mondrian export layouts with updated MVSS designs, preserving their bundled IDs.
+
 - Prefill document search with the selected text when pressing Ctrl+F (Cmd+F on macOS).
 
 - Close the search bar when switching documents while retaining each document’s query and match options.
