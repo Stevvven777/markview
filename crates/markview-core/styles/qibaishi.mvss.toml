@@ -1,5 +1,5 @@
 format_version = 2
-version = 4
+version = 5
 targets = ["pdf"]
 
 [meta]
@@ -8,15 +8,41 @@ description = "Qi Baishi-inspired document layout"
 
 [[fontdef]]
 id = "serif"
-lookfor = ["Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "serif"]
+lookfor = ["TeX Gyre Pagella", "Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "serif"]
 
 [[fontdef]]
 id = "assignment-heading"
-lookfor = ["Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "serif"]
+lookfor = ["TeX Gyre Pagella", "Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "serif"]
 
 [[fontdef]]
 id = "monospace"
-lookfor = ["Menlo", "Consolas", "Liberation Mono", "monospace"]
+lookfor = ["Noto Sans Mono", "Menlo", "Consolas", "Liberation Mono", "monospace"]
+
+[[font-family]]
+id = "tex-gyre-pagella"
+lookfor = ["TeX Gyre Pagella"]
+description = "Palatino-style serif, regular and bold with italics"
+license = "LicenseRef-GUST-Font"
+license_url = "https://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt"
+homepage = "https://ctan.org/pkg/tex-gyre"
+
+[[font-family.source]]
+name = "CTAN (international)"
+files = [
+    { url = "https://tug.ctan.org/fonts/tex-gyre/opentype/texgyrepagella-regular.otf", sha256 = "44e64260716d8f2bbe412baa1ee99b7c995190ac4573177c24def0b9200438c7" },
+    { url = "https://tug.ctan.org/fonts/tex-gyre/opentype/texgyrepagella-italic.otf", sha256 = "069bb27f48eb98a741715227fc6e4b7baf3639c29fc13925f70d1ed8884ac29a" },
+    { url = "https://tug.ctan.org/fonts/tex-gyre/opentype/texgyrepagella-bold.otf", sha256 = "dd4f9b69f0b24f1fb9be8634abf1fce2009e5c68a30842a3e9f5d6e535900abd" },
+    { url = "https://tug.ctan.org/fonts/tex-gyre/opentype/texgyrepagella-bolditalic.otf", sha256 = "556fd64655a92bd9f5485ae2c03f7b9cdaf745a27a91d7edb3c3abde997206d2" },
+]
+
+[[font-family.source]]
+name = "TUNA (China)"
+files = [
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/tex-gyre/opentype/texgyrepagella-regular.otf", sha256 = "44e64260716d8f2bbe412baa1ee99b7c995190ac4573177c24def0b9200438c7" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/tex-gyre/opentype/texgyrepagella-italic.otf", sha256 = "069bb27f48eb98a741715227fc6e4b7baf3639c29fc13925f70d1ed8884ac29a" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/tex-gyre/opentype/texgyrepagella-bold.otf", sha256 = "dd4f9b69f0b24f1fb9be8634abf1fce2009e5c68a30842a3e9f5d6e535900abd" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/tex-gyre/opentype/texgyrepagella-bolditalic.otf", sha256 = "556fd64655a92bd9f5485ae2c03f7b9cdaf745a27a91d7edb3c3abde997206d2" },
+]
 
 [page]
 size = "a4"
