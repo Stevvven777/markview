@@ -35,7 +35,7 @@ wanted() {
 
 # `shot NAME SOURCE [ARG ...]` captures one window.
 shot() {
-	local name=$1 source=$2
+	local name=$1 source=$2 ready=0
 	shift 2
 	echo "capturing $name from $source"
 	stop_reader
@@ -44,10 +44,19 @@ shot() {
 		"$source_dir/$source" >"$work/$name.log" 2>&1 &
 	reader_pid=$!
 	for _ in $(seq 1 60); do
-		grep -q 'framebuffer' "$work/$name.log" && break
+		kill -0 "$reader_pid" 2>/dev/null || break
+		if grep -q 'framebuffer' "$work/$name.log"; then
+			ready=1
+			break
+		fi
 		sleep 0.25
 	done
-	sleep 2.5
+	if (( ready )); then sleep 2.5; fi
+	if (( !ready )) || ! kill -0 "$reader_pid" 2>/dev/null; then
+		echo "Markview exited or did not initialize its framebuffer for $name" >&2
+		cat "$work/$name.log" >&2
+		return 1
+	fi
 	spectacle -b -n -a -o "$work/$name.png" >/dev/null
 	stop_reader
 	# The heredoc body is flush left so that Python keeps its indentation.
@@ -80,7 +89,7 @@ PY
 
 if wanted en-typography;   then shot en-typography   en/typography.md   --light; fi
 if wanted en-mathematics;  then shot en-mathematics  en/mathematics.md  --light; fi
-if wanted en-structure;    then shot en-structure    en/structure.md    --dark --scroll 40; fi
+if wanted en-structure;    then shot en-structure    en/structure.md    --dark; fi
 if wanted zh-typography;   then shot zh-typography   zh/typography.md   --light; fi
 if wanted zh-mathematics;  then shot zh-mathematics  zh/mathematics.md  --light; fi
-if wanted zh-structure;    then shot zh-structure    zh/structure.md    --dark --scroll 40; fi
+if wanted zh-structure;    then shot zh-structure    zh/structure.md    --dark; fi

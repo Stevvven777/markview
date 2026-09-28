@@ -39,6 +39,10 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep screen geometry and theme flags out of PDF commands, restrict `--scroll` to `render`, and reject reader arguments before subcommands.
+
+- Update screenshot callers for the render-only `--scroll` option and abort capture when the reader exits or fails to initialize.
+
 - Keep table grid borders at a single thickness in reader and PDF output by default, and avoid scanline rounding of square GPU borders.
 
 - Wake waiting font transfers when the transfer gate is poisoned, even with warning logging disabled.

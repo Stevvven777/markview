@@ -280,7 +280,10 @@ black on white, and a centred page number. Body text is 12 pt unless
 one, two, or four millimetres; `--landscape` swaps the sides.
 The six header and footer slots are set with `--header`, `--footer` and the
 `-left`/`-right` variants, and their templates may use `{page}`, `{pages}`,
-`{title}` and `{path}`.
+`{title}` and `{path}`. PDF commands use `--paper` and `--margin` for page geometry
+and `--style` for colors; window dimensions, reading column and reader theme
+flags do not apply. Put command options after the subcommand; only `--offline`
+is global. The `render` command alone accepts `--scroll`, in logical pixels.
 
 `--watch` keeps the command running after the first export and rebuilds the PDF
 whenever the document, or a local image it references, changes; Ctrl+C ends the

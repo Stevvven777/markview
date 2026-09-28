@@ -10,7 +10,7 @@ use crate::{
 	settings::{ExportSettings, Setting},
 };
 use anyhow::{Context, Result, bail};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::{ffi::OsString, path::PathBuf};
 
 #[derive(Default, PartialEq, Eq)]
@@ -133,7 +133,7 @@ struct Cli {
 	/// The document to read; without one the reader opens empty.
 	file: Option<PathBuf>,
 	#[command(flatten)]
-	reading: Reading,
+	reading: ScreenReading,
 	/// Never touch the network.
 	#[arg(long, global = true)]
 	offline: bool,
@@ -141,24 +141,17 @@ struct Cli {
 	command: Option<Command>,
 }
 
-/// How a document is read, drawn or measured.
+/// Screen geometry and reader themes do not apply to PDF pages.
 #[derive(Args, Clone)]
-struct Reading {
-	/// A stylesheet to apply; repeats in priority order.
-	#[arg(long = "style", value_name = "ID")]
-	style: Vec<String>,
+struct ScreenReading {
+	#[command(flatten)]
+	reading: Reading,
 	/// The dark reader theme.
 	#[arg(long)]
 	dark: bool,
 	/// The light reader theme.
 	#[arg(long)]
 	light: bool,
-	/// A directory of font files; repeats.
-	#[arg(long = "fonts", value_name = "DIR")]
-	fonts: Vec<PathBuf>,
-	/// Shape with `--fonts` alone, never with the machine's own fonts.
-	#[arg(long = "ignore-system-fonts")]
-	ignore_system_fonts: bool,
 	/// Window width in logical pixels.
 	#[arg(long, value_name = "N")]
 	width: Option<f32>,
@@ -168,12 +161,23 @@ struct Reading {
 	/// Reading column width in logical pixels.
 	#[arg(long = "column", value_name = "N")]
 	column: Option<f32>,
+}
+
+/// How a document is read, drawn or measured.
+#[derive(Args, Clone)]
+struct Reading {
+	/// A stylesheet to apply; repeats in priority order.
+	#[arg(long = "style", value_name = "ID")]
+	style: Vec<String>,
+	/// A directory of font files; repeats.
+	#[arg(long = "fonts", value_name = "DIR")]
+	fonts: Vec<PathBuf>,
+	/// Shape with `--fonts` alone, never with the machine's own fonts.
+	#[arg(long = "ignore-system-fonts")]
+	ignore_system_fonts: bool,
 	/// Body text size in logical pixels.
 	#[arg(long = "font-size", value_name = "N")]
 	font_size: Option<f32>,
-	/// Where to scroll, as a fraction of the document.
-	#[arg(long, value_name = "N")]
-	scroll: Option<f32>,
 	/// First-line paragraph indent in em units.
 	#[arg(long = "paragraph-indent", value_name = "N")]
 	paragraph_indent: Option<f32>,
@@ -230,8 +234,11 @@ struct RenderArgs {
 	/// Image scale.
 	#[arg(long, value_name = "N")]
 	scale: Option<f32>,
+	/// Vertical scroll offset in logical pixels.
+	#[arg(long, value_name = "N")]
+	scroll: Option<f32>,
 	#[command(flatten)]
-	reading: Reading,
+	reading: ScreenReading,
 }
 
 #[derive(Args)]
@@ -242,7 +249,7 @@ struct SmokeArgs {
 	#[arg(short = 'o', long, value_name = "PNG")]
 	output: Option<PathBuf>,
 	#[command(flatten)]
-	reading: Reading,
+	reading: ScreenReading,
 }
 
 #[derive(Args)]
@@ -256,7 +263,7 @@ struct BenchArgs {
 	#[arg(short = 'o', long, value_name = "FILE")]
 	output: Option<PathBuf>,
 	#[command(flatten)]
-	reading: Reading,
+	reading: ScreenReading,
 }
 
 #[derive(Args)]
@@ -448,10 +455,11 @@ fn parse_arguments(
 	if let Some(hint) = legacy_hint(&args) {
 		bail!("{hint}");
 	}
-	let cli = match Cli::try_parse_from(
+	let mut command = Cli::command();
+	let matches = match command.try_get_matches_from_mut(
 		std::iter::once(OsString::from("markview")).chain(args),
 	) {
-		Ok(cli) => cli,
+		Ok(matches) => matches,
 		Err(error)
 			if matches!(
 				error.kind(),
@@ -464,12 +472,23 @@ fn parse_arguments(
 		}
 		Err(error) => bail!("{}", error.to_string().trim_end()),
 	};
+	if let Some((subcommand, _)) = matches.subcommand()
+		&& let Some(arg) = command.get_arguments().find(|arg| {
+			!arg.is_global_set()
+				&& matches.value_source(arg.get_id().as_str())
+					== Some(clap::parser::ValueSource::CommandLine)
+		}) {
+		bail!(
+			"{arg} is a reader argument; put subcommand arguments after `{subcommand}`; run `markview {subcommand} --help`"
+		);
+	}
+	let cli = Cli::from_arg_matches(&matches)?;
 	let mut out = LaunchOptions {
 		offline: cli.offline,
 		..LaunchOptions::default()
 	};
 	out.path = cli.file;
-	apply_reading(&mut out, &cli.reading)?;
+	apply_screen_reading(&mut out, &cli.reading)?;
 	if let Some(command) = cli.command {
 		apply_command(&mut out, command)?;
 	}
@@ -486,27 +505,31 @@ fn apply_command(out: &mut LaunchOptions, command: Command) -> Result<()> {
 				check_number("--scale", scale)?;
 				out.scale = scale.clamp(0.5, 4.0);
 			}
-			apply_reading(out, &args.reading)
+			if let Some(scroll) = args.scroll {
+				check_number("--scroll", scroll)?;
+				out.scroll = scroll;
+			}
+			apply_screen_reading(out, &args.reading)
 		}
 		Command::Smoke(args) => {
 			out.mode = Mode::Smoke;
 			out.path = Some(args.file);
 			out.output = args.output;
-			apply_reading(out, &args.reading)
+			apply_screen_reading(out, &args.reading)
 		}
 		Command::Bench(args) => {
 			out.mode = Mode::Bench;
 			out.path = Some(args.file);
 			out.output = args.output;
 			out.iterations = args.iterations.clamp(1, 10_000);
-			apply_reading(out, &args.reading)
+			apply_screen_reading(out, &args.reading)
 		}
 		Command::Latency(args) => {
 			out.mode = Mode::Latency;
 			out.path = Some(args.file);
 			out.output = args.output;
 			out.iterations = args.iterations.clamp(1, 10_000);
-			apply_reading(out, &args.reading)
+			apply_screen_reading(out, &args.reading)
 		}
 		Command::Pdf(args) => {
 			out.mode = Mode::Pdf;
@@ -618,14 +641,11 @@ fn apply_command(out: &mut LaunchOptions, command: Command) -> Result<()> {
 	}
 }
 
-fn apply_reading(out: &mut LaunchOptions, reading: &Reading) -> Result<()> {
-	for id in &reading.style {
-		crate::stylesheet::validate_id(id)?;
-	}
-	if !reading.style.is_empty() {
-		out.style = Some(reading.style.clone());
-		out.overrides.push(Setting::Theme);
-	}
+fn apply_screen_reading(
+	out: &mut LaunchOptions,
+	reading: &ScreenReading,
+) -> Result<()> {
+	apply_reading(out, &reading.reading)?;
 	if reading.dark {
 		out.theme = Some(Theme::Dark);
 		out.overrides.push(Setting::Theme);
@@ -633,15 +653,6 @@ fn apply_reading(out: &mut LaunchOptions, reading: &Reading) -> Result<()> {
 	if reading.light {
 		out.theme = Some(Theme::Light);
 		out.overrides.push(Setting::Theme);
-	}
-	for directory in &reading.fonts {
-		if !directory.is_dir() {
-			bail!("--fonts: {} is not a directory", directory.display());
-		}
-		out.options.fonts.directories.push(directory.clone());
-	}
-	if reading.ignore_system_fonts {
-		out.options.fonts.ignore_system_fonts = true;
 	}
 	if let Some(width) = reading.width {
 		check_number("--width", width)?;
@@ -656,14 +667,30 @@ fn apply_reading(out: &mut LaunchOptions, reading: &Reading) -> Result<()> {
 		out.options.width = column.clamp(240.0, 1600.0);
 		out.overrides.push(Setting::Width);
 	}
+	Ok(())
+}
+
+fn apply_reading(out: &mut LaunchOptions, reading: &Reading) -> Result<()> {
+	for id in &reading.style {
+		crate::stylesheet::validate_id(id)?;
+	}
+	if !reading.style.is_empty() {
+		out.style = Some(reading.style.clone());
+		out.overrides.push(Setting::Theme);
+	}
+	for directory in &reading.fonts {
+		if !directory.is_dir() {
+			bail!("--fonts: {} is not a directory", directory.display());
+		}
+		out.options.fonts.directories.push(directory.clone());
+	}
+	if reading.ignore_system_fonts {
+		out.options.fonts.ignore_system_fonts = true;
+	}
 	if let Some(size) = reading.font_size {
 		check_number("--font-size", size)?;
 		out.options.font_size = size.clamp(10.0, 40.0);
 		out.overrides.push(Setting::FontSize);
-	}
-	if let Some(scroll) = reading.scroll {
-		check_number("--scroll", scroll)?;
-		out.scroll = scroll;
 	}
 	if let Some(indent) = reading.paragraph_indent {
 		check_number("--paragraph-indent", indent)?;
@@ -764,11 +791,6 @@ fn finish(mut out: LaunchOptions) -> Result<Option<LaunchOptions>> {
 	if out.mode == Mode::Pdf {
 		if out.output.is_none() {
 			bail!("pdf requires --output out.pdf");
-		}
-		if out.theme.is_some() {
-			bail!(
-				"pdf prints the sheet of paper, not the window; use --style to change its colors"
-			);
 		}
 		if out.watch
 			&& out
@@ -1003,6 +1025,144 @@ mod tests {
 			parse_arguments(["render"].map(OsString::from)).is_err(),
 			"an image needs a document"
 		);
+	}
+
+	#[test]
+	fn reader_themes_are_not_pdf_options() {
+		let mut command = Cli::command();
+		let help = command
+			.find_subcommand_mut("pdf")
+			.unwrap()
+			.render_long_help()
+			.to_string();
+		assert!(help.contains("--style"));
+		for (flag, theme) in
+			[("--dark", Theme::Dark), ("--light", Theme::Light)]
+		{
+			assert!(!help.contains(flag), "{help}");
+			let error = Cli::try_parse_from([
+				"markview", "pdf", "a.md", "-o", "out.pdf", flag,
+			])
+			.err()
+			.expect("PDF rejects reader themes during argument parsing");
+			assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+			assert!(
+				parse_arguments(
+					[flag, "pdf", "a.md", "-o", "out.pdf"].map(OsString::from)
+				)
+				.is_err()
+			);
+			for mut args in [
+				vec!["a.md"],
+				vec!["render", "a.md", "-o", "out.png"],
+				vec!["smoke", "a.md"],
+				vec!["bench", "a.md"],
+				vec!["latency", "a.md"],
+			] {
+				args.push(flag);
+				assert!(parse(&args).theme == Some(theme), "{args:?}");
+			}
+		}
+		let args = parse(&["pdf", "a.md", "-o", "out.pdf", "--style", "print"]);
+		assert_eq!(args.style, Some(vec!["print".to_string()]));
+		assert!(args.theme.is_none());
+	}
+
+	#[test]
+	fn geometry_and_scroll_options_only_appear_where_used() {
+		for (command, flags) in [
+			(
+				vec!["pdf", "a.md", "-o", "out.pdf"],
+				vec!["--width", "--height", "--column", "--scroll"],
+			),
+			(vec![], vec!["--scroll"]),
+			(vec!["smoke", "a.md"], vec!["--scroll"]),
+			(vec!["bench", "a.md"], vec!["--scroll"]),
+			(vec!["latency", "a.md"], vec!["--scroll"]),
+		] {
+			let mut args = vec!["markview"];
+			args.extend(&command);
+			args.push("--help");
+			let help = Cli::try_parse_from(&args).err().unwrap().to_string();
+			args.pop();
+			for flag in flags {
+				assert!(!help.contains(flag), "{help}");
+				let error = Cli::try_parse_from(
+					args.iter().copied().chain([flag, "500"]),
+				)
+				.err()
+				.expect("unsupported option");
+				assert_eq!(
+					error.kind(),
+					clap::error::ErrorKind::UnknownArgument
+				);
+			}
+		}
+		for mut args in [
+			vec!["a.md"],
+			vec!["render", "a.md", "-o", "out.png", "--scroll", "250"],
+			vec!["smoke", "a.md"],
+			vec!["bench", "a.md"],
+			vec!["latency", "a.md"],
+		] {
+			args.extend([
+				"--width", "900", "--height", "600", "--column", "500",
+			]);
+			let parsed = parse(&args);
+			assert_eq!(
+				(parsed.width, parsed.height, parsed.options.width),
+				(900, 600, 500.0)
+			);
+			assert_eq!(
+				parsed.scroll,
+				if parsed.mode == Mode::Render {
+					250.0
+				} else {
+					0.0
+				}
+			);
+		}
+	}
+
+	#[test]
+	fn reader_arguments_cannot_leak_into_subcommands() {
+		for command in [
+			vec!["pdf", "a.md", "-o", "out.pdf"],
+			vec!["render", "a.md", "-o", "out.png"],
+			vec!["smoke", "a.md"],
+			vec!["bench", "a.md"],
+			vec!["latency", "a.md"],
+			vec!["ss", "list"],
+			vec!["fonts", "list"],
+		] {
+			for prefix in [
+				vec!["--dark"],
+				vec!["--width", "900"],
+				vec!["--font-size", "20"],
+				vec!["--style", "light"],
+				vec!["other.md"],
+			] {
+				let error = parse_arguments(
+					prefix.iter().chain(&command).map(OsString::from),
+				)
+				.err()
+				.expect("reader arguments belong to the reader");
+				assert!(
+					error
+						.to_string()
+						.contains("put subcommand arguments after"),
+					"{error}"
+				);
+			}
+			for position in 0..=command.len() {
+				if position > 0 && command[position - 1] == "-o" {
+					continue;
+				}
+				let mut args = command.clone();
+				args.insert(position, "--offline");
+				assert!(parse(&args).offline, "{args:?}");
+			}
+		}
 	}
 
 	#[test]
