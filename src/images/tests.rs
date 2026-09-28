@@ -622,6 +622,22 @@ fn broken_mermaid_diagram_becomes_an_error_placeholder() {
 			.unwrap()
 			.contains_key(&src)
 	);
+	let doc = crate::document::parse("```mermaid\nflowchart LR\n A-->B\n```\n");
+	let mut specs = Vec::new();
+	for block in &doc.blocks {
+		block.images(&mut specs);
+	}
+	images.prepare(
+		&doc,
+		Path::new("note.md"),
+		2,
+		false,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	images.wait();
+	assert!(images.snapshot.entries[&specs[0].src].error.is_none());
+	assert!(images.snapshot.pixels.decoded().contains_key(&specs[0].src));
 }
 
 #[test]
@@ -803,6 +819,9 @@ fn gpu_frame_draws_decoded_images() -> Result<()> {
 		hovered_overflow: None,
 		held_overflow: None,
 	};
+	// A frame republishes demand and reloads pixels after interrupted cache updates.
+	crate::test_support::poison(&images.snapshot.pixels.decoded);
+	crate::test_support::poison(&images.snapshot.pixels.demand);
 	let submission = renderer.render(
 		&snapshot,
 		&view,
@@ -1211,4 +1230,36 @@ fn offline_serves_a_cached_remote_image_and_fails_without_one() {
 		images.snapshot.entries[missing].error.as_deref(),
 		Some("Network images disabled (--offline)")
 	);
+}
+
+#[test]
+fn poisoned_image_caches_reload_pixels() {
+	let src = data_uri("image/png", &png(4, 3, [255, 0, 0, 255]));
+	let doc = crate::document::parse(format!("![image]({src})"));
+	let mut loader = images(true);
+	loader.prepare(
+		&doc,
+		Path::new("note.md"),
+		1,
+		false,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	loader.wait();
+	assert!(loader.snapshot.pixels.decoded().contains_key(&src));
+	crate::test_support::poison(&loader.snapshot.pixels.decoded);
+	crate::test_support::poison(&loader.snapshot.pixels.demand);
+	assert!(loader.snapshot.pixels.decoded().is_empty());
+	loader.snapshot.pixels.demand().insert(
+		src.clone(),
+		markview_core::image::ImageDemand {
+			size: (4, 3),
+			needs_pixels: true,
+		},
+	);
+	loader.schedule();
+	loader.wait();
+	assert!(loader.snapshot.pixels.decoded().contains_key(&src));
+	assert!(!loader.snapshot.pixels.decoded.is_poisoned());
+	assert!(!loader.snapshot.pixels.demand.is_poisoned());
 }

@@ -62,6 +62,21 @@ struct Inbox {
 	release: bool,
 }
 
+impl Inbox {
+	fn recover<'a>(
+		lock: &'a Mutex<Self>,
+		result: std::sync::LockResult<std::sync::MutexGuard<'a, Self>>,
+	) -> std::sync::MutexGuard<'a, Self> {
+		markview_core::sync::recover(lock, result, "Layout inbox", |state| {
+			state.pending = None;
+		})
+	}
+
+	fn lock(lock: &Mutex<Self>) -> std::sync::MutexGuard<'_, Self> {
+		Self::recover(lock, lock.lock())
+	}
+}
+
 /// Publication decisions use elapsed layout time, so small but expensive
 /// documents can show completed blocks without waiting for a full viewport.
 struct PrefixPublication {
@@ -167,40 +182,56 @@ impl Worker {
 					Arc<document::Document>,
 				)> = None;
 				loop {
-					let request = {
+					let (request, release) = {
 						let (lock, wake) = &*thread_inbox;
-						let mut inbox = lock.lock().unwrap();
-						while inbox.pending.is_none()
+						let mut inbox = Inbox::lock(lock);
+						if inbox.pending.is_none()
 							&& !inbox.stopped && !inbox.release
 						{
-							inbox = wake
-								.wait_timeout(
-									inbox,
-									std::time::Duration::from_millis(50),
-								)
-								.unwrap()
-								.0;
-							if inbox.pending.is_none() && images.poll() {
-								inbox.pending = last.clone();
-							}
-							if inbox.pending.is_none()
-								&& last.is_some() && engine.poll_highlights()
-							{
-								inbox.pending = last.clone();
-							}
+							let waited = wake
+								.wait_timeout(inbox, Duration::from_millis(50));
+							inbox = Inbox::recover(
+								lock,
+								waited.map(|(guard, _)| guard).map_err(
+									|error| {
+										std::sync::PoisonError::new(
+											error.into_inner().0,
+										)
+									},
+								),
+							);
 						}
 						if inbox.stopped {
 							break;
 						}
-						if std::mem::take(&mut inbox.release) {
-							cached = None;
-							last = None;
-							counted = None;
-							engine.release_document();
-							images.release();
-							continue;
+						let release = std::mem::take(&mut inbox.release);
+						(
+							if release { None } else { inbox.pending.take() },
+							release,
+						)
+					};
+					if release {
+						cached = None;
+						last = None;
+						counted = None;
+						engine.release_document();
+						images.release();
+						continue;
+					}
+					let Some(request) = request else {
+						let changed = images.poll();
+						let highlights =
+							last.is_some() && engine.poll_highlights();
+						if changed || highlights {
+							let (lock, _) = &*thread_inbox;
+							let mut inbox = Inbox::lock(lock);
+							if inbox.pending.is_none()
+								&& !inbox.stopped && !inbox.release
+							{
+								inbox.pending = last.clone();
+							}
 						}
-						inbox.pending.take().unwrap()
+						continue;
 					};
 					last = Some(request.clone());
 					let mut update = Update {
@@ -447,10 +478,7 @@ impl Worker {
 									_ => {
 										let pending = {
 											let (lock, _) = &*thread_inbox;
-											lock.lock()
-												.unwrap()
-												.pending
-												.is_some()
+											Inbox::lock(lock).pending.is_some()
 										};
 										(!pending).then(|| {
 											let counts = reader
@@ -496,7 +524,7 @@ impl Worker {
 			.store(request.coverage.to_bits(), Ordering::Relaxed);
 		self.version.store(request.version, Ordering::Relaxed);
 		let (lock, wake) = &*self.inbox;
-		lock.lock().unwrap().pending = Some(request);
+		Inbox::lock(lock).pending = Some(request);
 		wake.notify_one();
 	}
 	pub fn prioritize(&self, coverage: f32) {
@@ -505,14 +533,14 @@ impl Worker {
 	pub fn cancel(&self) {
 		self.version.store(0, Ordering::Relaxed);
 		let (lock, _) = &*self.inbox;
-		lock.lock().unwrap().pending = None;
+		Inbox::lock(lock).pending = None;
 	}
 	/// Drops the document the worker keeps for the reader that just closed, so
 	/// an empty reader holds no text, geometry or decoded images.
 	pub fn release(&self) {
 		self.cancel();
 		let (lock, wake) = &*self.inbox;
-		lock.lock().unwrap().release = true;
+		Inbox::lock(lock).release = true;
 		wake.notify_one();
 	}
 }
@@ -520,10 +548,12 @@ impl Drop for Worker {
 	fn drop(&mut self) {
 		self.version.store(0, Ordering::Relaxed);
 		let (lock, wake) = &*self.inbox;
-		lock.lock().unwrap().stopped = true;
+		Inbox::lock(lock).stopped = true;
 		wake.notify_one();
-		if let Some(t) = self.handle.take() {
-			let _ = t.join();
+		if let Some(t) = self.handle.take()
+			&& t.join().is_err()
+		{
+			log::warn!("Layout worker panicked");
 		}
 	}
 }
@@ -532,6 +562,32 @@ impl Drop for Worker {
 mod tests {
 	use super::*;
 	use std::{fs, sync::mpsc, time::Duration};
+	#[test]
+	fn poisoned_inbox_accepts_a_new_layout_and_shuts_down() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join("read.md");
+		fs::write(&path, "Readable after recovery.").unwrap();
+		let (tx, rx) = mpsc::channel();
+		let worker = Worker::new(move |update| {
+			let _ = tx.send(update);
+		});
+		crate::test_support::poison(&worker.inbox.0);
+		worker.submit(Request {
+			version: 1,
+			content_version: 1,
+			path,
+			options: crate::test_support::options(),
+			requested: Instant::now(),
+			coverage: 600.0,
+			load_all_images: false,
+		});
+		let update = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+		assert!(update.result.unwrap().is_ok());
+		assert!(!worker.inbox.0.is_poisoned());
+		crate::test_support::poison(&worker.inbox.0);
+		drop(worker);
+	}
+
 	#[test]
 	fn small_document_publication_uses_time_and_preserves_batching() {
 		let mut p = PrefixPublication::new(3691);

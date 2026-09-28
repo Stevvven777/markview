@@ -58,6 +58,23 @@ struct Inbox {
 	content_key: Option<(PathBuf, u64)>,
 	stopped: bool,
 }
+
+impl Inbox {
+	fn recover<'a>(
+		lock: &'a Mutex<Self>,
+		result: std::sync::LockResult<std::sync::MutexGuard<'a, Self>>,
+	) -> std::sync::MutexGuard<'a, Self> {
+		markview_core::sync::recover(lock, result, "Search inbox", |state| {
+			state.request = None;
+			state.content_key = None;
+		})
+	}
+
+	fn lock(lock: &Mutex<Self>) -> std::sync::MutexGuard<'_, Self> {
+		Self::recover(lock, lock.lock())
+	}
+}
+
 pub(super) struct Worker {
 	inbox: Arc<(Mutex<Inbox>, Condvar)>,
 	sequence: Arc<AtomicU64>,
@@ -79,9 +96,9 @@ impl Worker {
 				loop {
 					let (request, index_version) = {
 						let (lock, wake) = &*shared;
-						let mut inbox = lock.lock().unwrap();
+						let mut inbox = Inbox::lock(lock);
 						while inbox.request.is_none() && !inbox.stopped {
-							inbox = wake.wait(inbox).unwrap();
+							inbox = Inbox::recover(lock, wake.wait(inbox));
 						}
 						if inbox.stopped {
 							break;
@@ -143,7 +160,7 @@ impl Worker {
 	}
 	fn submit(&self, request: Request) {
 		let (lock, wake) = &*self.inbox;
-		let mut inbox = lock.lock().unwrap();
+		let mut inbox = Inbox::lock(lock);
 		if inbox.content_key.as_ref().is_none_or(|(path, content)| {
 			path != &request.path || *content != request.content
 		}) {
@@ -159,9 +176,13 @@ impl Drop for Worker {
 		self.cancel();
 		self.index_generation.fetch_add(1, Ordering::Relaxed);
 		let (lock, wake) = &*self.inbox;
-		lock.lock().unwrap().stopped = true;
+		Inbox::lock(lock).stopped = true;
 		wake.notify_one();
-		self.handle.take().unwrap().join().unwrap();
+		if let Some(handle) = self.handle.take()
+			&& handle.join().is_err()
+		{
+			log::warn!("Search worker panicked");
+		}
 	}
 }
 impl<P: SendEvent> App<P> {

@@ -506,3 +506,44 @@ fn search_bar_and_highlight_gpu_frames() -> anyhow::Result<()> {
 	}
 	Ok(())
 }
+
+#[test]
+fn poisoned_search_inbox_accepts_new_requests_and_shuts_down() {
+	let (tx, rx) = mpsc::channel();
+	let worker = Worker::new(move |result| {
+		let _ = tx.send(result);
+	});
+	crate::test_support::poison(&worker.inbox.0);
+	worker.submit(Request {
+		path: PathBuf::from("note.md"),
+		content: 1,
+		sequence: worker.cancel(),
+		document: Arc::new(markview_core::document::parse(
+			"A recovered search.",
+		)),
+		query: "recovered".into(),
+		options: SearchOptions::default(),
+	});
+	assert_eq!(
+		rx.recv_timeout(Duration::from_secs(10))
+			.unwrap()
+			.matches
+			.len(),
+		1
+	);
+	assert!(!worker.inbox.0.is_poisoned());
+	crate::test_support::poison(&worker.inbox.0);
+	drop(worker);
+}
+
+#[test]
+fn a_panicked_search_thread_does_not_panic_on_drop() {
+	let worker = Worker {
+		inbox: Arc::new((Mutex::new(Inbox::default()), Condvar::new())),
+		sequence: Arc::new(AtomicU64::new(0)),
+		index_generation: Arc::new(AtomicU64::new(0)),
+		handle: Some(std::thread::spawn(|| panic!("injected worker failure"))),
+	};
+	crate::test_support::poison(&worker.inbox.0);
+	drop(worker);
+}

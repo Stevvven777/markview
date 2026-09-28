@@ -51,44 +51,55 @@ fn svg_fonts(
 	type Cache = std::sync::Mutex<
 		VecDeque<(
 			Vec<(String, Vec<String>)>,
-			Arc<resvg::usvg::fontdb::Database>,
+			Arc<std::sync::OnceLock<Arc<resvg::usvg::fontdb::Database>>>,
 		)>,
 	>;
 	static SYSTEM: std::sync::OnceLock<Arc<resvg::usvg::fontdb::Database>> =
 		std::sync::OnceLock::new();
 	static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
 	let fonts = CACHE.get_or_init(|| std::sync::Mutex::new(VecDeque::new()));
-	let mut fonts = fonts.lock().unwrap();
-	if let Some((_, database)) =
-		fonts.iter().find(|(key, _)| key == generic_families)
-	{
-		return database.clone();
-	}
-	let system = SYSTEM.get_or_init(|| {
-		let mut db = resvg::usvg::fontdb::Database::new();
-		#[cfg(not(test))]
-		db.load_system_fonts();
-		#[cfg(test)]
-		for directory in crate::test_support::fonts().directories {
-			db.load_fonts_dir(directory);
-		}
-		Arc::new(db)
-	});
-	let mut database = (**system).clone();
-	for (generic, candidates) in generic_families {
-		if let Some(family) = candidates
-			.iter()
-			.find_map(|candidate| resolve_svg_family(&database, candidate))
+	let slot = {
+		let mut fonts = markview_core::sync::cache(fonts, "SVG font cache");
+		if let Some((_, slot)) =
+			fonts.iter().find(|(key, _)| key == generic_families)
 		{
-			super::fonts::set_generic(&mut database, generic, family.clone());
+			slot.clone()
+		} else {
+			let slot = Arc::new(std::sync::OnceLock::new());
+			fonts.push_back((generic_families.to_vec(), slot.clone()));
+			if fonts.len() > SVG_FONT_CACHE_CAP {
+				fonts.pop_front();
+			}
+			slot
 		}
-	}
-	let database = Arc::new(database);
-	fonts.push_back((generic_families.to_vec(), database.clone()));
-	if fonts.len() > SVG_FONT_CACHE_CAP {
-		fonts.pop_front();
-	}
-	database
+	};
+	slot.get_or_init(|| {
+		let system = SYSTEM.get_or_init(|| {
+			let mut db = resvg::usvg::fontdb::Database::new();
+			#[cfg(not(test))]
+			db.load_system_fonts();
+			#[cfg(test)]
+			for directory in crate::test_support::fonts().directories {
+				db.load_fonts_dir(directory);
+			}
+			Arc::new(db)
+		});
+		let mut database = (**system).clone();
+		for (generic, candidates) in generic_families {
+			if let Some(family) = candidates
+				.iter()
+				.find_map(|candidate| resolve_svg_family(&database, candidate))
+			{
+				super::fonts::set_generic(
+					&mut database,
+					generic,
+					family.clone(),
+				);
+			}
+		}
+		Arc::new(database)
+	})
+	.clone()
 }
 
 /// Resolves a configured SVG candidate to the database's canonical family

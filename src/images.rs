@@ -163,7 +163,14 @@ impl Images {
 				.name(format!("markview-image-{i}"))
 				.spawn(move || {
 					loop {
-						let Ok(job) = rx.lock().unwrap().recv() else {
+						// The channel owns its state; job processing happens outside this guard.
+						let Ok(job) = markview_core::sync::recover(
+							&rx,
+							rx.lock(),
+							"Image queue",
+							|_| {},
+						)
+						.recv() else {
 							break;
 						};
 						// A malformed file must not take the reader down with it.
@@ -321,7 +328,7 @@ impl Images {
 		// order, so the same document always defers the same images.
 		let mut remote_seen = 0usize;
 		let retained_pixels: HashMap<_, _> = {
-			let pixels = self.snapshot.pixels.decoded.lock().unwrap();
+			let pixels = self.snapshot.pixels.decoded();
 			self.entries
 				.iter()
 				.filter_map(|(source, e)| {
@@ -388,7 +395,7 @@ impl Images {
 		// A new spelling of a retained source shares its pixels immediately.
 		// Remove aliases no longer present so old snapshots cannot pin them.
 		{
-			let mut pixels = self.snapshot.pixels.decoded.lock().unwrap();
+			let mut pixels = self.snapshot.pixels.decoded();
 			for (source, e) in &self.entries {
 				if let Some(p) = retained_pixels.get(source) {
 					for alias in &e.aliases {
@@ -402,8 +409,8 @@ impl Images {
 	}
 
 	fn schedule(&mut self) {
-		let demand = self.snapshot.pixels.demand.lock().unwrap().clone();
-		let pixels = self.snapshot.pixels.decoded.lock().unwrap();
+		let demand = self.snapshot.pixels.demand().clone();
+		let pixels = self.snapshot.pixels.decoded();
 		let theme = self.theme_key;
 		let svg_theme = self.svg_theme_key;
 		let mut running = self.entries.values().filter(|e| e.busy).count();
@@ -492,9 +499,8 @@ impl Images {
 					e.svg = decoded.svg;
 					e.raster =
 						Some((decoded.pixels.width, decoded.pixels.height));
-					let mut pixels =
-						self.snapshot.pixels.decoded.lock().unwrap();
-					let demand = self.snapshot.pixels.demand.lock().unwrap();
+					let mut pixels = self.snapshot.pixels.decoded();
+					let demand = self.snapshot.pixels.demand();
 					cache_pixels(
 						&mut pixels,
 						&e.aliases,
@@ -507,9 +513,7 @@ impl Images {
 					e.info.error = Some(error.to_string());
 					self.snapshot
 						.pixels
-						.decoded
-						.lock()
-						.unwrap()
+						.decoded()
 						.retain(|s, _| !e.aliases.contains(s));
 				}
 			}

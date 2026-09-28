@@ -48,7 +48,7 @@ impl DiagramFonts {
 					Vec<String>,
 					Vec<(String, Vec<String>)>,
 				),
-				Arc<DiagramFonts>,
+				Arc<OnceLock<Arc<DiagramFonts>>>,
 			)>,
 		>;
 		static CACHE: OnceLock<Cache> = OnceLock::new();
@@ -59,17 +59,26 @@ impl DiagramFonts {
 			families.to_vec(),
 			generic_families.to_vec(),
 		);
-		let mut cache = cache.lock().unwrap();
-		if let Some((_, fonts)) = cache.iter().find(|(other, _)| *other == key)
-		{
-			return fonts.clone();
-		}
-		let fonts = Arc::new(Self::new(&key.0, &key.1, &key.2, &key.3));
-		cache.push((key, fonts.clone()));
-		if cache.len() > CACHE_CAP {
-			cache.remove(0);
-		}
-		fonts
+		let slot = {
+			let mut cache =
+				markview_core::sync::cache(cache, "Diagram font cache");
+			if let Some((_, slot)) =
+				cache.iter().find(|(other, _)| *other == key)
+			{
+				slot.clone()
+			} else {
+				let slot = Arc::new(OnceLock::new());
+				cache.push((key, slot.clone()));
+				if cache.len() > CACHE_CAP {
+					cache.remove(0);
+				}
+				slot
+			}
+		};
+		slot.get_or_init(|| {
+			Arc::new(Self::new(config, han, families, generic_families))
+		})
+		.clone()
 	}
 
 	fn new(

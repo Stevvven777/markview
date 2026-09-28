@@ -31,3 +31,18 @@ pub(crate) fn options() -> LayoutOptions {
 pub(crate) fn shaper() -> TextShaper {
 	TextShaper::with_fonts(fonts())
 }
+
+/// Leaves a real poisoned lock for recovery tests.
+pub(crate) fn poison<T: Send>(lock: &std::sync::Mutex<T>) {
+	std::thread::scope(|scope| {
+		assert!(
+			scope
+				.spawn(|| {
+					let _state = lock.lock().unwrap();
+					panic!("injected failure");
+				})
+				.join()
+				.is_err()
+		);
+	});
+}

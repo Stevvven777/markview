@@ -1,7 +1,7 @@
 //! Image semantics and immutable resource metadata. No I/O or GPU dependencies.
 use std::{
 	collections::HashMap,
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, MutexGuard},
 };
 
 /// Prefix that marks an image source as a Mermaid diagram rather than a path
@@ -52,6 +52,18 @@ pub struct ImagePixels {
 	/// Display size in physical pixels requested by the last painted frame,
 	/// by alias. Vector images are rasterized at this size.
 	pub demand: Mutex<HashMap<String, ImageDemand>>,
+}
+
+impl ImagePixels {
+	/// Decoded pixels, rebuilt after an interrupted cache update.
+	pub fn decoded(&self) -> MutexGuard<'_, HashMap<String, Arc<Pixels>>> {
+		crate::sync::cache(&self.decoded, "Image pixels")
+	}
+
+	/// Frame demand, republished after an interrupted update.
+	pub fn demand(&self) -> MutexGuard<'_, HashMap<String, ImageDemand>> {
+		crate::sync::cache(&self.demand, "Image demand")
+	}
 }
 
 /// One complete frame's requirements. A texture already on the GPU does not

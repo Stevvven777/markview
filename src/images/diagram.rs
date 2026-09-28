@@ -244,10 +244,18 @@ fn hex(color: Color) -> String {
 
 /// A map that forgets its oldest insertion, so every cache here is bounded by
 /// a count rather than by the documents a reader happened to open.
-#[derive(Default)]
 struct Bounded<K, V> {
 	entries: HashMap<K, V>,
 	order: VecDeque<K>,
+}
+
+impl<K, V> Default for Bounded<K, V> {
+	fn default() -> Self {
+		Self {
+			entries: HashMap::new(),
+			order: VecDeque::new(),
+		}
+	}
 }
 
 impl<K: Eq + Hash + Clone, V> Bounded<K, V> {
@@ -321,7 +329,9 @@ fn on_render_stack<T: Send>(f: impl FnOnce() -> Result<T> + Send) -> Result<T> {
 			.name("markview-mermaid".into())
 			.stack_size(RENDER_STACK_BYTES)
 			.spawn_scoped(scope, f)
-			.expect("start Mermaid render")
+			.map_err(|error| {
+				anyhow!("Mermaid: cannot start renderer: {error}")
+			})?
 			.join()
 			.unwrap_or_else(|_| Err(anyhow!("Mermaid: renderer panicked")))
 	})
@@ -329,14 +339,18 @@ fn on_render_stack<T: Send>(f: impl FnOnce() -> Result<T> + Send) -> Result<T> {
 
 /// The parsed diagram for `code`, parsing it on first use.
 fn parsed(code: &str) -> Result<Arc<mermaid_rs_renderer::ParseOutput>> {
-	if let Some(parsed) = parsed_cache().lock().unwrap().get(code) {
+	if let Some(parsed) =
+		markview_core::sync::cache(parsed_cache(), "Mermaid parse cache")
+			.get(code)
+	{
 		return Ok(parsed.clone());
 	}
 	let parsed = Arc::new(on_render_stack(|| {
 		mermaid_rs_renderer::parse_mermaid_strict(code)
 			.map_err(|e| anyhow!("Mermaid: {e}"))
 	})?);
-	let mut cache = parsed_cache().lock().unwrap();
+	let mut cache =
+		markview_core::sync::cache(parsed_cache(), "Mermaid parse cache");
 	if let Some(existing) = cache.get(code) {
 		return Ok(existing.clone());
 	}
@@ -385,11 +399,14 @@ fn render_bounded(code: &str, theme: &DiagramTheme) -> Result<String> {
 /// on the cache.
 pub(super) fn svg(code: &str, theme: &DiagramTheme) -> Result<Arc<str>> {
 	let key = (theme.fingerprint(), code.to_owned());
-	if let Some(svg) = svg_cache().lock().unwrap().get(&key) {
+	if let Some(svg) =
+		markview_core::sync::cache(svg_cache(), "Mermaid SVG cache").get(&key)
+	{
 		return Ok(svg.clone());
 	}
 	let svg: Arc<str> = render_bounded(code, theme)?.into();
-	let mut cache = svg_cache().lock().unwrap();
+	let mut cache =
+		markview_core::sync::cache(svg_cache(), "Mermaid SVG cache");
 	if let Some(existing) = cache.get(&key) {
 		return Ok(existing.clone());
 	}

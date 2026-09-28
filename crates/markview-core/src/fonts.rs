@@ -4,6 +4,7 @@
 //! reproducible result, such as a PDF export that must not depend on what the
 //! machine happens to have installed, names the directories to read instead
 //! and can turn the system set off entirely.
+use crate::sync::{available, cache};
 use parley::FontContext;
 use parley::fontique::{
 	Blob, Collection, CollectionOptions, FamilyId, FontInfo, FontStyle,
@@ -51,9 +52,9 @@ const CACHE_CAP: usize = 4;
 fn collection(config: &FontConfig) -> Collection {
 	type Cache = Mutex<Vec<(FontConfig, Arc<OnceLock<Collection>>)>>;
 	static CACHE: OnceLock<Cache> = OnceLock::new();
-	let cache = CACHE.get_or_init(|| Mutex::new(Vec::new()));
+	let cache_mutex = CACHE.get_or_init(|| Mutex::new(Vec::new()));
 	let slot =
-		cached_slot(&mut cache.lock().expect("font collection cache"), config);
+		cached_slot(&mut cache(cache_mutex, "Font collection cache"), config);
 	// The build reads and parses files outside the cache lock, so a panic in
 	// a font backend cannot poison it. The slot's own lock still makes exactly
 	// one caller do the work.
@@ -542,6 +543,7 @@ const GENERICS: [(&str, GenericFamily, &str, &str); 5] = [
 /// list resolves to ([`Self::cover`]); a caller that only lays the diagram out
 /// asks for a width ([`Self::measure`]). Both resolve through this one policy,
 /// so the boxes the layout computes match the text that is drawn.
+/// Poisoned policy state declines queries; poisoned faces are skipped.
 pub struct DiagramFonts {
 	inner: Mutex<DiagramInner>,
 }
@@ -578,16 +580,14 @@ impl DiagramFonts {
 		if text.is_empty() || size <= 0.0 {
 			return Some(0.0);
 		}
-		let mut inner = self.inner.lock().unwrap();
+		let mut inner = available(&self.inner, "Diagram fonts")?;
 		let base = inner.base_face(families)?;
 		let faces = inner.resolved(families, text, &base);
 		let mut width = 0.0;
 		for (ch, face) in text.chars().zip(faces) {
 			width += match face {
-				Some(face) => face
-					.lock()
-					.unwrap()
-					.advance(ch, size)
+				Some(face) => available(&face, "Font metrics")
+					.and_then(|mut metrics| metrics.advance(ch, size))
 					.unwrap_or_else(|| estimate(ch, size)),
 				None => estimate(ch, size),
 			};
@@ -598,11 +598,9 @@ impl DiagramFonts {
 	/// The face that draws `ch` for this family list, for a rasterizer that
 	/// falls back per character.
 	pub fn cover(&self, families: &str, ch: char) -> Option<DiagramFace> {
-		self.inner
-			.lock()
-			.unwrap()
-			.cover(families, ch)
-			.map(|face| face.lock().unwrap().face.clone())
+		let face =
+			available(&self.inner, "Diagram fonts")?.cover(families, ch)?;
+		Some(available(&face, "Font metrics")?.face.clone())
 	}
 
 	/// The families this collection resolves the generic names a font list may
@@ -610,7 +608,9 @@ impl DiagramFonts {
 	/// itself. [`Self::measure`] uses the same resolution, so the face it
 	/// measures with is the face the rasterizer draws.
 	pub fn generics(&self) -> Vec<(&'static str, String)> {
-		let mut inner = self.inner.lock().unwrap();
+		let Some(mut inner) = available(&self.inner, "Diagram fonts") else {
+			return Vec::new();
+		};
 		GENERICS
 			.into_iter()
 			.filter_map(|(name, generic, hint, avoid)| {
@@ -623,7 +623,7 @@ impl DiagramFonts {
 
 	/// Resolves a configured family name to a family present in the collection.
 	pub fn resolve_family(&self, name: &str) -> Option<String> {
-		let mut inner = self.inner.lock().unwrap();
+		let mut inner = available(&self.inner, "Diagram fonts")?;
 		let name = inner.family_name(name)?;
 		inner
 			.collection
@@ -637,7 +637,9 @@ impl DiagramFonts {
 	/// stylesheet has already declared the only candidates this renderer may
 	/// use, so keep the font database bounded to those families.
 	pub fn faces_for(&self, families: &[String]) -> Vec<DiagramFace> {
-		let mut inner = self.inner.lock().unwrap();
+		let Some(mut inner) = available(&self.inner, "Diagram fonts") else {
+			return Vec::new();
+		};
 		inner.restricted = true;
 		let mut names = families.to_vec();
 		names.extend(inner.han.iter().cloned());
@@ -645,7 +647,11 @@ impl DiagramFonts {
 		let mut out = Vec::new();
 		for name in names {
 			for face in inner.family(&name).iter() {
-				let face = face.lock().unwrap().face.clone();
+				let Some(face) = available(face, "Font metrics")
+					.map(|metrics| metrics.face.clone())
+				else {
+					continue;
+				};
 				if seen.insert(face.key(), ()).is_none() {
 					out.push(face);
 				}
@@ -659,13 +665,17 @@ impl DiagramFonts {
 	/// The order is the collection's own, so a rasterizer that resolves a
 	/// family by itself sees the same faces the shaper does.
 	pub fn faces(&self) -> Vec<DiagramFace> {
-		let mut inner = self.inner.lock().unwrap();
+		let Some(mut inner) = available(&self.inner, "Diagram fonts") else {
+			return Vec::new();
+		};
 		let names: Vec<String> =
 			inner.collection.family_names().map(str::to_owned).collect();
 		let mut out = Vec::new();
 		for name in names {
 			for face in inner.family(&name).iter() {
-				out.push(face.lock().unwrap().face.clone());
+				if let Some(metrics) = available(face, "Font metrics") {
+					out.push(metrics.face.clone());
+				}
 			}
 		}
 		out
@@ -760,8 +770,9 @@ impl DiagramInner {
 		}
 		let faces = Arc::new(faces);
 		for face in faces.iter() {
-			self.faces
-				.insert(face.lock().unwrap().face.key(), face.clone());
+			if let Some(metrics) = available(face, "Font metrics") {
+				self.faces.insert(metrics.face.key(), face.clone());
+			}
 		}
 		self.families.insert(name.to_owned(), faces.clone());
 		faces
@@ -771,9 +782,12 @@ impl DiagramInner {
 	/// family the collection has. A measurement starts from it, exactly as the
 	/// rasterizer's `select_font` starts from the list.
 	fn base_face(&mut self, families: &str) -> Option<Arc<Mutex<FaceMetrics>>> {
-		split_families(families)
-			.into_iter()
-			.find_map(|name| self.family(&name).first().cloned())
+		split_families(families).into_iter().find_map(|name| {
+			self.family(&name)
+				.iter()
+				.find(|face| available(face, "Font metrics").is_some())
+				.cloned()
+		})
 	}
 
 	/// The face each character of `text` is drawn with. The base face draws
@@ -787,24 +801,33 @@ impl DiagramInner {
 		base: &Arc<Mutex<FaceMetrics>>,
 	) -> Vec<Option<Arc<Mutex<FaceMetrics>>>> {
 		let chars: Vec<char> = text.chars().collect();
-		let mut faces: Vec<Option<Arc<Mutex<FaceMetrics>>>> = {
-			let mut metrics = base.lock().unwrap();
-			chars
+		let (mut faces, mut used) = {
+			let Some(mut metrics) = available(base, "Font metrics") else {
+				return vec![None; chars.len()];
+			};
+			let faces: Vec<_> = chars
 				.iter()
 				.map(|ch| metrics.covers(*ch).then(|| base.clone()))
-				.collect()
+				.collect();
+			(faces, vec![metrics.face.key()])
 		};
-		let mut used = vec![base.lock().unwrap().face.key()];
 		while let Some(index) = faces.iter().position(Option::is_none) {
 			let Some(fallback) = self.cover(families, chars[index]) else {
 				break;
 			};
-			let key = fallback.lock().unwrap().face.key();
+			let Some(key) = available(&fallback, "Font metrics")
+				.map(|metrics| metrics.face.key())
+			else {
+				break;
+			};
 			if used.contains(&key) {
 				break;
 			}
 			let covers_all = {
-				let mut metrics = fallback.lock().unwrap();
+				let Some(mut metrics) = available(&fallback, "Font metrics")
+				else {
+					break;
+				};
 				chars.iter().all(|ch| metrics.covers(*ch))
 			};
 			if covers_all {
@@ -812,7 +835,10 @@ impl DiagramInner {
 				break;
 			}
 			{
-				let mut metrics = fallback.lock().unwrap();
+				let Some(mut metrics) = available(&fallback, "Font metrics")
+				else {
+					break;
+				};
 				for (face, ch) in faces.iter_mut().zip(&chars) {
 					if face.is_none() && metrics.covers(*ch) {
 						*face = Some(fallback.clone());
@@ -842,7 +868,16 @@ impl DiagramInner {
 			return None;
 		}
 		if let Some(cached) = self.scanned.get(&ch) {
-			return cached.and_then(|key| self.faces.get(&key).cloned());
+			match cached {
+				None => return None,
+				Some(key) => {
+					if let Some(face) = self.faces.get(key)
+						&& available(face, "Font metrics").is_some()
+					{
+						return Some(face.clone());
+					}
+				}
+			}
 		}
 		let rest: Vec<String> = self
 			.collection
@@ -853,7 +888,10 @@ impl DiagramInner {
 		let found = rest.iter().find_map(|name| self.covering_face(name, ch));
 		self.scanned.insert(
 			ch,
-			found.as_ref().map(|face| face.lock().unwrap().face.key()),
+			found.as_ref().and_then(|face| {
+				available(face, "Font metrics")
+					.map(|metrics| metrics.face.key())
+			}),
 		);
 		found
 	}
@@ -866,7 +904,10 @@ impl DiagramInner {
 	) -> Option<Arc<Mutex<FaceMetrics>>> {
 		self.family(name)
 			.iter()
-			.find(|face| face.lock().unwrap().covers(ch))
+			.find(|face| {
+				available(face, "Font metrics")
+					.is_some_and(|mut metrics| metrics.covers(ch))
+			})
 			.cloned()
 	}
 }
@@ -1271,5 +1312,91 @@ mod tests {
 		assert_eq!(cache.len(), CACHE_CAP);
 		assert!(cache.iter().any(|(key, _)| key.revision == 0));
 		assert!(!cache.iter().any(|(key, _)| key.revision == 1));
+	}
+	fn poison<T: Send>(lock: &Mutex<T>) {
+		std::thread::scope(|scope| {
+			assert!(
+				scope
+					.spawn(|| {
+						let _state = lock.lock().unwrap();
+						panic!("injected failure");
+					})
+					.join()
+					.is_err()
+			);
+		});
+	}
+
+	#[test]
+	fn poisoned_diagram_state_declines_without_poisoning_the_collection() {
+		let config = FontConfig {
+			ignore_system_fonts: true,
+			..Default::default()
+		};
+		let fonts = DiagramFonts::new(&config, &[]);
+		poison(&fonts.inner);
+		assert!(fonts.measure("serif", "text", 16.0).is_none());
+		assert!(fonts.cover("serif", 'a').is_none());
+		assert!(fonts.resolve_family("serif").is_none());
+		assert!(fonts.generics().is_empty());
+		assert!(fonts.faces().is_empty());
+		assert!(fonts.faces_for(&["serif".into()]).is_empty());
+		assert!(!DiagramFonts::new(&config, &[]).inner.is_poisoned());
+	}
+
+	#[test]
+	fn poisoned_face_uses_a_healthy_fallback() {
+		let config = FontConfig {
+			ignore_system_fonts: true,
+			directories: vec![
+				Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts"),
+			],
+			..Default::default()
+		};
+		let fonts = DiagramFonts::new(&config, &[]);
+		let face = fonts.inner.lock().unwrap().base_face("Noto Sans").unwrap();
+		poison(&face);
+		let fallback = fonts.cover("Noto Sans, Noto Serif", 'A').unwrap();
+		assert_ne!(
+			fallback.key(),
+			face.lock().err().unwrap().into_inner().face.key()
+		);
+		assert!(
+			fonts.measure("Noto Sans, Noto Serif", "A", 16.0).unwrap() > 0.0
+		);
+		assert!(!fonts.inner.is_poisoned());
+	}
+
+	#[test]
+	fn a_failed_collection_build_keeps_the_cache_usable() {
+		let config = FontConfig {
+			ignore_system_fonts: true,
+			..Default::default()
+		};
+		let mutex = Mutex::new(Vec::new());
+		let slot = cached_slot(&mut cache(&mutex, "Test font cache"), &config);
+		std::thread::scope(|scope| {
+			assert!(
+				scope
+					.spawn(|| slot.get_or_init(|| {
+						assert!(mutex.try_lock().is_ok());
+						panic!("injected build failure");
+					}))
+					.join()
+					.is_err()
+			);
+		});
+		assert!(!mutex.is_poisoned());
+		assert!(Arc::ptr_eq(
+			&slot,
+			&cached_slot(&mut cache(&mutex, "Test font cache"), &config)
+		));
+		slot.get_or_init(|| build(&config));
+		poison(&mutex);
+		let replacement =
+			cached_slot(&mut cache(&mutex, "Test font cache"), &config);
+		assert!(!Arc::ptr_eq(&slot, &replacement));
+		assert!(!mutex.is_poisoned());
+		replacement.get_or_init(|| build(&config));
 	}
 }

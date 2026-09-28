@@ -35,6 +35,10 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Wake waiting font transfers when the transfer gate is poisoned, even with warning logging disabled.
+
+- Recover poisoned runtime caches and gracefully degrade failed font and worker state instead of cascading panics.
+
 - Reveal the correct search anchor in RTL text and preserve visible highlights around multiline image placeholders.
 
 - Coalesce IME cursor-area updates and skip unchanged rectangles to prevent Wayland request feedback during text input.

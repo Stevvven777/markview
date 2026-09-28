@@ -333,7 +333,12 @@ pub fn run(
 			let Some(state) = states.get(&id) else {
 				continue;
 			};
-			let snapshot = state.lock().expect("font progress").clone();
+			let Some(snapshot) =
+				markview_core::sync::available(state, "Font progress")
+					.map(|state| state.clone())
+			else {
+				continue;
+			};
 			report(snapshot);
 		}
 		for (id, handle) in handles {
@@ -401,7 +406,11 @@ struct Reporter {
 impl Reporter {
 	fn update(&self, change: impl FnOnce(&mut Progress)) {
 		{
-			let mut state = self.state.lock().expect("font progress");
+			let Some(mut state) =
+				markview_core::sync::available(&self.state, "Font progress")
+			else {
+				return;
+			};
 			change(&mut state);
 		}
 		// A closed channel means the run loop already finished.
@@ -466,22 +475,34 @@ impl Gate {
 			ready: Condvar::new(),
 		}
 	}
-	fn enter(self: &Arc<Self>) -> Ticket {
-		let mut free = self.free.lock().expect("font gate");
+	fn enter(self: &Arc<Self>) -> Result<Ticket> {
+		let mut free = self.free.lock().map_err(|_| self.poisoned())?;
 		while *free == 0 {
-			free = self.ready.wait(free).expect("font gate");
+			free = self.ready.wait(free).map_err(|_| self.poisoned())?;
 		}
 		*free -= 1;
 		drop(free);
-		Ticket(self.clone())
+		Ok(Ticket(self.clone()))
+	}
+
+	fn poisoned(&self) -> anyhow::Error {
+		self.ready.notify_all();
+		anyhow::anyhow!("Font transfer gate is poisoned")
 	}
 }
 struct Ticket(Arc<Gate>);
 impl Drop for Ticket {
 	fn drop(&mut self) {
-		let mut free = self.0.free.lock().expect("font gate");
-		*free += 1;
-		self.0.ready.notify_one();
+		match self.0.free.lock() {
+			Ok(mut free) => {
+				*free += 1;
+				self.0.ready.notify_one();
+			}
+			Err(_) => {
+				let error = self.0.poisoned();
+				log::warn!("{error}");
+			}
+		}
 	}
 }
 
@@ -516,7 +537,9 @@ fn probe_hosts(
 			.map(|(host, url)| {
 				let gate = gate.clone();
 				scope.spawn(move || {
-					let _ticket = gate.enter();
+					let Ok(_ticket) = gate.enter() else {
+						return (host, Duration::MAX);
+					};
 					// A mirror that cannot be measured keeps its declared
 					// place, which is what the longest possible wait means.
 					let latency =
@@ -882,7 +905,7 @@ fn fetch_file(
 	let temp = temp_path(dir);
 	let outcome = (|| -> Result<Staged> {
 		{
-			let _ticket = gate.enter();
+			let _ticket = gate.enter()?;
 			reporter.update(|state| state.current = Some(basename.clone()));
 			reporter.fetch(
 				transport,
@@ -914,7 +937,7 @@ fn fetch_archive(
 	let temp = temp_path(dir);
 	let outcome = (|| -> Result<Vec<Staged>> {
 		{
-			let _ticket = gate.enter();
+			let _ticket = gate.enter()?;
 			reporter.update(|state| state.current = Some(basename.clone()));
 			reporter.fetch(
 				transport,
@@ -1365,6 +1388,51 @@ mod tests {
 			"crates/markview-core/tests/fonts/NotoSerif-Regular-subset.otf",
 		))
 		.unwrap()
+	}
+
+	#[test]
+	fn poisoned_gate_releases_waiters_and_tickets_without_panicking() {
+		let gate = Arc::new(Gate::new(1));
+		let ticket = gate.enter().unwrap();
+		let (tx, rx) = std::sync::mpsc::channel();
+		let waiting = gate.clone();
+		let handle = std::thread::spawn(move || {
+			tx.send(waiting.enter().is_err()).unwrap();
+		});
+		crate::test_support::poison(&gate.free);
+		drop(ticket);
+		assert!(rx.recv_timeout(Duration::from_secs(5)).unwrap());
+		handle.join().unwrap();
+		assert!(gate.enter().is_err());
+		assert!(gate.free.is_poisoned());
+	}
+
+	#[test]
+	fn poisoned_progress_does_not_block_a_download() {
+		let (tx, rx) = channel();
+		let reporter = Reporter {
+			id: "test".into(),
+			state: Arc::new(Mutex::new(Progress::queued("test"))),
+			tx,
+		};
+		crate::test_support::poison(&reporter.state);
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join("download");
+		let mut transport = Fake::default();
+		transport
+			.bodies
+			.insert("https://x.example/a.otf".into(), font_bytes());
+		reporter
+			.fetch(
+				&transport,
+				"https://x.example/a.otf",
+				&path,
+				MAX_FILE_BYTES,
+				&|| false,
+			)
+			.unwrap();
+		assert!(fs::metadata(path).unwrap().len() > 0);
+		assert!(rx.try_recv().is_err());
 	}
 
 	fn family(id: &str, files: &[&str]) -> FontFamily {

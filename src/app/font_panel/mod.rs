@@ -209,7 +209,10 @@ impl FontPanel {
 				family.id.clone(),
 				crate::fonts::Progress::queued(&family.id),
 			);
-			if let Ok(mut cancel) = self.font_cancel.lock() {
+			if let Some(mut cancel) = markview_core::sync::available(
+				&self.font_cancel,
+				"Font cancellation",
+			) {
 				cancel.remove(&family.id);
 			}
 		}
@@ -237,7 +240,11 @@ impl FontPanel {
 			};
 			let cancel: Arc<dyn Fn(&str) -> bool + Send + Sync> =
 				Arc::new(move |id: &str| {
-					cancels.lock().is_ok_and(|cancel| cancel.contains(id))
+					markview_core::sync::available(
+						&cancels,
+						"Font cancellation",
+					)
+					.is_none_or(|cancel| cancel.contains(id))
 				});
 			let summary = crate::fonts::run(
 				&missing,
@@ -256,7 +263,10 @@ impl FontPanel {
 
 	/// Asks one family's running download to stop.
 	fn cancel_font(&mut self, id: &str) {
-		if let Ok(mut cancel) = self.font_cancel.lock() {
+		if let Some(mut cancel) = markview_core::sync::available(
+			&self.font_cancel,
+			"Font cancellation",
+		) {
 			cancel.insert(id.to_owned());
 		}
 	}
