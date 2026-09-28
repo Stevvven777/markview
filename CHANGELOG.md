@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Offer artist-template font downloads through international CTAN and TUNA mirrors, with matching SHA-256 pins and template fonts preferred over system alternatives.
+
 - Add MVSS `table.border_collapse` modes to share cell borders or retain independent, optionally rounded cell borders.
 
 - Find text throughout a document with a bottom search bar, Unicode case folding, whole-word matching, disclosure navigation and independent match highlights.

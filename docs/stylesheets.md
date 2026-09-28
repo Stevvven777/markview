@@ -71,7 +71,21 @@ All paper themes use `targets = ["pdf"]` and appear in the export selector. They
 | `vangogh` | Indigo and wheat gold | Large serif title, indigo headings and golden quotation panels |
 | `mondrian` | Vivid primary colors | Black title with a red bar, blue headings and quote bars, yellow heading markers |
 
-The three artist themes bundle the updated MVSS designs under the existing `qibaishi`, `vangogh` and `mondrian` IDs, so saved template selections use the updated layouts automatically. They do not depend on CSS, downloaded fonts or decorative images. Monochrome controls stylesheet and syntax colors; embedded images and color Emoji retain their original colors.
+The three artist themes bundle the updated MVSS designs under the existing `qibaishi`, `vangogh` and `mondrian` IDs, so saved template selections use the updated layouts automatically. They do not depend on CSS or decorative images; optional font downloads provide the preferred template faces. Monochrome controls stylesheet and syntax colors; embedded images and color Emoji retain their original colors.
+
+The artist themes prefer the following families in their `fontdef.lookfor` lists, whether supplied by a download, `--fonts`, or the system. Other system families are fallbacks only when the preferred family is unavailable:
+
+| Template | Downloadable family | Role |
+| --- | --- | --- |
+| `vangogh` | [Libre Baskerville](https://ctan.org/pkg/librebaskerville) | Preferred serif body and headings |
+| `qibaishi` | [TeX Gyre Pagella](https://ctan.org/pkg/tex-gyre) | Preferred Palatino-style body and headings |
+| `mondrian` | [XCharter](https://ctan.org/pkg/xcharter), [TeX Gyre Heros](https://ctan.org/pkg/tex-gyre) | Preferred Charter-style body and Helvetica-style headings |
+
+Each family declares both the international CTAN host (`tug.ctan.org`) and the mainland China TUNA mirror (`mirrors.tuna.tsinghua.edu.cn/CTAN`), with identical SHA-256 pins for matching files. Markview measures the hosts and tries the fastest first, falling back if a source fails; access and speed still depend on the user's network. Pagella and Heros use the GUST Font License (`LicenseRef-GUST-Font`, linked in the family metadata), XCharter uses the Bitstream Charter license, and Libre Baskerville uses OFL-1.1. The files include regular, bold and italic faces; Libre Baskerville supplies three real styles, without the CTAN package's artificially generated bold italic.
+
+Download from the **Fonts** page, or run `markview fonts download --style vangogh` (substitute `qibaishi` or `mondrian`). Before installing a custom template, use `markview fonts download --file path/to/template.mvss.toml`. System-only candidates such as Baskerville, Iowan Old Style, Helvetica Neue, Menlo and Consolas are not redistributed. The open alternatives are similar designs, not identical fonts, so line and page breaks can differ across systems.
+
+For Simplified Chinese, the templates retain the builtin `serif[cjk]` and its Medium-weight fallback, plus the builtin WenKai emphasis support. Run `markview fonts download noto-serif-cjk-sc lxgw-wenkai` for those families; their builtin download definitions already provide international and TUNA sources. Code prefers the builtin downloadable Noto Sans Mono, with Menlo, Consolas and Liberation Mono as fallbacks (`markview fonts download noto-sans-mono`). These shared builtin families are not duplicated in each template: `--style` downloads only that template's own declarations. Downloads are always explicit; opening or exporting a document does not fetch fonts.
 
 ```sh
 markview pdf examples/themes.md --style monochrome --output monochrome.pdf

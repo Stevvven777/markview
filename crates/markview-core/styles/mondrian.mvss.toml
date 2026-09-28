@@ -1,5 +1,5 @@
 format_version = 2
-version = 4
+version = 5
 targets = ["pdf"]
 
 [meta]
@@ -8,15 +8,67 @@ description = "Mondrian-inspired document layout"
 
 [[fontdef]]
 id = "serif"
-lookfor = ["Charter", "Bitstream Charter", "Georgia", "serif"]
+lookfor = ["XCharter", "Charter", "Bitstream Charter", "Georgia", "serif"]
 
 [[fontdef]]
 id = "assignment-heading"
-lookfor = ["Helvetica Neue", "Arial", "sans-serif"]
+lookfor = ["TeX Gyre Heros", "Helvetica Neue", "Arial", "sans-serif"]
 
 [[fontdef]]
 id = "monospace"
-lookfor = ["Menlo", "Consolas", "Liberation Mono", "monospace"]
+lookfor = ["Noto Sans Mono", "Menlo", "Consolas", "Liberation Mono", "monospace"]
+
+[[font-family]]
+id = "xcharter"
+lookfor = ["XCharter"]
+description = "Charter-style serif, regular and bold with italics"
+license = "Bitstream-Charter"
+license_url = "https://tug.ctan.org/fonts/xcharter/README"
+homepage = "https://ctan.org/pkg/xcharter"
+
+[[font-family.source]]
+name = "CTAN (international)"
+files = [
+    { url = "https://tug.ctan.org/fonts/xcharter/opentype/XCharter-Roman.otf", sha256 = "e5d22b0f417a0a3e22ee2d7ef10d2e8bba1397066ac3de44e3e3b34e6e56c601" },
+    { url = "https://tug.ctan.org/fonts/xcharter/opentype/XCharter-Italic.otf", sha256 = "46100192810480a54dd287e8b3966d5bccf4603ba008d9c8f6bdbe562c6a134b" },
+    { url = "https://tug.ctan.org/fonts/xcharter/opentype/XCharter-Bold.otf", sha256 = "baf595556bbd65749a83b41034c900a8d7f8f5b2a1aa24314319501fdcacce9b" },
+    { url = "https://tug.ctan.org/fonts/xcharter/opentype/XCharter-BoldItalic.otf", sha256 = "255d912eb1d70aac000a27ad3ee6c8082e7dbc004083b1a86526bcff472b50a9" },
+]
+
+[[font-family.source]]
+name = "TUNA (China)"
+files = [
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/xcharter/opentype/XCharter-Roman.otf", sha256 = "e5d22b0f417a0a3e22ee2d7ef10d2e8bba1397066ac3de44e3e3b34e6e56c601" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/xcharter/opentype/XCharter-Italic.otf", sha256 = "46100192810480a54dd287e8b3966d5bccf4603ba008d9c8f6bdbe562c6a134b" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/xcharter/opentype/XCharter-Bold.otf", sha256 = "baf595556bbd65749a83b41034c900a8d7f8f5b2a1aa24314319501fdcacce9b" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/xcharter/opentype/XCharter-BoldItalic.otf", sha256 = "255d912eb1d70aac000a27ad3ee6c8082e7dbc004083b1a86526bcff472b50a9" },
+]
+
+[[font-family]]
+id = "tex-gyre-heros"
+lookfor = ["TeX Gyre Heros"]
+description = "Helvetica-style headings, regular and bold with italics"
+license = "LicenseRef-GUST-Font"
+license_url = "https://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt"
+homepage = "https://ctan.org/pkg/tex-gyre"
+
+[[font-family.source]]
+name = "CTAN (international)"
+files = [
+    { url = "https://tug.ctan.org/fonts/tex-gyre/opentype/texgyreheros-regular.otf", sha256 = "6ae1a09d5a940367b7aaaa91ee8bd8a2c333bfe193e7096e23f931357d62081f" },
+    { url = "https://tug.ctan.org/fonts/tex-gyre/opentype/texgyreheros-italic.otf", sha256 = "6473df7fa107b3fb4be38973710afe22b0640c2ac076d5337cf126bed9aa108c" },
+    { url = "https://tug.ctan.org/fonts/tex-gyre/opentype/texgyreheros-bold.otf", sha256 = "b170162835f4efc288886dd4231406dc47e19b614cf4416836635599d44a7d60" },
+    { url = "https://tug.ctan.org/fonts/tex-gyre/opentype/texgyreheros-bolditalic.otf", sha256 = "166fc6d068d9c9974281555cb3d730365537a9b676ab269bb5163f5a75496505" },
+]
+
+[[font-family.source]]
+name = "TUNA (China)"
+files = [
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/tex-gyre/opentype/texgyreheros-regular.otf", sha256 = "6ae1a09d5a940367b7aaaa91ee8bd8a2c333bfe193e7096e23f931357d62081f" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/tex-gyre/opentype/texgyreheros-italic.otf", sha256 = "6473df7fa107b3fb4be38973710afe22b0640c2ac076d5337cf126bed9aa108c" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/tex-gyre/opentype/texgyreheros-bold.otf", sha256 = "b170162835f4efc288886dd4231406dc47e19b614cf4416836635599d44a7d60" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/tex-gyre/opentype/texgyreheros-bolditalic.otf", sha256 = "166fc6d068d9c9974281555cb3d730365537a9b676ab269bb5163f5a75496505" },
+]
 
 [page]
 size = "a4"

@@ -1,5 +1,5 @@
 format_version = 2
-version = 4
+version = 5
 targets = ["pdf"]
 
 [meta]
@@ -8,15 +8,39 @@ description = "Van Gogh-inspired document layout"
 
 [[fontdef]]
 id = "serif"
-lookfor = ["Baskerville", "Libre Baskerville", "Palatino Linotype", "Palatino", "Georgia", "serif"]
+lookfor = ["Libre Baskerville", "Baskerville", "Palatino Linotype", "Palatino", "Georgia", "serif"]
 
 [[fontdef]]
 id = "assignment-heading"
-lookfor = ["Baskerville", "Libre Baskerville", "Palatino Linotype", "Palatino", "Georgia", "serif"]
+lookfor = ["Libre Baskerville", "Baskerville", "Palatino Linotype", "Palatino", "Georgia", "serif"]
 
 [[fontdef]]
 id = "monospace"
-lookfor = ["Menlo", "Consolas", "Liberation Mono", "monospace"]
+lookfor = ["Noto Sans Mono", "Menlo", "Consolas", "Liberation Mono", "monospace"]
+
+[[font-family]]
+id = "libre-baskerville"
+lookfor = ["Libre Baskerville"]
+description = "Baskerville-style serif, regular, italic and bold"
+license = "OFL-1.1"
+license_url = "https://openfontlicense.org/"
+homepage = "https://ctan.org/pkg/librebaskerville"
+
+[[font-family.source]]
+name = "CTAN (international)"
+files = [
+    { url = "https://tug.ctan.org/fonts/librebaskerville/truetype/LibreBaskerville-Regular.ttf", sha256 = "da4d29043de90af40a2f91d2e7da58526afed6e1327a6c21db728b6178b81c8d" },
+    { url = "https://tug.ctan.org/fonts/librebaskerville/truetype/LibreBaskerville-Italic.ttf", sha256 = "b6482799f4959aa3e79a46678118c156669d391874d733f308580602299346eb" },
+    { url = "https://tug.ctan.org/fonts/librebaskerville/truetype/LibreBaskerville-Bold.ttf", sha256 = "51eaa0f0f8d3248c52b25e4d6b63c410fd6ad745869c532301646c0ec1fdd1ab" },
+]
+
+[[font-family.source]]
+name = "TUNA (China)"
+files = [
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/librebaskerville/truetype/LibreBaskerville-Regular.ttf", sha256 = "da4d29043de90af40a2f91d2e7da58526afed6e1327a6c21db728b6178b81c8d" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/librebaskerville/truetype/LibreBaskerville-Italic.ttf", sha256 = "b6482799f4959aa3e79a46678118c156669d391874d733f308580602299346eb" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/librebaskerville/truetype/LibreBaskerville-Bold.ttf", sha256 = "51eaa0f0f8d3248c52b25e4d6b63c410fd6ad745869c532301646c0ec1fdd1ab" },
+]
 
 [page]
 size = "a4"
