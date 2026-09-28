@@ -711,6 +711,14 @@ impl MarkerShapes {
 	}
 }
 
+/// Whether adjoining table cells share a border.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BorderCollapse {
+	Separate,
+	Collapse,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
@@ -737,6 +745,7 @@ pub struct Rule {
 	pub indent: Option<f32>,
 	pub padding: Option<Padding>,
 	pub border_width: Option<f32>,
+	pub border_collapse: Option<BorderCollapse>,
 	pub radius: Option<f32>,
 	/// Top, right, bottom, left widths in logical pixels; overrides `border_width`.
 	pub border_edges: Option<[f32; 4]>,
@@ -789,6 +798,7 @@ impl Rule {
 			|| self.indent.is_some()
 			|| self.padding.is_some()
 			|| self.border_width.is_some()
+			|| self.border_collapse.is_some()
 			|| self.radius.is_some()
 			|| self.border_edges.is_some()
 			|| self.corner_radii.is_some()
@@ -821,6 +831,7 @@ impl Rule {
 			indent,
 			padding,
 			border_width,
+			border_collapse,
 			radius,
 			border_edges,
 			corner_radii,

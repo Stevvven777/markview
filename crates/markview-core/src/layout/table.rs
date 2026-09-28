@@ -1,8 +1,8 @@
 use super::{BlockContext, LayoutOptions};
 use crate::{
 	document::{CellAlign, RichText},
-	scene::{BlockLayout, Draw, Overflow, Paint, Rect},
-	style::Condition,
+	scene::{BlockLayout, BoxDecoration, Draw, Overflow, Paint, Rect},
+	style::{BorderCollapse, Condition},
 };
 
 /// One table's grid, and whether its first row is a header. A table that is all
@@ -35,6 +35,11 @@ impl BlockContext<'_> {
 			.min(opts.limits.table_rows)
 			.min((opts.limits.table_cells / n).max(1))];
 		let table_appearance = self.shaper.appearance.clone();
+		let collapse = opts
+			.stylesheet
+			.element_rule(table_appearance.chain, Condition::Table)
+			.border_collapse
+			== Some(BorderCollapse::Collapse);
 		let mut minima = vec![48_f32; n];
 		let mut preferred = vec![48_f32; n];
 		let headed = table.headed;
@@ -51,19 +56,59 @@ impl BlockContext<'_> {
 				base
 			}
 		};
-		let cell_rule = |index: usize| {
-			let chain = cell_appearance(index).chain;
-			let mut rule = opts.stylesheet.element_rule(chain, Condition::Cell);
-			if header_at(index) {
-				rule.overlay(
-					&opts.stylesheet.element_rule(chain, Condition::Header),
-				);
+		let rules: Vec<_> = (0..rows.len())
+			.map(|index| {
+				let chain = cell_appearance(index).chain;
+				let mut rule =
+					opts.stylesheet.element_rule(chain, Condition::Cell);
+				if header_at(index) {
+					rule.overlay(
+						&opts.stylesheet.element_rule(chain, Condition::Header),
+					);
+				}
+				rule
+			})
+			.collect();
+		let edges = |index: usize| {
+			rules[index]
+				.border_edges
+				.unwrap_or([rules[index].border_width.unwrap_or(0.0); 4])
+		};
+		let adjoining = |upper: usize, lower: usize| {
+			rules[upper].space_after.unwrap_or(0.0) == 0.0
+				&& rules[lower].space_before.unwrap_or(0.0) == 0.0
+		};
+		let cell_decoration = |row: usize, col: usize| {
+			if !collapse {
+				return BoxDecoration::from_rule(&rules[row], false);
 			}
-			rule
+			let [t, r, b, l] = edges(row);
+			let mut shared = [t, r, b, l];
+			// Keep the wider edge in its original cell, preserving its color.
+			// Ties belong to the upper or left cell.
+			if row > 0 && adjoining(row - 1, row) && edges(row - 1)[2] >= t {
+				shared[0] = 0.0;
+			}
+			if col + 1 < n && l > r {
+				shared[1] = 0.0;
+			}
+			if row + 1 < rows.len()
+				&& adjoining(row, row + 1)
+				&& edges(row + 1)[0] > b
+			{
+				shared[2] = 0.0;
+			}
+			if col > 0 && r >= l {
+				shared[3] = 0.0;
+			}
+			Some(BoxDecoration {
+				edges: shared,
+				corners: [0.0; 4],
+			})
 		};
 		for (row_index, row) in rows.iter().enumerate() {
 			self.shaper.appearance = cell_appearance(row_index);
-			let rule = cell_rule(row_index);
+			let rule = &rules[row_index];
 			let mut pad = rule
 				.padding
 				.as_ref()
@@ -122,7 +167,7 @@ impl BlockContext<'_> {
 			} else {
 				Condition::Cell
 			};
-			let rule = cell_rule(row_index);
+			let rule = &rules[row_index];
 			let mut pad = rule
 				.padding
 				.as_ref()
@@ -176,7 +221,7 @@ impl BlockContext<'_> {
 				}
 				left += widths[col];
 			}
-			for (index, left, w) in boxes {
+			for (col, (index, left, w)) in boxes.into_iter().enumerate() {
 				out.draws[index] = Draw::Box {
 					rect: Rect {
 						x: left,
@@ -189,9 +234,7 @@ impl BlockContext<'_> {
 					radius: rule.radius.unwrap_or(0.),
 					border: rule.border_width.unwrap_or(0.),
 					left_only: false,
-					decoration: crate::scene::BoxDecoration::from_rule(
-						&rule, false,
-					),
+					decoration: cell_decoration(row_index, col),
 				};
 			}
 			top += row_height;

@@ -14,12 +14,12 @@ use std::{
 	sync::{Arc, LazyLock, OnceLock},
 };
 pub use types::{
-	CaptionSource, CjkType, Color, ColorField, Condition, ConditionSet,
-	Decoration, Font, FontArchive, FontDefType, FontDefinition, FontFamily,
-	FontFile, FontSource, MAX_CHAIN, MarkerShape, MarkerShapes, MermaidStyle,
-	Padding, PageEdgeStyle, PageStyle, Rule, SYNTHETIC_ITALIC_ANGLE_DEG,
-	SvgStyle, TextAlign, Variant, chain_of, chain_push, chain_set,
-	parse_paper_size,
+	BorderCollapse, CaptionSource, CjkType, Color, ColorField, Condition,
+	ConditionSet, Decoration, Font, FontArchive, FontDefType, FontDefinition,
+	FontFamily, FontFile, FontSource, MAX_CHAIN, MarkerShape, MarkerShapes,
+	MermaidStyle, Padding, PageEdgeStyle, PageStyle, Rule,
+	SYNTHETIC_ITALIC_ANGLE_DEG, SvgStyle, TextAlign, Variant, chain_of,
+	chain_push, chain_set, parse_paper_size,
 };
 
 /// A supported stylesheet destination.
@@ -627,7 +627,7 @@ impl Stylesheet {
 				"{:?}{:?}{:?}{:?}",
 				rule.radius, rule.gutter, rule.shape, rule.numbering
 			));
-			s.push_str(&format!("{:?}", rule.wrap));
+			s.push_str(&format!("{:?}{:?}", rule.wrap, rule.border_collapse));
 			s.push_str(&format!(
 				"{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
 				rule.border_edges,

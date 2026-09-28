@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Add MVSS `table.border_collapse` modes to share cell borders or retain independent, optionally rounded cell borders.
+
 - Find text throughout a document with a bottom search bar, Unicode case folding, whole-word matching, disclosure navigation and independent match highlights.
 
 - Reusable single-line text input with selection, clipboard, undo/redo and IME support; PDF exports can use a custom title for each document session.
@@ -36,6 +38,8 @@ at the same level, without `[brackets]`.
 - Submit document searches immediately without debounce, scan a compact text index and receive results without rebuilding highlight indexes on the UI thread.
 
 ### Fixed
+
+- Keep table grid borders at a single thickness in reader and PDF output by default, and avoid scanline rounding of square GPU borders.
 
 - Wake waiting font transfers when the transfer gate is poisoned, even with warning logging disabled.
 

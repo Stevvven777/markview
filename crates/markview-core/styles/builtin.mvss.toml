@@ -765,6 +765,7 @@ space_after = 0.8
 
 [[rule]]
 when = ["table"]
+border_collapse = "collapse"
 size = 0.9
 space_after = 0.8
 

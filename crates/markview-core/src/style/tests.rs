@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+fn border_collapse_validates_values_and_table_scope() {
+	for (conditions, value, valid) in [
+		("'table'", "collapse", true),
+		("'table','first_child'", "separate", true),
+		("'table'", "auto", false),
+		("'p'", "collapse", false),
+		("'table','cell'", "collapse", false),
+		("'table','header'", "collapse", false),
+	] {
+		assert_eq!(Stylesheet::parse(&format!(
+			"format_version=2\nversion=1\n[[rule]]\nwhen=[{conditions}]\nborder_collapse='{value}'"
+		)).is_ok(), valid);
+	}
+}
+
+#[test]
 fn decoration_fields_are_strict() {
 	for declaration in [
 		"border_edges=[1,2]",

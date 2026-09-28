@@ -206,10 +206,11 @@ Colors are sRGB `#RRGGBB` or `#RRGGBBAA`; `body.background` must be opaque. Size
 
 ## Native document decorations
 
-These properties work in both reader and export themes. They are resolved by the shared layout engine, so PDF and GPU output use the same geometry. Existing themes keep their original border behavior when these fields are absent.
+These properties work in both reader and export themes. They are resolved by the shared layout engine, so PDF and GPU output use the same geometry.
 
 | Property | Meaning |
 | --- | --- |
+| `border_collapse = "collapse"` or `"separate"` | On `table`, share adjoining cell borders or draw each cell's borders independently. Bundled defaults use `collapse`; `separate` restores the previous behavior. |
 | `border_edges = [top, right, bottom, left]` | Four nonnegative widths in logical pixels. Overrides `border_width`, draws inward, and reserves space in block/cell layout. Use zero for an absent edge. |
 | `corner_radii = [top_left, top_right, bottom_right, bottom_left]` | Four nonnegative circular radii in logical pixels. Overrides `radius`; adjacent corners scale together to fit the box. |
 | `heading_marker = [width, height, gap]` | A rectangular decoration before `h1`–`h6`, in base-font-size units. Reserves text width and aligns with the first line; a tall marker also reserves height. Zero width or height disables it. |
@@ -244,7 +245,15 @@ when = ["table", "cell", "last_child"]
 border_edges = [0, 0, 2, 0]
 ```
 
-For horizontal-only tables, assign each shared edge to one row (normally its bottom edge) rather than drawing both adjacent edges. Header and last-row rules can set their own border colors; a one-row table can use a combined `header` + `last_child` rule. PDF fragments retain the top edge/corners only on the opening fragment and the bottom edge/corners only on the closing fragment.
+In `collapse` mode, the wider adjoining edge wins; ties go to the upper or left cell. The winning edge keeps its color and is drawn inward in its original cell. Cell padding and text placement are unchanged. Horizontal borders separated by `space_before` or `space_after` remain independent. Collapsed cells have square corners; use `separate` for rounded cells. A stylesheet with no resolved `border_collapse` declaration uses `separate`, while themes layered over the bundled defaults inherit `collapse`.
+
+For horizontal-only tables, assign each shared edge to one row (normally its bottom edge). Header and last-row rules can set their own border colors; a one-row table can use a combined `header` + `last_child` rule. PDF fragments retain the top edge/corners only on the opening fragment and the bottom edge/corners only on the closing fragment.
+
+```toml
+[[rule]]
+when = ["table"]
+border_collapse = "separate"
+```
 
 Geometric and tracking changes invalidate affected layout caches. Color changes reuse geometry. Introducing the first positional rule also rebuilds layout to record positions; subsequent color changes to that rule do not. Pagination hints are recorded with the block ranges but used only by the PDF paginator, not by the reading window or continuous PNG export.
 

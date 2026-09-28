@@ -37,6 +37,31 @@ impl Geometry {
 			w: (r.w - l - right).max(0.0),
 			h: (r.h - t - b).max(0.0),
 		};
+		// Square borders use their exact widths, without scanline rounding.
+		if corners == [0.0; 4] {
+			self.solid(r, background, clip, view);
+			for edge in [
+				Rect { h: t, ..r },
+				Rect {
+					y: r.y + r.h - b,
+					h: b,
+					..r
+				},
+				Rect {
+					x: r.x,
+					w: l,
+					..inner
+				},
+				Rect {
+					x: r.x + r.w - right,
+					w: right,
+					..inner
+				},
+			] {
+				self.solid(edge, border, clip, view);
+			}
+			return;
+		}
 		let inner_corners = markview_core::scene::fit_corners(
 			inner,
 			[
