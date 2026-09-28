@@ -867,17 +867,11 @@ impl DiagramInner {
 		if self.restricted {
 			return None;
 		}
-		if let Some(cached) = self.scanned.get(&ch) {
-			match cached {
-				None => return None,
-				Some(key) => {
-					if let Some(face) = self.faces.get(key)
-						&& available(face, "Font metrics").is_some()
-					{
-						return Some(face.clone());
-					}
-				}
-			}
+		if let Some(key) = self.scanned.get(&ch).copied().flatten()
+			&& let Some(face) = self.faces.get(&key)
+			&& available(face, "Font metrics").is_some()
+		{
+			return Some(face.clone());
 		}
 		let rest: Vec<String> = self
 			.collection
