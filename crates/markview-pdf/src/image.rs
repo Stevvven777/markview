@@ -19,12 +19,12 @@ impl PreparedImage {
 	pub fn new(pixels: &Pixels) -> Result<Self> {
 		let (finished, receiver) = mpsc::channel::<()>();
 		let mut rgb = Vec::with_capacity(pixels.rgba.len() / 4 * 3);
-		let mut alpha = pixels
-			.rgba
-			.chunks_exact(4)
+		let chunks = pixels.rgba.as_chunks::<4>().0;
+		let mut alpha = chunks
+			.iter()
 			.any(|p| p[3] != 255)
-			.then(|| Vec::with_capacity(pixels.rgba.len() / 4));
-		for p in pixels.rgba.chunks_exact(4) {
+			.then(|| Vec::with_capacity(chunks.len()));
+		for p in chunks {
 			rgb.extend_from_slice(&p[..3]);
 			if let Some(alpha) = &mut alpha {
 				alpha.push(p[3]);
