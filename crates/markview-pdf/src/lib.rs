@@ -4,6 +4,7 @@ mod link;
 mod paint;
 mod text;
 use anyhow::Result;
+pub use image::PreparedImage;
 use markview_core::{
 	fonts::FontConfig,
 	image::ImageSnapshot,
@@ -34,6 +35,10 @@ pub struct Metadata {
 pub struct Export<'a> {
 	pub snapshot: &'a LayoutSnapshot,
 	pub images: &'a ImageSnapshot,
+	/// Precompressed resources keyed by source and version. Standalone callers
+	/// can omit these and supply decoded pixels instead.
+	pub prepared_images:
+		Option<&'a std::collections::HashMap<(String, u64), PreparedImage>>,
 	pub stylesheet: &'a Stylesheet,
 	pub geometry: &'a PageGeometry,
 	pub pagination: &'a Pagination,

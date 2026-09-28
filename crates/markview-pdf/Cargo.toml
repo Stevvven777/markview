@@ -20,6 +20,7 @@ log.workspace = true
 markview-core = { path = "../markview-core" }
 
 [dev-dependencies]
+tempfile.workspace = true
 lopdf = { version = "0.45", default-features = false }
 
 [lints]

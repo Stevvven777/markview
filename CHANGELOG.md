@@ -41,6 +41,10 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep PDF code-block text selectable with glyph-level mappings; leave copied whitespace reconstruction to the viewer.
+
+- Compress PDF images with bounded loading and rayon instead of retaining all decoded pixels; abort export with a source-specific error if an image resource is missing.
+
 - Pin table border integration tests to committed fonts so they pass with system fonts hidden in Linux CI.
 
 - Keep screen geometry and theme flags out of PDF commands, restrict `--scroll` to `render`, and reject reader arguments before subcommands.

@@ -124,6 +124,7 @@ fn render(
 	let export = Export {
 		snapshot: &inputs.snapshot,
 		images: &ImageSnapshot::default(),
+		prepared_images: None,
 		stylesheet: &inputs.sheet,
 		geometry: &inputs.geometry,
 		pagination: &inputs.pagination,
@@ -523,6 +524,98 @@ fn text_runs(exported: &Exported, page: u32) -> Vec<([f32; 3], f32)> {
 }
 
 #[test]
+#[ignore = "requires Poppler's pdftotext"]
+fn code_blocks_keep_text_and_selection_bounds() {
+	for language in ["", "rust"] {
+		let code = "    let value  =  42;  \n    println!(\"a  b\");";
+		let exported =
+			export(&format!("```{language}\n{code}\n```\n"), print(), false);
+		assert_eq!(
+			without_whitespace(
+				&poppler_text(&exported, "-raw").replace("1 / 1", "")
+			),
+			without_whitespace(code)
+		);
+		assert_selection_bounds(&exported);
+	}
+	let exported = export(
+		"# Whitespace test\n\n    indented   line   with  double  spaces\n\n    second  indented    line\n",
+		print(),
+		false,
+	);
+	let text = poppler_text(&exported, "-raw");
+	assert!(text.contains("indented line with double spaces"));
+	assert!(text.contains("second indented line"));
+	assert_selection_bounds(&exported);
+}
+
+#[test]
+#[ignore = "requires Poppler's pdftotext"]
+fn wrapped_code_keeps_text_and_selection_across_pages() {
+	let mut sheet = (*print()).clone();
+	sheet.page.footer_center = Some(String::new());
+	let sheet = Arc::new(sheet);
+	let geometry = PageGeometry {
+		width_pt: 300.0,
+		height_pt: 220.0,
+		..PageGeometry::from_style(sheet.page()).unwrap()
+	};
+	let code = "    let value  =  42;  ".repeat(24);
+	let exported = export_at(
+		&format!("```rust\n{code}\n```\n"),
+		sheet,
+		false,
+		Metadata::default(),
+		geometry,
+	);
+	assert!(exported.pages > 1);
+	let text = poppler_text(&exported, "-raw");
+	assert!(text.lines().count() > exported.pages);
+	assert_eq!(without_whitespace(&text), without_whitespace(&code));
+	assert_selection_bounds(&exported);
+}
+
+// PDF viewers infer whitespace from geometry; literal source whitespace is
+// not portable. Every visible character must remain in reading order.
+fn without_whitespace(text: &str) -> String {
+	text.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+fn poppler_text(exported: &Exported, mode: &str) -> String {
+	let file = tempfile::NamedTempFile::new().unwrap();
+	std::fs::write(file.path(), &exported.bytes).unwrap();
+	let output = std::process::Command::new("pdftotext")
+		.args([mode, "-nopgbrk"])
+		.arg(file.path())
+		.arg("-")
+		.output()
+		.expect("install poppler-utils to run PDF viewer regressions");
+	assert!(output.status.success(), "{:?}", output);
+	String::from_utf8(output.stdout).unwrap()
+}
+
+fn assert_selection_bounds(exported: &Exported) {
+	let tsv = poppler_text(exported, "-tsv");
+	let mut words = 0;
+	for line in tsv.lines().skip(1) {
+		let fields: Vec<_> = line.splitn(12, '\t').collect();
+		if fields[0] != "5" {
+			continue;
+		}
+		words += 1;
+		let top: f32 = fields[7].parse().unwrap();
+		let width: f32 = fields[8].parse().unwrap();
+		let height: f32 = fields[9].parse().unwrap();
+		assert!(width > 1.0 && height > 1.0, "{line}");
+		assert!(
+			top >= 0.0 && top + height <= exported.geometry.height_pt,
+			"{line}"
+		);
+	}
+	assert!(words > 0);
+}
+
+#[test]
 fn a_highlighted_line_keeps_every_token_color() {
 	// A line of code is one text node with one face and one size, so only the
 	// paint tells the tokens apart: a run that ignored it would show the whole
@@ -751,4 +844,49 @@ fn link_hitboxes_stay_inside_the_printed_text_area() {
 			"{rect:?}"
 		);
 	}
+}
+
+#[test]
+fn missing_image_pixels_abort_export_with_the_source_and_reason() {
+	use markview_core::image::ImageInfo;
+	let sheet = print();
+	let geometry = PageGeometry::from_style(sheet.page()).unwrap();
+	let document = document::parse("![Question 7](Q07.png)".to_owned());
+	let mut images = ImageSnapshot::default();
+	images.entries.insert(
+		"Q07.png".into(),
+		ImageInfo {
+			version: 7,
+			size: Some((200, 100)),
+			error: None,
+		},
+	);
+	let options = LayoutOptions {
+		width: geometry.text_px().0,
+		stylesheet: sheet.clone(),
+		fonts: fonts(),
+		..Default::default()
+	};
+	let snapshot =
+		LayoutEngine::new().layout_with_images(&document, &options, &images);
+	let pagination = paginate(&document, &snapshot, &geometry);
+	let error = markview_pdf::export(Export {
+		snapshot: &snapshot,
+		images: &images,
+		prepared_images: None,
+		stylesheet: &sheet,
+		geometry: &geometry,
+		pagination: &pagination,
+		metadata: Metadata::default(),
+		path: "doc.md".into(),
+		body_size_px: options.font_size,
+		links: false,
+		fonts: fonts(),
+	})
+	.unwrap_err()
+	.to_string();
+	assert!(error.contains("PDF export aborted"), "{error}");
+	assert!(error.contains("Q07.png"), "{error}");
+	assert!(error.contains("version 7"), "{error}");
+	assert!(error.contains("evicted or not loaded"), "{error}");
 }

@@ -73,7 +73,7 @@ two-face = { version = "0.5.1", default-features = false, features = ["syntect-f
 hypher = { version = "0.1.7", default-features = false, features = ["english", "alloc"] }
 icu_properties = "2.3"
 icu_segmenter = "2.3"
-krilla = { version = "0.8", default-features = false, features = ["raster-images"] }
+krilla = { version = "0.8", default-features = false, features = ["raster-images", "rayon"] }
 notify = "8.2"
 open = "5.4"
 parley = { version = "0.11.1", features = ["complex-scripts"] }
@@ -142,6 +142,9 @@ serde_json.workspace = true
 winit.workspace = true
 
 tempfile.workspace = true
+
+[dev-dependencies]
+lopdf = { version = "0.45", default-features = false }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wgpu = { workspace = true, features = ["dx12"] }

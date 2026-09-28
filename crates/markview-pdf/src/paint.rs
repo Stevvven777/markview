@@ -144,6 +144,7 @@ struct Painter<'a> {
 	stylesheet: &'a Stylesheet,
 	snapshot: &'a LayoutSnapshot,
 	images: Images<'a>,
+	image_error: Option<anyhow::Error>,
 	geometry: &'a PageGeometry,
 	pagination: &'a Pagination,
 	fonts: &'a mut Fonts,
@@ -185,7 +186,8 @@ impl Renderer {
 		let mut painter = Painter {
 			stylesheet: input.stylesheet,
 			snapshot: input.snapshot,
-			images: Images::new(input.images),
+			images: Images::new(input.images, input.prepared_images),
+			image_error: None,
 			geometry: input.geometry,
 			pagination: input.pagination,
 			fonts: &mut self.fonts,
@@ -214,6 +216,9 @@ impl Renderer {
 					}
 				}
 			}
+		}
+		if let Some(error) = painter.image_error {
+			return Err(error);
 		}
 		document
 			.finish()
@@ -662,9 +667,12 @@ impl Painter<'_> {
 			Draw::Image {
 				src, version, rect, ..
 			} => {
-				let Some(image) = self.images.get(src, *version) else {
-					log::debug!("PDF: image {src} has no decoded pixels");
-					return;
+				let image = match self.images.get(src, *version) {
+					Ok(image) => image,
+					Err(error) => {
+						self.image_error.get_or_insert(error);
+						return;
+					}
 				};
 				let Some(rect) = frame.rect(*rect) else {
 					return;

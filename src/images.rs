@@ -37,6 +37,7 @@ const REMOTE_LIMIT: &str = "Remote image limit reached (Load all)";
 static VERSION: AtomicU64 = AtomicU64::new(1);
 
 struct Job {
+	pdf: bool,
 	ticket: u64,
 	source: Source,
 	generation: u64,
@@ -71,9 +72,35 @@ struct Finished {
 	ticket: u64,
 	source: Source,
 	generation: u64,
-	result: Result<Decoded>,
+	result: Result<Loaded>,
 }
+struct Loaded {
+	intrinsic: (u32, u32),
+	raster: (u32, u32),
+	svg: bool,
+	pixels: Option<Arc<markview_core::image::Pixels>>,
+	pdf: Option<markview_pdf::PreparedImage>,
+}
+
+impl Loaded {
+	fn new(decoded: Decoded, pdf: bool) -> Result<Self> {
+		let prepared = if pdf {
+			Some(markview_pdf::PreparedImage::new(&decoded.pixels)?)
+		} else {
+			None
+		};
+		Ok(Self {
+			intrinsic: decoded.intrinsic,
+			raster: (decoded.pixels.width, decoded.pixels.height),
+			svg: decoded.svg,
+			pixels: (!pdf).then_some(decoded.pixels),
+			pdf: prepared,
+		})
+	}
+}
+
 struct Entry {
+	pdf: Option<markview_pdf::PreparedImage>,
 	ticket: u64,
 	aliases: Vec<String>,
 	info: ImageInfo,
@@ -104,6 +131,8 @@ fn rasterizer_fonts<'a>(
 
 pub struct Images {
 	pub snapshot: ImageSnapshot,
+	/// Compress PDF resources on the workers instead of caching raw pixels.
+	pdf: bool,
 	entries: HashMap<Source, Entry>,
 	send: Option<mpsc::Sender<Job>>,
 	recv: mpsc::Receiver<Finished>,
@@ -127,6 +156,13 @@ pub struct Images {
 impl Images {
 	pub fn new(offline: bool, fonts: FontConfig) -> Self {
 		Self::build(offline, cache::directory(), fonts)
+	}
+
+	pub fn for_pdf(offline: bool, fonts: FontConfig) -> Self {
+		Self {
+			pdf: true,
+			..Self::new(offline, fonts)
+		}
 	}
 
 	/// A scheduler with an explicit cache directory, for tests. `None` keeps
@@ -213,6 +249,9 @@ impl Images {
 										),
 										theme.generic_font_families(),
 									)
+									.and_then(|decoded| {
+										Loaded::new(decoded, job.pdf)
+									})
 								})
 							}),
 						)
@@ -236,6 +275,7 @@ impl Images {
 		}
 		Self {
 			snapshot: Default::default(),
+			pdf: false,
 			entries: HashMap::new(),
 			send: Some(tx),
 			recv,
@@ -355,6 +395,7 @@ impl Images {
 						remote && !load_all && remote_seen > MAX_REMOTE_SOURCES;
 					let e = self.entries.entry(source.clone()).or_insert_with(
 						|| Entry {
+							pdf: None,
 							ticket: 0,
 							aliases: Vec::new(),
 							info: Default::default(),
@@ -467,6 +508,7 @@ impl Images {
 				e.theme = source_theme;
 				running += 1;
 				let _ = self.send.as_ref().unwrap().send(Job {
+					pdf: self.pdf,
 					ticket: e.ticket,
 					source: s,
 					generation: self.generation,
@@ -497,19 +539,22 @@ impl Images {
 					e.info.size = Some(decoded.intrinsic);
 					e.info.error = None;
 					e.svg = decoded.svg;
-					e.raster =
-						Some((decoded.pixels.width, decoded.pixels.height));
-					let mut pixels = self.snapshot.pixels.decoded();
-					let demand = self.snapshot.pixels.demand();
-					cache_pixels(
-						&mut pixels,
-						&e.aliases,
-						decoded.pixels,
-						&demand,
-						CPU_BUDGET,
-					);
+					e.raster = Some(decoded.raster);
+					e.pdf = decoded.pdf;
+					if let Some(incoming) = decoded.pixels {
+						let mut pixels = self.snapshot.pixels.decoded();
+						let demand = self.snapshot.pixels.demand();
+						cache_pixels(
+							&mut pixels,
+							&e.aliases,
+							incoming,
+							&demand,
+							CPU_BUDGET,
+						);
+					}
 				}
 				Err(error) => {
+					e.pdf = None;
 					e.info.error = Some(error.to_string());
 					self.snapshot
 						.pixels
@@ -536,6 +581,21 @@ impl Images {
 		}
 		self.schedule();
 		changed
+	}
+
+	/// Only encoded resources survive a PDF load, shared by all source aliases.
+	pub fn pdf_images(
+		&self,
+	) -> HashMap<(String, u64), markview_pdf::PreparedImage> {
+		self.entries
+			.values()
+			.filter_map(|entry| entry.pdf.as_ref().map(|image| (entry, image)))
+			.flat_map(|(entry, image)| {
+				entry.aliases.iter().map(move |alias| {
+					((alias.clone(), entry.info.version), image.clone())
+				})
+			})
+			.collect()
 	}
 
 	pub fn wait(&mut self) {

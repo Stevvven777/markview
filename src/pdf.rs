@@ -186,7 +186,7 @@ impl Exporter {
 			metadata: args.metadata.clone(),
 			links: args.links,
 			engine,
-			images: Images::new(args.offline, args.options.fonts.clone()),
+			images: Images::for_pdf(args.offline, args.options.fonts.clone()),
 			renderer: Renderer::default(),
 			source: None,
 			dirty: true,
@@ -235,9 +235,9 @@ impl Exporter {
 			&self.options.fonts,
 		);
 		self.images.wait();
-		for entry in self.images.snapshot.entries.values() {
+		for (src, entry) in &self.images.snapshot.entries {
 			if let Some(error) = &entry.error {
-				warn!("Image: {error}");
+				warn!("Image {src:?}: {error}");
 			}
 		}
 		let mut snapshot = self.engine.layout_with_images(
@@ -259,6 +259,7 @@ impl Exporter {
 		let bytes = self.renderer.export(&Export {
 			snapshot: &snapshot,
 			images: &self.images.snapshot,
+			prepared_images: Some(&self.images.pdf_images()),
 			stylesheet: &self.options.stylesheet,
 			geometry: &self.geometry,
 			pagination: &pagination,
@@ -383,6 +384,87 @@ mod tests {
 		fs::write(&path, source).unwrap();
 		let exporter = Exporter::new(&options(&path, &output)).unwrap();
 		(path, output, exporter)
+	}
+
+	#[test]
+	fn exports_every_image_beyond_the_reader_pixel_budget() {
+		let dir = tempfile::tempdir().unwrap();
+		let mut source = String::new();
+		// Five decodes total 280 MB, exceeding the reader's 256 MiB cache.
+		for i in 0..5 {
+			image::RgbImage::from_pixel(
+				4000,
+				3500,
+				image::Rgb([i * 40, 100, 200]),
+			)
+			.save(dir.path().join(format!("{i}.png")))
+			.unwrap();
+			source.push_str(&format!("![Image {i}]({i}.png)\n\n"));
+		}
+		let (_, output, mut exporter) = start(dir.path(), &source);
+		for force in [false, true] {
+			exporter.export(force).unwrap().unwrap();
+			assert!(exporter.images.snapshot.pixels.decoded().is_empty());
+			assert_eq!(exporter.images.pdf_images().len(), 5);
+			let pdf = lopdf::Document::load(&output).unwrap();
+			assert_eq!(
+				pdf.objects
+					.values()
+					.filter_map(|object| object.as_stream().ok())
+					.filter(|stream| stream
+						.dict
+						.get(b"Subtype")
+						.and_then(lopdf::Object::as_name)
+						.is_ok_and(|name| name == b"Image"))
+					.count(),
+				5,
+				"each distinct opaque image must be embedded in the PDF"
+			);
+		}
+	}
+
+	#[test]
+	fn compressed_images_preserve_alpha_and_share_aliases() {
+		let dir = tempfile::tempdir().unwrap();
+		image::RgbaImage::from_raw(2, 1, vec![255, 0, 0, 255, 0, 255, 0, 128])
+			.unwrap()
+			.save(dir.path().join("a.png"))
+			.unwrap();
+		let (path, output, mut exporter) =
+			start(dir.path(), "![first](a.png)\n\n![alias](./a.png)\n");
+		exporter.export(false).unwrap().unwrap();
+		assert!(exporter.images.snapshot.pixels.decoded().is_empty());
+		let version = exporter.images.snapshot.entries["a.png"].version;
+		assert_eq!(
+			exporter.images.snapshot.entries["./a.png"].version,
+			version
+		);
+		let pdf = lopdf::Document::load(&output).unwrap();
+		let mut channels: Vec<_> = pdf
+			.objects
+			.values()
+			.filter_map(|object| object.as_stream().ok())
+			.filter(|stream| {
+				stream
+					.dict
+					.get(b"Subtype")
+					.and_then(lopdf::Object::as_name)
+					.is_ok_and(|name| name == b"Image")
+			})
+			.map(|stream| stream.decompressed_content().unwrap())
+			.collect();
+		channels.sort();
+		assert_eq!(channels, vec![vec![255, 0, 0, 0, 255, 0], vec![255, 128]]);
+		fs::write(&path, "![alias](./a.png)\n").unwrap();
+		exporter.export(false).unwrap().unwrap();
+		assert_eq!(
+			exporter.images.snapshot.entries["./a.png"].version,
+			version
+		);
+		assert_eq!(exporter.images.pdf_images().len(), 1);
+		fs::write(&path, "No images.\n").unwrap();
+		exporter.export(false).unwrap().unwrap();
+		assert!(exporter.images.pdf_images().is_empty());
 	}
 
 	#[test]

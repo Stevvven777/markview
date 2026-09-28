@@ -969,7 +969,8 @@ fn obsolete_completion_cannot_replace_a_readded_resource() {
 		source: src.clone(),
 		generation: images.generation,
 		ticket: old_ticket,
-		result: decode(&png(2, 2, [0, 0, 0, 255]), None),
+		result: decode(&png(2, 2, [0, 0, 0, 255]), None)
+			.and_then(|decoded| Loaded::new(decoded, false)),
 	})
 	.unwrap();
 	images.poll();
