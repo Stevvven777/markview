@@ -29,6 +29,8 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Prefill document search with the selected text when pressing Ctrl+F (Cmd+F on macOS).
+
 - Close the search bar when switching documents while retaining each document’s query and match options.
 
 - Submit document searches immediately without debounce, scan a compact text index and receive results without rebuilding highlight indexes on the UI thread.

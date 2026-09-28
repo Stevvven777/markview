@@ -198,6 +198,16 @@ impl<P: SendEvent> App<P> {
 		self.clear_input_focus();
 		self.interaction.show_panel(PanelPage::Closed);
 		self.readers.session.search.open = true;
+		if let Some(selection) = self.interaction.selection {
+			let session = &mut self.readers.session;
+			let text = session
+				.snapshot
+				.extract_text(selection, session.accepted_revision);
+			if !text.is_empty() {
+				session.search.input.set_text(&mut self.ui, &text);
+				self.search_changed();
+			}
+		}
 		self.interaction.focus = Some(Command::FocusInput(TextField::Search));
 		self.readers.session.search.input.select_all(&mut self.ui);
 		self.sync_input();

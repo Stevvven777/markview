@@ -111,6 +111,54 @@ impl Harness {
 	}
 }
 #[test]
+fn opening_search_uses_document_selection_and_submits_it() {
+	let mut h = Harness::new("选中文字");
+	for already_open in [false, true] {
+		h.query("previous");
+		if !already_open {
+			h.app.close_search();
+		}
+		let mut selection =
+			h.app.readers.session.snapshot.select_all(1).unwrap();
+		if already_open {
+			std::mem::swap(&mut selection.anchor, &mut selection.focus);
+		}
+		h.app.interaction.selection = Some(selection);
+		h.app.open_search();
+		h.settle();
+		let search = &h.app.readers.session.search;
+		assert!(search.open);
+		assert_eq!(search.input.text(), "选中文字");
+		assert_eq!(search.input.selected_text(), Some("选中文字"));
+		assert_eq!(search.query, "选中文字");
+		assert_eq!(search.matches.len(), 1);
+		assert_eq!(h.app.interaction.selection, Some(selection));
+		assert_eq!(
+			h.app.interaction.focus,
+			Some(Command::FocusInput(TextField::Search))
+		);
+		h.app.interaction.selection = None;
+	}
+}
+
+#[test]
+fn opening_search_without_valid_selected_text_preserves_query() {
+	let mut h = Harness::new("needle");
+	h.query("needle");
+	let stale = h.app.readers.session.snapshot.select_all(0).unwrap();
+	let mut empty = h.app.readers.session.snapshot.select_all(1).unwrap();
+	empty.focus = empty.anchor;
+	for selection in [None, Some(empty), Some(stale)] {
+		h.app.close_search();
+		h.app.interaction.selection = selection;
+		h.app.open_search();
+		h.settle();
+		assert_eq!(h.app.readers.session.search.input.text(), "needle");
+		assert_eq!(h.app.readers.session.search.matches.len(), 1);
+	}
+}
+
+#[test]
 fn edits_submit_immediately_and_latest_query_wins_without_a_timer() {
 	let mut h = Harness::new("needle and needles");
 	h.app.open_search();
