@@ -1,48 +1,89 @@
 format_version = 2
-version = 1
+version = 4
 targets = ["pdf"]
 
 [meta]
 name = "Mondrian"
-description = "Primary red, blue and yellow with a crisp black table grid"
+description = "Mondrian-inspired document layout"
+
+[[fontdef]]
+id = "serif"
+lookfor = ["Charter", "Bitstream Charter", "Georgia", "serif"]
+
+[[fontdef]]
+id = "assignment-heading"
+lookfor = ["Helvetica Neue", "Arial", "sans-serif"]
+
+[[fontdef]]
+id = "monospace"
+lookfor = ["Menlo", "Consolas", "Liberation Mono", "monospace"]
 
 [page]
-margin = [22, 22, 24, 22]
-header_left = "{title}"
+size = "a4"
+margin = [18, 20, 22, 20]
+header_left = ""
+header_center = ""
+header_right = ""
+footer_left = ""
 footer_center = ""
-footer_right = "{page} / {pages}"
+footer_right = ""
+
+[page.header]
+rule_width = 4.5
+rule_color = "#232323"
 
 [[rule]]
 when = ["body"]
-color = "#202020"
+color = "#272B30"
+background = "#FFFFFF"
+font = [{ family = "serif" }, { family = "serif", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
 line_height = 1.55
 
 [[rule]]
+when = ["p"]
+space_before = 0.0
+space_after = 0.7826
+orphans = 3
+widows = 3
+
+[[rule]]
 when = ["h1"]
-font = [{ family = "sans-serif" }, { family = "sans-serif[cjk]", weight = 500 }, { family = "sans-serif[cjk]" }, { family = "emoji", weight = 400 }]
-size = 2.1
-weight = 700
-color = "#C7352C"
-space_before = 0.15
-space_after = 0.65
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 2.1739
+weight = 500
+color = "#202020"
+line_height = 1.28
+space_before = 0.0
+space_after = 1.5652
+letter_spacing = -0.025
+border_edges = [0, 0, 0, 12]
+border_color = "#C7352C"
+padding = [0.5217, 0, 0.5217, 1.4348]
 
 [[rule]]
 when = ["h2"]
-font = [{ family = "sans-serif" }, { family = "sans-serif[cjk]", weight = 500 }, { family = "sans-serif[cjk]" }, { family = "emoji", weight = 400 }]
-size = 1.4
-weight = 700
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 1.3043
+weight = 500
 color = "#1647A6"
-space_before = 0.85
-space_after = 0.45
+line_height = 1.28
+space_before = 1.1739
+space_after = 0.9130
+border_edges = [0, 0, 2, 0]
+border_color = "#232323"
+padding = [0, 0, 0.5217, 0]
+heading_marker = [0.7826, 0.7826, 0.6522]
+marker_color = "#F1CE46"
 
 [[rule]]
 when = ["h3"]
-font = [{ family = "sans-serif" }, { family = "sans-serif[cjk]", weight = 500 }, { family = "sans-serif[cjk]" }, { family = "emoji", weight = 400 }]
-size = 1.12
-weight = 700
-color = "#1647A6"
-space_before = 0.85
-space_after = 0.45
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 1.0435
+weight = 500
+color = "#272B30"
+line_height = 1.28
+space_before = 0.7826
+space_after = 0.6522
 
 [[rule]]
 when = ["link"]
@@ -51,80 +92,104 @@ decoration = ["underline"]
 
 [[rule]]
 when = ["blockquote"]
-color = "#202020"
+color = "#272B30"
+background = "#F4F5F7"
+border_edges = [0, 0, 0, 6]
 border_color = "#1647A6"
-border_width = 4.0
-padding = [0.5, 0.8, 0.5, 1.0]
-background = "#F1F4FA"
+padding = [0.7826, 1.1739, 0.7826, 1.1739]
+space_before = 0.7826
+space_after = 1.5652
+corner_radii = [0, 0, 0, 0]
+keep_together = true
 
 [[rule]]
-when = ["marker"]
-color = "#C7352C"
-shape = ["square", "minus"]
+when = ["blockquote", "p"]
+size = 0.8696
+line_height = 1.55
+space_before = 0.0
+space_after = 0.2609
 
 [[rule]]
-when = ["task_marker"]
-accent = "#C7352C"
-border_color = "#C7352C"
-color = "#FFFFFF"
-background = "#FFFFFF"
-radius = 0.0
+when = ["blockquote", "p", "first_child", "strong"]
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 0.825
+weight = 600
+letter_spacing = 0.09
+
+[[rule]]
+when = ["table"]
+size = 0.8696
+line_height = 1.5
+space_before = 0.3913
+space_after = 1.1739
 
 [[rule]]
 when = ["table", "cell"]
-border_color = "#232323"
-border_width = 1.1
+padding = [0.5870, 0.7826, 0.5870, 0.7826]
+border_edges = [0, 0, 1, 0]
+border_color = "#D9D8D2"
+background = "#FFFFFF"
 
 [[rule]]
 when = ["table", "header"]
-color = "#202020"
-background = "#F1CE46"
+color = "#1647A6"
+background = "#F4F2EC"
+border_edges = [2, 0, 1, 0]
+border_color = "#1647A6"
+
+[[rule]]
+when = ["table", "cell", "last_child"]
+border_edges = [0, 0, 2, 0]
+border_color = "#1647A6"
+
+[[rule]]
+when = ["table", "header", "last_child"]
+border_edges = [2, 0, 2, 0]
 
 [[rule]]
 when = ["hr"]
-color = "#232323"
-border_width = 2.0
+color = "#F1CE46"
+border_width = 1
+space_before = 1.1739
+space_after = 1.9565
 
 [[rule]]
 when = ["code"]
-background = "#F4F3EF"
+size = 0.88
+background = "#00000000"
+padding = 0
 
 [[rule]]
 when = ["code_block"]
-theme = "InspiredGitHub"
-background = "#F4F3EF"
-border_color = "#232323"
-border_width = 0.0
+wrap = true
+size = 0.88
+line_height = 1.5
+padding = 1.0435
+background = "#F2F1ED"
+theme = "none"
 
 [[rule]]
 when = ["code_block", "label"]
-color = "#555555"
-
-[[rule]]
-when = ["img", "caption"]
-color = "#555555"
-
-[[rule]]
-when = ["img", "placeholder"]
-color = "#555555"
-background = "#F3F3F3"
-
-[[rule]]
-when = ["page_header"]
-color = "#555555"
-
-[[rule]]
-when = ["page_footer"]
-color = "#555555"
-
-[[rule]]
-when = ["page_number"]
-color = "#1647A6"
+show = false
 
 [[rule]]
 when = ["ui"]
-color = "#202020"
-muted = "#555555"
-accent = "#C7352C"
+color = "#272B30"
+background = "#F7F5EF"
+muted = "#555D55"
+accent = "#1647A6"
+border_color = "#F1CE46"
 error = "#A23C35"
-border_color = "#232323"
+
+[[rule]]
+when = ["selection"]
+background = "#1647A640"
+
+[[rule]]
+when = ["task_marker"]
+accent = "#1647A6"
+border_color = "#1647A6"
+
+[[rule]]
+when = ["link", "hover"]
+color = "#C7352C"

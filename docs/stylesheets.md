@@ -61,17 +61,17 @@ The `8-bit` theme uses Fusion Pixel 12px Monospaced (Simplified Chinese, Traditi
 
 ### PDF themes
 
-All paper themes use `targets = ["pdf"]` and appear in the export selector. They keep white paper and inherit Print's page setup, font fallbacks and 0.75em page furniture. The new themes add a running title and right-aligned page count; `print` retains its centered page count and empty header.
+All paper themes use `targets = ["pdf"]` and appear in the export selector. They keep white paper and inherit Print's font fallbacks and 0.75em page furniture. The three artist themes use A4 document layouts: A4 paper, 18/20/22/20 mm top/right/bottom/left margins, and empty header and footer text slots. Their colored header rules remain; `print` retains its centered page count and empty header.
 
 | ID | Direction | Signature |
 | --- | --- | --- |
 | `print` | Neutral paper default | Black text, modest grey surfaces and sans-serif headings |
 | `monochrome` | Minimal black and white | Unfilled quotation and code boxes, greyscale rules and uncolored code |
-| `qibaishi` | Ink and vermilion | Literary serif headings, open quotations and restrained red details |
+| `qibaishi` | Ink and vermilion | Literary serif headings, vermilion heading markers and open quotations |
 | `vangogh` | Indigo and wheat gold | Large serif title, indigo headings and golden quotation panels |
-| `mondrian` | Vivid primary colors | Red title, blue headings and quote bars, yellow table header, black grid |
+| `mondrian` | Vivid primary colors | Black title with a red bar, blue headings and quote bars, yellow heading markers |
 
-The three artist themes interpret the supplied CSS references through native MVSS typography and geometry. They do not depend on CSS, downloaded fonts or decorative images. Monochrome controls stylesheet and syntax colors; embedded images and color Emoji retain their original colors.
+The three artist themes bundle the updated MVSS designs under the existing `qibaishi`, `vangogh` and `mondrian` IDs, so saved template selections use the updated layouts automatically. They do not depend on CSS, downloaded fonts or decorative images. Monochrome controls stylesheet and syntax colors; embedded images and color Emoji retain their original colors.
 
 ```sh
 markview pdf examples/themes.md --style monochrome --output monochrome.pdf
