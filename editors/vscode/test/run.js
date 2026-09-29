@@ -557,7 +557,10 @@ exports.run = async function () {
 	await scrollPreview(
 		exports,
 		converged.documentHeight * 0.6,
-		(report) => report.syncs.preview > beforePreviewScroll.syncs.preview,
+		// `revealRange` returns before the editor publishes its new viewport.
+        (report) => report.syncs.preview > beforePreviewScroll.syncs.preview &&
+            Math.abs(editorBytes(longDocument, longDocument.offsetAt(editor.visibleRanges[0].start)) -
+                previewBytes(longDocument, report)) <= 400,
 	);
 	const followed = exports.panelReport();
 	say("after-preview-scroll", {
