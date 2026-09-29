@@ -34,6 +34,7 @@ members = [
 	"crates/markview-icon",
 	"crates/markview-pdf",
 	"crates/markview-render",
+	"crates/markview-selection",
 	"xtask",
 ]
 resolver = "3"
@@ -122,6 +123,7 @@ markview-i18n = { path = "crates/markview-i18n" }
 markview-icon = { path = "crates/markview-icon" }
 markview-pdf = { path = "crates/markview-pdf" }
 markview-render = { path = "crates/markview-render" }
+markview-selection = { path = "crates/markview-selection" }
 anyhow.workspace = true
 env_logger.workspace = true
 log.workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "markview-selection"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+markview-core = { path = "../markview-core" }
+
+[lints]
+workspace = true

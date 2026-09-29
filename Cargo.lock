@@ -2348,6 +2348,7 @@ dependencies = [
  "markview-icon",
  "markview-pdf",
  "markview-render",
+ "markview-selection",
  "mermaid-rs-renderer",
  "notify",
  "objc2 0.6.4",
@@ -2461,6 +2462,13 @@ dependencies = [
  "tiny-skia",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "markview-selection"
+version = "0.1.9"
+dependencies = [
+ "markview-core",
 ]
 
 [[package]]

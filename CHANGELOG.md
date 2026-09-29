@@ -21,9 +21,24 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Add `markview-selection`, the pointer-driven selection machine taken out of `InteractionState`, so a second front end can drive the same grains, click counting and drag rules.
+- Cover the selection paths that had no test: what a copy takes, the drag-past-edge auto-scroll tick, the deferred `Ctrl+A`, and carrying a selection across an update.
+
 ### Changed
 
 - Focus security documentation on policy and the threat model, with implementation details and verification work in separate references.
+- Name the loop generically in `handle_user_event` and the new `tick`, so the event and timer paths run without a window server.
+- Separate the reading text a copy takes from the clipboard write that stores it.
+
+### Fixed
+
+- Let a selection stop between the letters of a ligature, so `ff` and `fi` can be picked apart instead of only taken whole, while a single grapheme is still never parted.
+- Re-derive the selection when the view scrolls under a held press, so scrolling with the wheel extends what the pointer covers.
+- Take a formula or a drawn image whole, since its source text is not what is displayed, instead of selecting an arbitrary slice of it.
+- Mark the selected part of a ligature from the glyph's own advance, so a horizontally scrolled line never lights the letter that is still onscreen in place of the one selected.
+- Keep selection painting linear in the paragraph length by scanning only the cluster's own grapheme boundaries.
 
 ## 0.1.9 - 2026-09-29
 
