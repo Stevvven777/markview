@@ -30,6 +30,7 @@ jobs:
         working-directory: editors/vscode
       - run: npm run compile && node test/pickers.js && node --test ../shared/test/frames.cjs
         working-directory: editors/vscode
+      - run: python3 editors/vscode/test/test_run_host.py
       - run: cargo build --release --locked
       - name: Native GPU protocol tests with software Vulkan
         run: cargo test --locked -p markview --lib serve::tests -- --ignored --test-threads=1

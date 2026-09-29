@@ -48,7 +48,12 @@ exports.run = async (extension, scratch) => {
 		console.log("MARKVIEW-SCROLL-FOLLOW", {sourceTop, after:editor.visibleRanges[0].start.line, target, scroll:api.panelReport().scroll, carried:api.panelReport().carried, syncs:api.panelReport().syncs});
 		await until(() => editor.visibleRanges[0].start.line > sourceTop, "preview moves source even when target is already visible");
 		await delay(700);
-		assert.ok(Math.abs(api.panelReport().scroll - target) <= 1, "source follow does not bounce preview");
+		const landed = api.panelReport();
+		const tile = landed.tileBounds[0];
+		assert.ok(tile?.scale > 0 && tile?.fit > 0, "painted display scale is known");
+		const pixel = 1 / (tile.scale * tile.fit);
+		assert.ok(Math.abs(landed.scroll - target) <= pixel + 0.01,
+			`source follow stays within one display pixel: ${landed.scroll} against ${target}, pixel ${pixel}`);
 		assert.ok(editor.selection.active.isEqual(caret), "continuous follow leaves caret alone");
 		if (name === "heading") {
 			const { Session } = require(path.join(extension.extensionPath, "out/shared/sidecar.js"));

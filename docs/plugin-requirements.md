@@ -209,8 +209,15 @@ All six VSIX targets built in [the initial packaging run](https://github.com/szd
 Three-OS Rust checks pass. Linux real-host CI exposed an asynchronous viewport
 assertion and layout-versus-physical-pixel tolerance; both tests were corrected
 without removing their source alignment, no-bounce or anchor checks. Updated
-CI remains pending, and the local full suite with these changes passes
-(`unify-physical-pixel.log`). Marketplace publication is explicitly deferred.
+The earlier local full suite passed (`unify-physical-pixel.log`). The latest hosted
+run failed another layout-unit scroll assertion and hung after Edge inherited
+its output. The test now uses a display-pixel bound, records Linux desktop
+handoffs, and runs the editor with bounded process-group cleanup. Lifecycle
+checks and installed regressions pass (`unify-host-lifecycle.log`,
+`unify-host-regressions.log`); fresh full runs reproduce the known first-frame
+stall (`unify-host-cleanup.log`, `unify-host-cleanup-2.log`) and now exit promptly.
+Review and updated Linux CI for this test-only follow-up remain pending.
+Marketplace publication is explicitly deferred.
 
 
 Active Markdown editor following is implemented, including serialized opens

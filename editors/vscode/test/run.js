@@ -1301,7 +1301,7 @@ exports.run = async function () {
 		);
 	};
 
-	// A remote address is handed to the browser, and no tab is opened here.
+	// Exercise the desktop handoff; Linux records `xdg-open` instead of launching a browser.
 	const remote = linkMap.find((link) => link.kind === "remote");
 	assert.ok(
 		remote,
@@ -1316,6 +1316,13 @@ exports.run = async function () {
 		routed[0].target.includes("example.com"),
 		`to the address the engine classified: ${JSON.stringify(routed)}`,
 	);
+
+	if (process.env.MARKVIEW_EXTERNAL_LOG) {
+		const handedOff = () => fs.existsSync(process.env.MARKVIEW_EXTERNAL_LOG) &&
+			fs.readFileSync(process.env.MARKVIEW_EXTERNAL_LOG, "utf8").split("\n").includes(remote.target);
+		for (let attempt = 0; attempt < 50 && !handedOff(); attempt++) await delay(100);
+		assert.ok(handedOff(), "the real desktop opener receives the remote URL");
+	}
 
 	// A local document is opened in the editor.
 	const local = linkMap.find((link) => link.kind === "document");

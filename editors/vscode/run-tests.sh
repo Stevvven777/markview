@@ -57,15 +57,26 @@ if [ -n "${MARKVIEW_VSIX:-}" ]; then
     export MARKVIEW_PACKAGED_EXTENSION=1
 fi
 export MARKVIEW_TEST_BINARY="$engine"
+# Linux desktop handoffs are recorded without launching a persistent browser.
+if [[ "$OSTYPE" == linux* ]]; then
+    mkdir -p "$scratch/bin"
+    export MARKVIEW_EXTERNAL_LOG="$scratch/external.log"
+    cat >"$scratch/bin/xdg-open" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "$MARKVIEW_EXTERNAL_LOG"
+SH
+    chmod +x "$scratch/bin/xdg-open"
+    export PATH="$scratch/bin:$PATH"
+fi
 set +e
-"$editor" "$scratch/ws.code-workspace" \
+python3 "$here/test/run-host.py" --log "$scratch/run.log" -- "$editor" "$scratch/ws.code-workspace" \
 	--extensionDevelopmentPath="$development" \
 	--extensionTestsPath="$here/test/run.js" \
 	--user-data-dir="$scratch/user" \
 	--extensions-dir="$scratch/ext" \
 	--disable-gpu --skip-welcome --skip-release-notes --no-sandbox \
-	--disable-workspace-trust 2>&1 | tee "$scratch/run.log"
-status=${PIPESTATUS[0]}
+	--disable-workspace-trust
+status=$?
 set -e
 if ! grep -q 'MARKVIEW-EXT ok true' "$scratch/run.log"; then status=1; fi
 
