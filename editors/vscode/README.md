@@ -184,8 +184,8 @@ Live preview and manual export are included. There is no export-on-save option.
 
 ## Requirements
 
-- Local VS Code in a trusted workspace; the current VSIX is for `darwin-arm64`.
-- A compatible GPU for PNG export.
+- Local desktop VS Code in a trusted workspace, with the VSIX matching your OS and CPU.
+- A compatible GPU for preview and PNG export.
 - Browser editors, remote documents, Remote-SSH, and dev containers are outside
   the current supported scope.
 

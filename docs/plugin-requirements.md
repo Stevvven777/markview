@@ -143,6 +143,7 @@ The independently published export subset retains its history in
 
 | Port scope | Result |
 |:--|:--|
+| INV-1..6, EXT-1/2/8/9/10/12/13, NFR-4, TST-1/2/4 consolidation | **Approve, round 2 of completed reviews**, 2026-09-29 (`review-unify-4.log`). Round 1 found following retained the dead engine after restart; the listener now uses the replacement session. The reviewer independently reran installed regressions. Final full/reload logs (`unify-recovery-full.log`, `unify-recovery-reload.log`) and 821 CPU / 13 GPU tests pass. Linux CI and NFR-1/NFR-6 closure remain separate. |
 | EXT-1/2/4/8, TST-4 active-editor follow-up | **Approve, round 1**, 2026-09-29 (`review-follow.log`). One preview follows actual Markdown tab changes without stealing focus, with scoped settings and latest-request protection; non-Markdown and closed-panel behavior remain stable. Full suite (`follow-full-7.log`), installed regressions and actual reload pass. Creation focus and early-ready races were fixed; background-edit/link tests were aligned with following semantics. |
 | EXT-2, EXT-8/10, INV-1..4, NFR-3/4, TST-4 reload/background follow-up | **Approve, round 1**, 2026-09-29 (`review-restore.log`). Serializer restores editor buffers, scroll and panel group without awaiting webview delivery; native tile metadata colors the outer spacing with the committed frame. Actual installed-window reload, installed full suite, 798 CPU and 13 GPU tests pass. |
 | ENG-5, INV-2, EXT-2..4, NFR-2; TST-4 transport follow-up | **Approve, round 1**, 2026-09-29 (`review-binary.log`). Raw PNG frames and typed-array/Blob display replace base64. 798 workspace tests, 12 GPU tests, framing tests, final full-host and both installed packages pass; fixed PNG bytes match the baseline with 24.99% less wire data. The old string-identity assertion and export whitelist omission were fixed before review; intermittent resize evidence stays open. |
@@ -196,6 +197,22 @@ extension host. See [State of play](#state-of-play) for what is left.
 
 ## State of play
 
+Markview4vsc 0.2.0 consolidates preview and export under the published
+`Stevvven.markview-export` identity. Branch `feat/markview4vsc` is rebased on
+main `9f61e25`; upstream PR is [#24](https://github.com/szdytom/markview/pull/24).
+The second completed consolidation review approves (`review-unify-4.log`),
+after fixing the stale engine captured by active-editor following. Final local
+full, installed recovery and actual reload suites pass, as do 821 CPU tests,
+13 GPU tests, Clippy, rustfmt, TypeScript, picker/framing tests and actionlint.
+The reviewer independently reran installed regressions with engine replacement.
+All six VSIX targets built in [the initial packaging run](https://github.com/szdytom/markview/actions/runs/36535563760).
+Three-OS Rust checks pass. Linux real-host CI exposed an asynchronous viewport
+assertion and layout-versus-physical-pixel tolerance; both tests were corrected
+without removing their source alignment, no-bounce or anchor checks. Updated
+CI remains pending, and the local full suite with these changes passes
+(`unify-physical-pixel.log`). Marketplace publication is explicitly deferred.
+
+
 Active Markdown editor following is implemented, including serialized opens
 and stale-response rejection. The final full real-editor suite passes
 (`follow-full-7.log`): dirty buffers, per-folder settings, focus, panel reuse,
@@ -234,7 +251,7 @@ The full Path B implementation now lives in `editors/vscode` on
 `feat/markview4vsc`, rebased on main `9f61e25`. Markview4vsc retains the published
 `Stevvven.markview-export` identity and legacy export settings/commands. Preview
 and export share one native process and the client in `editors/shared`; the
-standalone export package has been retired. The consolidation review is pending.
+standalone export package has been retired. The consolidation review approved its second completed round.
 
 Fit-to-window display now keeps a fixed 16px outer inset and shrinks narrow panes without native reflow, with the full
 suite and installed-package tests green. Its review is pending due to connection failures.
@@ -267,6 +284,8 @@ Implemented and approved in the fresh port reviews (NFR-1 and NFR-6 remain open)
   documentation passed NFR-7 review; the build matrix alone does not close NFR-6.
 
 ## Known defects and missing evidence
+
+- Some earlier consolidation runs stalled at the first painted frame (`unify-scroll-await.log`, `unify-recovery.log`). The final full and installed regressions pass, and 30 repeated open/switch/close cycles did not reproduce it (`unify-open-cycles.log`). Tile rejection/decode diagnostics are retained; the intermittent root cause is not established or claimed fixed.
 
 - Binary transport follow-up: one full-host run (`binary-full-2.log`) saw a ~47px
   layout-coordinate resize-anchor shift. Installed regressions subsequently passed

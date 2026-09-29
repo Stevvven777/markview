@@ -24,6 +24,7 @@ at the same level, without `[brackets]`.
 ### Added
 
 - Add Markview4vsc: native live preview and PDF/PNG export in one extension, with shared templates, legacy export compatibility and CI tests.
+- Keep preview following attached to the replacement engine after a restart; verify scroll anchors in physical display pixels.
 
 ### Changed
 
