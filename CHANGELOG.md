@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Changed
+
+- Focus security documentation on policy and the threat model, with implementation details and verification work in separate references.
+
 ## 0.1.9 - 2026-09-29
 
 This release adds in-document text search with a bottom search bar, MVSS `table.border_collapse` modes, and artist-template font downloads through international mirrors. It also brings a reusable single-line text input with IME support and fixes a long tail of scrolling, PDF export and font-loading issues.

@@ -16,10 +16,12 @@ images it embeds are reproduced by `scripts/capture_screenshots.sh`.
 - [Architecture](architecture.md) explains ownership, snapshots, versions, layout, interaction, and resource boundaries. It focuses on what the system guarantees and why.
 - [Performance model](performance.md) explains the measured terms, current baselines, and the limits of those numbers.
 - [Latency and memory analysis](performance-analysis.md) is the diagnostic page: first-frame, edit-latency and memory measurements against explicit targets, with the responsible code and ranked optimization points.
-- [Security and threat model](security.md) explains which parts of the system an untrusted document can reach, what has already been shown to break, and which risks are knowingly accepted.
+- [Security and threat model](security.md) defines security policy, attacker capabilities, trust boundaries, and accepted risks.
+- [Security reference](security-reference.md) records the threat catalog, implementation controls, limits, and historical findings.
 
 ## Change the implementation
 
+- [Security verification](security-verification.md) tracks security evidence, outstanding work, and proposed verification harnesses.
 - [Development guide](development.md) is the how-to page for building, testing, changing behavior, and adding a new document node.
 - [Stylesheet guide](stylesheets.md) is the how-to/reference page for authoring and installing MVSS themes.
 
