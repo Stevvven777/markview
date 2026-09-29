@@ -29,6 +29,7 @@ let panelColumn: vscode.ViewColumn | undefined;
 let opening = Promise.resolve();
 let openRequest = 0;
 let requestedDocument: vscode.TextDocument | undefined;
+let followingSession: Session | undefined;
 /**
  * What the panel has observed, for a test to assert against.
  *
@@ -41,6 +42,7 @@ const report = {
     documentUri: "",
     background: "",
     restored: false,
+    tileError: "",
 	webviewBytes: 0,
 	selectionRequest: undefined as { start: number; end: number } | undefined,
 	selectionState: null as unknown,
@@ -513,11 +515,15 @@ async function place(data) {
 	// A band answers the document it was asked for, and a panel that has
 	// moved on to another one must not draw it.
 	if (!state || data.id !== state.id) return;
-	if (data.height !== viewHeight() || data.scale !== rasterScale()) return;
+	if (data.height !== viewHeight() || data.scale !== rasterScale()) {
+        vscode.postMessage({ tileError: 'Tile geometry changed: ' + JSON.stringify({height:data.height, view:viewHeight(), scale:data.scale, expected:rasterScale()}) });
+        return;
+    }
 	const image = document.createElement('img');
 	const url = URL.createObjectURL(new Blob([data.png], { type: 'image/png' }));
 	image.src = url;
-	try { await image.decode(); } catch {
+	try { await image.decode(); } catch (error) {
+        vscode.postMessage({ tileError: "PNG decode: " + String(error) });
 		if (data.generation === shown && data.epoch === epoch) pending.delete(data.band);
 		return;
 	} finally { URL.revokeObjectURL(url); }
@@ -1587,6 +1593,7 @@ export function openPreview(
 ): Promise<void> {
     const request = ++openRequest;
     requestedDocument = document;
+    followingSession = session;
     // Serialize engine opens and skip superseded tab changes.
     const task = opening.then(() => {
         if (request === openRequest) return showPreview(context, session, document, request, restored, follow);
@@ -1630,6 +1637,8 @@ async function showPreview(
                 if (uri === lastEditor) return;
                 lastEditor = uri;
                 if (editor.document.languageId !== "markdown" || uri === requestedDocument?.uri.toString()) return;
+                const session = followingSession;
+                if (!session) return;
                 void openPreview(context, session, editor.document, undefined, true).catch(error => {
                     void vscode.window.showErrorMessage(`Markview: ${String(error)}`);
                 });
@@ -1640,6 +1649,7 @@ async function showPreview(
             if (followTimer) clearTimeout(followTimer);
             ++openRequest;
             requestedDocument = undefined;
+            followingSession = undefined;
 			panel = undefined;
 			panelColumn = undefined;
 			shownState = undefined;
@@ -1667,6 +1677,7 @@ async function showPreview(
 	// A new document has not been drawn yet: what was observed of the last one
 	// would answer a test's wait before the new webview has run at all.
 	report.ready = false;
+    report.tileError = "";
     report.documentUri = document.uri.toString();
 	report.paintedVersion = -1;
 	report.paintedAt = 0;
@@ -1921,6 +1932,7 @@ export function closePreview(): void {
  */
 async function receive(message: {
 	ready?: boolean;
+    tileError?: string;
     background?: string;
 	scrollHeight?: number;
 	live?: number;
@@ -1973,6 +1985,7 @@ async function receive(message: {
 	selectionState?: unknown;
 
 }): Promise<void> {
+    if (message.tileError) report.tileError = message.tileError;
 	if (message.ready === true) {
 		report.ready = true;
 		// The panel was made a moment ago and its own document has only now
@@ -2074,6 +2087,7 @@ async function receive(message: {
 				},
 			});
 		} catch (error) {
+            report.tileError = String(error);
 			// The band is not coming, so the webview stops waiting on it and
 			// asks again the next time the viewport moves.
 			await post({

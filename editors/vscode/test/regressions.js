@@ -96,7 +96,7 @@ exports.run = async (extension, scratch) => {
 		assert.ok(await raceEditor.edit((edit) => edit.replace(new vscode.Range(0, 0, 0, 8), "new unsaved text")));
 		release();
 		await opening;
-		await until(() => api.panelReport().paintedVersion === racing.version && api.panelReport().text === "new unsaved text", "an edit during initial open reaches pixels without a second edit");
+		await until(() => api.panelReport().paintedVersion === racing.version && api.panelReport().text === "new unsaved text", `an edit during initial open reaches pixels without a second edit: ${JSON.stringify({uri:api.panelReport().documentUri, version:api.panelReport().paintedVersion, tileError:api.panelReport().tileError, text:api.panelReport().text})}`);
 	} finally {
 		release();
 		Session.prototype.open = original;

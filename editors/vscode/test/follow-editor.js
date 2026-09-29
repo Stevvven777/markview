@@ -47,8 +47,10 @@ exports.run = async extension => {
     const original = Session.prototype.open;
     let release;
     let entered = false;
+    let originalEngine;
     const gate = new Promise(resolve => { release = resolve; });
     Session.prototype.open = async function(id, content, options) {
+        originalEngine = this;
         const state = await original.call(this, id, content, options);
         if (options?.path === first && !entered) { entered = true; await gate; }
         return state;
@@ -66,9 +68,16 @@ exports.run = async extension => {
         release();
         Session.prototype.open = original;
     }
+    originalEngine.dispose();
+    assert.equal(originalEngine.running, false);
+    await vscode.commands.executeCommand('markview.openPreview', b.uri);
+    await until(() => painted(b), 'explicit reopen replaces a dead engine');
+    await show(a);
+    await until(() => painted(a), 'following uses the replacement engine');
+    assert.equal(previewTabs().length, 1, 'engine replacement keeps the same panel');
     await vscode.commands.executeCommand('markview.closePreview');
     await show(a);
     await delay(300);
     assert.equal(previewTabs().length, 0, 'following stops when panel closes');
-    console.log('MARKVIEW-FOLLOW ok dirty-buffer scoped-settings focus reuse non-md rapid-switch close');
+    console.log('MARKVIEW-FOLLOW ok dirty-buffer scoped-settings focus reuse non-md rapid-switch engine-replacement close');
 };

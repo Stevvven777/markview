@@ -2,6 +2,8 @@
 
 ## 0.2.0
 
+- Keep active-document following attached to the replacement engine after restarting preview.
+
 - Combine native preview and PDF/PNG export as Markview4vsc, retaining the published identity and legacy settings/commands.
 - Add binary tiles, stable repainting, shared templates, editor following and window restoration.
 
