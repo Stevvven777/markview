@@ -36,6 +36,7 @@ at the same level, without `[brackets]`.
 - Separate the reading text a copy takes from the clipboard write that stores it.
 - Take a `SurfaceSource` in `markview-render` instead of a window, so the renderer never names a windowing toolkit and a canvas front end can drive it the way the desktop window does.
 - Take the library crates' clock from `web-time` instead of `std::time`, because `Instant::now` panics on `wasm32-unknown-unknown`; on every other target it is the same type re-exported.
+- Put texture readback and GPU waits behind a `readback` feature that is off by default, because both block the calling thread and a browser has no second thread to wait on.
 - Declare wgpu's `webgl` backend for `wasm32-unknown-unknown`, so `markview-render` builds for the Web; `winit` leaves its dependency tree.
 
 ### Fixed

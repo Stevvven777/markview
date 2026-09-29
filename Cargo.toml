@@ -126,7 +126,7 @@ markview-core = { path = "crates/markview-core", features = ["font-directories"]
 markview-i18n = { path = "crates/markview-i18n" }
 markview-icon = { path = "crates/markview-icon" }
 markview-pdf = { path = "crates/markview-pdf" }
-markview-render = { path = "crates/markview-render" }
+markview-render = { path = "crates/markview-render", features = ["readback"] }
 markview-selection = { path = "crates/markview-selection" }
 anyhow.workspace = true
 env_logger.workspace = true

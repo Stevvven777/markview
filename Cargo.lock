@@ -2504,6 +2504,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "markview-core",
+ "markview-render",
  "parley",
  "pollster",
  "ratex-font",

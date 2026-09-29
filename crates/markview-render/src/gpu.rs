@@ -183,6 +183,8 @@ impl Gpu {
 		}
 	}
 
+	/// Waits for submitted work to complete.
+	#[cfg(feature = "readback")]
 	pub fn wait(&self, index: Option<wgpu::SubmissionIndex>) -> Result<()> {
 		self.device.poll(wgpu::PollType::Wait {
 			submission_index: index,
@@ -208,6 +210,7 @@ impl Gpu {
 		})
 	}
 	/// Reads a texture back as tightly packed, non-premultiplied sRGB RGBA8.
+	#[cfg(feature = "readback")]
 	pub(super) fn read_pixels(
 		&self,
 		texture: &wgpu::Texture,

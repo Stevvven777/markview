@@ -24,6 +24,14 @@ web-time.workspace = true
 # filesystem to read.
 markview-core = { path = "../markview-core" }
 
+[features]
+# Reading a texture back, and waiting on submitted work, both block the
+# calling thread. A browser cannot: its callbacks only run when the event
+# loop does, so a wait on one would never end. A native caller that exports
+# an image or measures a frame opts in; a front end that only draws does not.
+default = []
+readback = []
+
 [target.'cfg(target_os = "windows")'.dependencies]
 wgpu = { workspace = true, features = ["dx12"] }
 
@@ -41,3 +49,7 @@ wgpu = { workspace = true, features = ["webgl"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# The GPU tests compare pixels, so they read them back.
+markview-render = { path = ".", features = ["readback"] }

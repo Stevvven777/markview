@@ -6,7 +6,9 @@ mod images;
 mod paint;
 mod pipeline;
 mod raster;
-use anyhow::{Context, Result};
+#[cfg(feature = "readback")]
+use anyhow::Context;
+use anyhow::Result;
 use markview_core::{
 	scene::{Paint, Rect},
 	shaping::TextShaper,
@@ -113,6 +115,7 @@ pub struct Renderer {
 }
 
 /// A rendered texture read back as tightly packed, non-premultiplied sRGB RGBA8.
+#[cfg(feature = "readback")]
 pub struct Readback {
 	pub width: u32,
 	pub height: u32,
@@ -185,6 +188,8 @@ impl Renderer {
 	pub fn on_device_lost(&self, callback: impl Fn() + Send + 'static) {
 		self.gpu.on_device_lost(callback);
 	}
+	/// Waits for submitted work to complete.
+	#[cfg(feature = "readback")]
 	pub fn wait(&self, index: Option<wgpu::SubmissionIndex>) -> Result<()> {
 		self.gpu.wait(index)
 	}
@@ -196,6 +201,7 @@ impl Renderer {
 	pub fn max_texture_dimension_2d(&self) -> u32 {
 		self.gpu.device.limits().max_texture_dimension_2d
 	}
+	#[cfg(feature = "readback")]
 	pub fn read_pixels(&self, texture: &wgpu::Texture) -> Result<Readback> {
 		let (width, height, rgba) = self.gpu.read_pixels(texture)?;
 		Ok(Readback {
@@ -204,6 +210,7 @@ impl Renderer {
 			rgba,
 		})
 	}
+	#[cfg(feature = "readback")]
 	pub fn save_png(
 		&self,
 		texture: &wgpu::Texture,
