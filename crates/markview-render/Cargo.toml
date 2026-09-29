@@ -30,6 +30,8 @@ markview-core = { path = "../markview-core" }
 # an image or measures a frame opts in; a front end that only draws does not.
 default = []
 readback = []
+# Harness-only: relaxes visibility for `fuzz/`; never changes default behavior.
+fuzz = []
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wgpu = { workspace = true, features = ["dx12"] }

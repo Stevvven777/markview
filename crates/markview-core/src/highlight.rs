@@ -87,6 +87,24 @@ impl Highlighter {
 	}
 }
 
+/// The fuzz harness runs this once per process so the first input of a
+/// campaign does not pay each syntax's one-time parse-state build inside
+/// the highlight worker, where the input budget would see it. Only the
+/// `fuzz` feature builds this.
+#[cfg(feature = "fuzz")]
+pub fn prewarm_highlight() {
+	let set = syntax_set();
+	let theme = theme_set()
+		.themes
+		.get("InspiredGitHub")
+		.or_else(|| theme_set().themes.values().next())
+		.expect("the theme set is non-empty");
+	for syntax in set.syntaxes() {
+		let mut lines = HighlightLines::new(syntax, theme);
+		let _ = lines.highlight_line("x\n", set);
+	}
+}
+
 pub(crate) fn highlight_block(
 	language: &str,
 	theme: Option<&str>,

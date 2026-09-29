@@ -1,7 +1,7 @@
 //! Document layout and immutable snapshots, independent of a window or GPU.
 mod anchor;
 mod blocks;
-mod code;
+pub(crate) mod code;
 mod highlights;
 mod images;
 mod inline;

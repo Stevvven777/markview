@@ -1,0 +1,21 @@
+[package]
+name = "mvfuzz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+
+
+[dependencies]
+
+libfuzzer-sys = "0.4"
+# `font-directories` is named here because this crate is the one that reads
+# `tests/fonts` (see `pipeline::pinned_fonts`). It happens to arrive through
+# `markview-pdf` today, but a layout helper that only works because another
+# crate enables a feature is one refactor away from shaping with no faces.
+markview-core = { path = "../../crates/markview-core", features = ["fuzz", "font-directories"] }
+markview-pdf = { path = "../../crates/markview-pdf", features = ["fuzz"] }
+
+# Mirror the workspace patch so the harness fuzzes the same comrak the app does.
+[patch.crates-io]
+comrak = { git = "https://github.com/kivikakk/comrak", rev = "cf8955abe961454dff39cfb64952e1933645d870" }

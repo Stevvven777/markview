@@ -1,0 +1,170 @@
+//! Per-input budgets (O2, O3, B1).
+//!
+//! Every target wraps one input in an [`InputGuard`]: no panic, abort, or
+//! integer overflow may occur, and neither the wall-clock time nor the peak
+//! live allocation may exceed the budget. `Err` returns and degraded output
+//! are legal (O4: the `Limits` degradation contract is not asserted here).
+//!
+//! The per-stage defaults come from the calibration record in
+//! `artifacts/budget-calibration.md` (method per B2: high percentile of
+//! representative-input measurements times a safety factor, plus a linear
+//! term when the peak grows with input length). Long campaigns may override
+//! them through the `MARKVIEW_FUZZ_*` environment variables (B1).
+
+use std::time::Instant;
+
+use crate::allocator::GLOBAL;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Budget {
+	/// Wall-clock allowance for one input, in milliseconds.
+	pub time_ms: u64,
+	/// Fixed part of the peak-allocation allowance, in bytes.
+	pub alloc_base: u64,
+	/// Part of the allowance that scales with input length, in bytes per KiB
+	/// of input.
+	pub alloc_per_kib: u64,
+}
+
+impl Budget {
+	/// The calibrated parse budget: the parse, reparse, mvss, math, fonts,
+	/// shaping, and geometry targets measure against it. The wall figures
+	/// carry a factor of two over the calibrated maximum: the wall clock
+	/// sees the campaign's own scheduling load and one-time process
+	/// warm-up, and a small input descheduled past the calibrated figure is
+	/// not a runaway. The allocation figures stay the calibrated ones,
+	/// which the load does not inflate.
+	pub fn parse() -> Self {
+		Self {
+			time_ms: 2_000,
+			alloc_base: 4_066 * 1024,
+			alloc_per_kib: 1_032 * 1024,
+		}
+	}
+	/// The calibrated layout budget: layout, layout_diff, and highlight. The
+	/// allocation figure carries a factor of 2.5 over the calibrated
+	/// maximum rather than 2: the highlight worker runs detached, so a
+	/// large input's tail can still be allocating while the next input's
+	/// guard is open, and the overlap lands on that input's account.
+	pub fn layout() -> Self {
+		Self {
+			time_ms: 2_000,
+			alloc_base: 32_000 * 1024,
+			alloc_per_kib: 1_027 * 1024,
+		}
+	}
+	/// The calibrated PDF budget: the export target.
+	pub fn pdf() -> Self {
+		Self {
+			time_ms: 2_400,
+			alloc_base: 26_673 * 1024,
+			alloc_per_kib: 1_029 * 1024,
+		}
+	}
+	/// [`Self::parse`], the lightest stage; keep `Default` on it.
+	pub fn calibrated() -> Self {
+		Self::parse()
+	}
+	/// `self` with the `MARKVIEW_FUZZ_TIME_MS`,
+	/// `MARKVIEW_FUZZ_ALLOC_BASE_KB`, and `MARKVIEW_FUZZ_ALLOC_KB_PER_KB`
+	/// overrides applied, so a long campaign can relax or tighten budgets
+	/// without a rebuild.
+	pub fn from_env(self) -> Self {
+		let mut out = self;
+		if let Some(v) = env("MARKVIEW_FUZZ_TIME_MS")
+			&& let Ok(v) = v.parse()
+		{
+			out.time_ms = v;
+		}
+		if let Some(v) = env("MARKVIEW_FUZZ_ALLOC_BASE_KB")
+			&& let Ok(v) = v.parse::<u64>()
+		{
+			out.alloc_base = v * 1024;
+		}
+		if let Some(v) = env("MARKVIEW_FUZZ_ALLOC_KB_PER_KB")
+			&& let Ok(v) = v.parse::<u64>()
+		{
+			out.alloc_per_kib = v * 1024;
+		}
+		out
+	}
+	/// The peak-allocation allowance for an input of this many bytes.
+	pub fn alloc_limit(&self, input_bytes: usize) -> u64 {
+		self.alloc_base.saturating_add(
+			(input_bytes as u64).div_ceil(1024) * self.alloc_per_kib,
+		)
+	}
+}
+
+impl Default for Budget {
+	fn default() -> Self {
+		Self::calibrated()
+	}
+}
+
+fn env(key: &str) -> Option<String> {
+	std::env::var(key).ok().filter(|v| !v.is_empty())
+}
+
+/// One budgeted input. Wraps the work and fails loudly if either budget is
+/// exceeded, which libFuzzer records as a regression test.
+pub struct InputGuard {
+	start: Instant,
+	alloc_base: u64,
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	// The reverse test that pins the allocation gate: with a zero allowance
+	// a live allocation inside the guard must panic, or the gate is inert.
+	#[test]
+	#[should_panic(expected = "allocation budget")]
+	fn a_zero_alloc_allowance_is_enforced() {
+		let guard = InputGuard::new();
+		let chunk = vec![0u8; 64 * 1024];
+		guard.finish(
+			&Budget {
+				time_ms: 60_000,
+				alloc_base: 0,
+				alloc_per_kib: 0,
+			},
+			chunk.len(),
+		);
+	}
+}
+
+impl InputGuard {
+	pub fn new() -> Self {
+		// The live total is the baseline: what was already resident before
+		// this input is not its fault.
+		Self {
+			start: Instant::now(),
+			alloc_base: GLOBAL.peak(),
+		}
+	}
+	pub fn finish(self, budget: &Budget, input_bytes: usize) {
+		let elapsed = self.start.elapsed();
+		if elapsed.as_millis() > u128::from(budget.time_ms) {
+			panic!(
+				"wall budget: {elapsed:?} for a {input_bytes}-byte input exceeds {budget:?}"
+			);
+		}
+		let peak = GLOBAL.peak();
+		let limit = budget.alloc_limit(input_bytes);
+		if peak.saturating_sub(self.alloc_base) > limit {
+			panic!(
+				"allocation budget: one {input_bytes}-byte input grew live memory by \
+				 {} bytes, allowance {limit}",
+				peak.saturating_sub(self.alloc_base)
+			);
+		}
+	}
+}
+
+impl Default for InputGuard {
+	fn default() -> Self {
+		Self::new()
+	}
+}

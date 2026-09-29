@@ -430,6 +430,55 @@ fn incremental_parse_matches_a_full_parse_for_plain_edits() {
 }
 
 #[test]
+fn a_bom_at_a_window_start_falls_back_to_a_full_parse() {
+	// A fuzz finding: the parser drops a BOM only at the very start of a
+	// document, and the incremental window is parsed as its own document.
+	// A window that opens on a mid-document BOM would parse its first block
+	// shorter than the full parse does.
+	let before =
+		"\u{feff}**bold** __ital__~~gone~~\n\n\u{feff}second paragraph text.\n";
+	assert_edit(before, &format!("{before}\n## heading now\n"));
+}
+
+#[test]
+fn a_lone_carriage_return_keeps_source_ranges_on_the_right_line() {
+	// A fuzz finding: comrak ends a line at `\r` as well as `\n`, so a
+	// leading carriage return puts the content on line 2. The line table must
+	// follow comrak, or every range after the break is computed from the
+	// wrong offset and the incremental window misclassifies the result.
+	let before = "\r\0  $   \0li\0\n";
+	let doc = parse(before);
+	assert!(
+		doc.blocks.iter().all(|b| b.source.start < b.source.end),
+		"every block keeps a nonempty range: {:?}",
+		doc.blocks
+			.iter()
+			.map(|b| b.source.clone())
+			.collect::<Vec<_>>()
+	);
+	assert_eq!(
+		doc.blocks[0].source.start, 1,
+		"the range starts after the \\r"
+	);
+	assert_edit(before, &format!("{before}## heading now\n"));
+}
+
+#[test]
+fn a_lone_cr_in_a_code_block_cannot_break_the_shaper() {
+	let src = "```\n~\u{0}\u{0}\u{0}M\r\u{8e0d}f2I\n```\n";
+	let doc = parse(src);
+	assert_eq!(1, doc.blocks.len());
+	let code = match &doc.blocks[0].kind {
+		BlockKind::Code { text, .. } => text.clone(),
+		other => panic!("expected code block, got {other:?}"),
+	};
+	let lines = crate::layout::code::code_lines(&code);
+	// The carriage return is a line terminator, not content: the shaper
+	// asserts on a newline character inside a run.
+	assert_eq!(vec!["~\u{0}\u{0}\u{0}M", "\u{8e0d}f2I"], lines);
+}
+
+#[test]
 fn incremental_parse_keeps_heading_anchors_unique() {
 	let before = "# Same\n\nOne.\n\n# Same\n\nTwo.\n";
 	assert_incremental(before, "# Same\n\nOne.\n\n# Same\n\nTwo!\n");
@@ -710,6 +759,36 @@ fn details_inline_form() {
 		panic!("expected a paragraph body")
 	};
 	assert_eq!(plain_text(body), "Body");
+}
+
+#[test]
+fn a_details_body_with_a_lone_carriage_return_keeps_its_ranges() {
+	// The body is re-parsed on its own (`snippet`), which needs the same
+	// comrak-compatible line table the document parse uses; before that fix a
+	// lone carriage return shifted every range after it, degenerating the
+	// second block's range to an empty one at the end of the body.
+	let doc =
+		parse("<details>\n<summary>S</summary>First\r\rSecond\n\n</details>\n");
+	let (_, _, blocks) = details(&doc);
+	assert_eq!(blocks.len(), 2);
+	assert_eq!(
+		blocks[1].source.start, 8,
+		"the second block starts after the lone \\r line"
+	);
+}
+
+#[test]
+fn an_indented_details_closer_keeps_the_element_range_on_the_tag() {
+	// A fuzz finding: the closing tag's comrak block reports its sourcepos
+	// at the tag, but the block's literal starts at the line head, so the
+	// element's end must be measured through the literal or an indented
+	// `</details>` drags the range past the tag and out of the source.
+	let doc = parse("<details open>\n\n  </details>\n");
+	assert_eq!(doc.blocks[0].source, 0..28);
+	let (open, summary, blocks) = details(&doc);
+	assert!(open);
+	assert!(summary.is_empty());
+	assert!(blocks.is_empty());
 }
 
 #[test]

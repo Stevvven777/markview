@@ -2,6 +2,8 @@
 pub mod document;
 pub mod fonts;
 mod highlight;
+#[cfg(feature = "fuzz")]
+pub use highlight::prewarm_highlight;
 mod html;
 pub mod image;
 pub mod layout;

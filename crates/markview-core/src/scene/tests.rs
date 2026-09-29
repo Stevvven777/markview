@@ -154,3 +154,21 @@ fn horizontal_scrollbar_uses_the_block_gutter_and_keeps_its_thickness() {
 	// A press on the empty track jumps the thumb under the pointer.
 	assert_eq!(bar.scroll_for(240.0, 300.0, 0.0), 200.0);
 }
+
+#[test]
+fn a_zero_extent_edge_fit_keeps_denormals_finite() {
+	// A fuzz finding: with a non-positive extent the pair still overflowed
+	// the `sum > extent` test, and the `0 / denormal` scale produced NaN
+	// border widths.
+	let rect = Rect {
+		x: 0.0,
+		y: 0.0,
+		w: 0.0,
+		h: -1.7e38,
+	};
+	let out = fit_edges(rect, [0.0, 0.0, f32::MIN_POSITIVE, 0.0]);
+	assert!(
+		out.iter().all(|v| v.is_finite()),
+		"a zero or negative extent must not scale the edges: {out:?}"
+	);
+}

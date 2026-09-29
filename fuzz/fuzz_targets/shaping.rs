@@ -1,0 +1,86 @@
+//! G5, Tier 1 + Tier 2: parley/swash shaping over arbitrary text and sizes,
+//! plus the stylesheet validation the shaper runs on install. Oracle (O1,
+//! O2, I7): no panic within budgets; advances and offsets finite.
+#![no_main]
+
+use libfuzzer_sys::fuzz_target;
+use markview_core::{scene::Paint, shaping::TextShaper, style::Stylesheet};
+use mvfuzz::{budget, oracle, pipeline};
+
+fuzz_target!(|data: &[u8]| {
+	let budget = budget::Budget::parse().from_env();
+	let text = String::from_utf8_lossy(data);
+	if text.len() > 256 * 1024 {
+		return;
+	}
+	let guard = budget::InputGuard::new();
+	let seed = oracle::derive(data);
+	// Sizes vary in the plausible range; one in eight takes a raw bit
+	// pattern (tiny, huge, denormal, or `NaN`) to stress the metric scaling.
+	// The shaper owes finiteness of its results to a finite size: a `NaN`
+	// in may legally give a `NaN` out. The bounded oracle applies where the
+	// size itself is bounded: a label at a 1e30-point size is allowed to be
+	// wide, just not infinite.
+	let (size, bounded) = if seed & 7 == 0 {
+		(f32::from_bits(seed as u32), false)
+	} else {
+		(oracle::f32_unit(seed as u32) * 16.0, true)
+	};
+	// GIGO: the shaper owes finiteness to a finite size while the
+	// per-character advance sum cannot overflow `f32`. Past that, an
+	// infinite result is the honest outcome of `f32` arithmetic, so the
+	// oracle relaxes to "not NaN"; a `NaN` size may still give a `NaN`
+	// out, so a non-finite size skips the check.
+	let size_ok = size.is_finite();
+	let no_overflow = size_ok && size.abs() <= 1e38 / text.len().max(1) as f32;
+	fn check(
+		name: &str,
+		v: f32,
+		size_ok: bool,
+		no_overflow: bool,
+		bounded: bool,
+	) {
+		if !size_ok {
+			return;
+		}
+		if no_overflow {
+			assert!(v.is_finite(), "{name} is not finite: {v:?}");
+			if bounded {
+				oracle::assert_bounded(name, v);
+			}
+		} else {
+			assert!(!v.is_nan(), "{name} is NaN: {v:?}");
+		}
+	}
+	// The validation path runs on install, both for a real sheet and for a
+	// sheet whose rules were stripped out from under it.
+	let mut shaper = TextShaper::with_fonts(pipeline::pinned_fonts());
+	if let Err(e) =
+		shaper.validate_stylesheet(Stylesheet::bundled(false).as_ref())
+	{
+		let _ = e.to_string();
+	}
+	let mut stripped = (*Stylesheet::bundled(false)).clone();
+	stripped.rules.clear();
+	if let Err(e) = shaper.validate_stylesheet(&stripped) {
+		let _ = e.to_string();
+	}
+	let (draws, width) =
+		shaper.label_measured(&text, size, 0.0, 10.0, Paint::Text);
+	check("label.width", width, size_ok, no_overflow, bounded);
+	for d in &draws {
+		if let markview_core::scene::Draw::Glyph(g) = d {
+			check("glyph.x", g.x, size_ok, no_overflow, bounded);
+			check("glyph.y", g.y, size_ok, no_overflow, bounded);
+		}
+	}
+	let fitted = shaper.fit(&text, size, 100.0);
+	check(
+		"fit.width",
+		shaper.text_width(&fitted, size),
+		size_ok,
+		no_overflow,
+		bounded,
+	);
+	guard.finish(&budget, text.len());
+});

@@ -493,7 +493,7 @@ impl Reader<'_> {
 				// The body is the source between the opener and the closing
 				// tag: a nested element that shares that closing block is
 				// parsed from the inside out, so none of its content is lost.
-				let (between, prefix, rest) = {
+				let (between, prefix, rest, tag_end) = {
 					let data = children[close].data.borrow();
 					let NodeValue::HtmlBlock(h) = &data.value else {
 						return None;
@@ -505,6 +505,14 @@ impl Reader<'_> {
 					if tag.end > h.literal.len() {
 						return None;
 					}
+					// `tag` is an offset inside the block's literal, which
+					// starts at the block's first non-blank character minus
+					// the literal's own leading spaces. `close_source`
+					// reports the former, so an indented closing tag would
+					// drag the element's range past the tag itself.
+					let first_line = h.literal.lines().next().unwrap_or("");
+					let indent =
+						first_line.len() - first_line.trim_start().len();
 					// The literals around the body have already lost the
 					// enclosing quote markers, so the raw slice between them
 					// must lose the same ones or the body gains a quote.
@@ -514,13 +522,14 @@ impl Reader<'_> {
 						strip_blockquotes(between, quotes),
 						h.literal[..tag.start].to_string(),
 						h.literal[tag.end..].to_string(),
+						close_source.start - indent + tag.end,
 					)
 				};
 				let mut body = lead;
 				body.push('\n');
 				body.push_str(&between);
 				body.push_str(&prefix);
-				let source = start_source.start..close_source.start + tag.end;
+				let source = start_source.start..tag_end;
 				let blocks = self.markdown_blocks(&body, depth + 1);
 				let summary =
 					self.summary_rich(summary.as_deref(), depth + 1, &source);
@@ -585,8 +594,7 @@ impl Reader<'_> {
 				f.ix = *ix;
 			}
 		}
-		let mut lines = vec![0];
-		lines.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+		let lines = line_starts(text);
 		let mut reader = Reader {
 			source: text,
 			lines,
@@ -751,12 +759,38 @@ fn without_quotes(line: &str, mut depth: usize) -> &str {
 	rest
 }
 
+/// The byte offset of the start of every line, in the sense comrak counts
+/// them. Comrak ends a line at `\n`, `\r`, and `\r\n`; a table built from
+/// `\n` alone would point the source ranges at the wrong line wherever a
+/// lone carriage return occurs.
+fn line_starts(source: &str) -> Vec<usize> {
+	let mut lines = vec![0];
+	let bytes = source.as_bytes();
+	let mut i = 0;
+	while i < bytes.len() {
+		match bytes[i] {
+			b'\n' => {
+				i += 1;
+				lines.push(i);
+			}
+			b'\r' => {
+				i += 1;
+				if i < bytes.len() && bytes[i] == b'\n' {
+					i += 1;
+				}
+				lines.push(i);
+			}
+			_ => i += 1,
+		}
+	}
+	lines
+}
+
 pub fn parse(source: impl Into<Arc<str>>) -> Document {
 	let source = source.into();
 	let arena = Arena::new();
 	let root = parse_document(&arena, &source, &markdown_options());
-	let mut lines = vec![0];
-	lines.extend(source.match_indices('\n').map(|(i, _)| i + 1));
+	let lines = line_starts(&source);
 	let footnotes: HashMap<String, u32> = root
 		.descendants()
 		.filter_map(|n| match &n.data.borrow().value {

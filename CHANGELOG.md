@@ -33,8 +33,8 @@ at the same level, without `[brackets]`.
 - Add `scripts/check_web_font_coverage.py`, which reports the characters of a document that none of the bundled subset faces can draw.
 - Add `ProgressiveLayout`, a layout pass that suspends between blocks and resumes without re-measuring what it already laid out, so a front end can bound each step by a time budget.
 - Add the `@markview/web` TypeScript package and a pnpm monorepo under `web/`, bundling the WebAssembly front end into a reusable component with a progressive layout handle and a very thin demo app.
-
 - Choose the family of each font role — serif, sans-serif, monospace and the same three for Han text — from a **Set fonts** step beside the Fonts page's catalogue filters, one chooser row per role: a pick reflows the document at once and persists as a per-role `fontdef` override, and the Han rows appear only for the `cjk-type` variant in force, offering only the families that cover Han text.
+- A `cargo-fuzz` harness for the library crates (`fuzz/`, not part of the root workspace): eleven targets covering parse, incremental reparse, MVSS, layout, progressive layout, math, highlight, shaping, fonts, PDF export, and render geometry, with structure-aware mutators, calibrated per-input wall and allocation budgets, and spec-derived seed corpora. A `fuzz`-only `prewarm_highlight` API lets the harness pay the syntax-highlight warm-up before its input budgets start.
 
 ### Changed
 
@@ -60,6 +60,12 @@ at the same level, without `[brackets]`.
 - Keep selection painting linear in the paragraph length by scanning only the cluster's own grapheme boundaries.
 - Ask a WebGL2 device only for the limits it has, so the browser backend gets past `request_device` instead of failing it on the desktop storage-buffer and compute defaults.
 - Color a document's code blocks without spawning a thread where the target has none, since `thread::spawn` panics on `wasm32-unknown-unknown` and every fenced block went through it.
+- Source ranges after a lone carriage return: comrak ends lines at `\r` as well as `\n`, and the line-offset table followed only `\n`, shifting every range after the break (and desynchronizing the incremental parser).
+- The incremental parser's line and blank-line model now follows the parser's: a lone carriage return breaks a line, so a list marker hidden after a mid-line carriage return can no longer take the fast path with a window cut through the list's range.
+- An indented `</details>` closing tag no longer drags the element's source range past the tag, which could index out of bounds.
+- The incremental parser falls back to a full parse when its change window starts on a mid-document byte-order mark, which the parser only strips at the start of a document.
+- Code blocks and HTML source split their lines on the parser's line structure (a lone carriage return ends a line), so a carriage return inside a code line can no longer reach the shaper inside a run.
+- Border fitting on a box with a non-positive extent no longer runs a `0 / denormal` scale that produced `NaN` border widths.
 
 ## 0.1.9 - 2026-09-29
 

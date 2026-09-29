@@ -35,6 +35,12 @@ pub fn parse_incremental(
 	{
 		return None;
 	}
+	// A block with an empty source range cannot be positioned against the
+	// change window, so the ranges it would be shifted by are untrustworthy;
+	// the full parse is the correct answer.
+	if previous.blocks.iter().any(|block| block.source.is_empty()) {
+		return None;
+	}
 	let (old, new) = (previous.source.as_bytes(), source.as_bytes());
 	// A byte-wise prefix can end inside a UTF-8 character, so pull both ends
 	// back to a character boundary.
@@ -49,6 +55,7 @@ pub fn parse_incremental(
 		suffix -= 1;
 	}
 	let changed = prefix..old.len() - suffix;
+
 	let delta = new.len() as isize - old.len() as isize;
 	// The window is the blank-line-delimited groups the change touches, so a
 	// block that merges with its neighbour across the change is re-parsed with
@@ -74,7 +81,17 @@ pub fn parse_incremental(
 	// unchanged and everything after it shifted by `delta`.
 	let mut blocks = Vec::with_capacity(previous.blocks.len());
 	blocks.extend(previous.blocks[..first].iter().cloned());
-	let mut replaced = super::parse(source[origin..end].to_owned()).blocks;
+	let window = &source[origin..end];
+	// The window is parsed as its own document, and a parser drops a BOM only
+	// at the very start of a document. A window opening on a mid-document BOM
+	// would parse its first block shorter than the full parse does, so the
+	// BOM is an out-of-fast-path marker like any other.
+	let replaced = if window.starts_with('\u{feff}') {
+		None
+	} else {
+		Some(super::parse(window.to_owned()).blocks)
+	};
+	let mut replaced = replaced?;
 	for block in &mut replaced {
 		shift(block, origin as isize);
 	}
@@ -205,24 +222,32 @@ pub(super) fn definition_free(source: &str) -> bool {
 
 /// Whether every top-level block is a leaf delimited by blank lines: no
 /// container, fence, indented or HTML code, table, or reference definition.
+///
+/// Lines are the parser's lines: a lone carriage return breaks a line too,
+/// so a marker hidden after a mid-line carriage return still counts as a
+/// list line and takes the document off the fast path.
 fn leaf_only(source: &str) -> bool {
 	if !definition_free(source) || source.contains('|') {
 		return false;
 	}
-	source.lines().all(|line| {
-		let indent = line.len() - line.trim_start_matches(' ').len();
-		let rest = &line[indent..];
-		indent < 4
-			&& !rest.starts_with('\t')
-			&& !rest.starts_with('>')
-			&& !rest.starts_with('<')
-			&& !rest.starts_with("```")
-			&& !rest.starts_with("~~~")
-			&& !list_marker(rest)
-			// Front matter is one block however many blank lines it holds, so
-			// the window this path cuts cannot contain it.
-			&& !delimiter_line(rest)
-	})
+	line_ranges(source)
+		.iter()
+		.all(|range| is_leaf_line(&source[range.clone()]))
+}
+
+fn is_leaf_line(line: &str) -> bool {
+	let indent = line.len() - line.trim_start_matches(' ').len();
+	let rest = &line[indent..];
+	indent < 4
+		&& !rest.starts_with('\t')
+		&& !rest.starts_with('>')
+		&& !rest.starts_with('<')
+		&& !rest.starts_with("```")
+		&& !rest.starts_with("~~~")
+		&& !list_marker(rest)
+		// Front matter is one block however many blank lines it holds, so
+		// the window this path cuts cannot contain it.
+		&& !delimiter_line(rest)
 }
 
 /// Whether a line is a bare `---`, which can only be a front-matter delimiter
@@ -254,11 +279,54 @@ fn list_marker(line: &str) -> bool {
 		)
 }
 
-/// Whether a line is blank to the Markdown parser: only spaces, tabs and the
-/// carriage returns of a CRLF ending. Unicode spaces such as NBSP are content,
-/// so treating them as blank would cut through a paragraph.
+/// Whether a line is blank to the Markdown parser: only spaces and tabs. A
+/// carriage return is a line ending in this model and never line content.
+/// Unicode spaces such as NBSP are content, so treating them as blank would
+/// cut through a paragraph.
 fn blank(line: &str) -> bool {
-	line.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\r'))
+	line.bytes().all(|b| matches!(b, b' ' | b'\t'))
+}
+
+/// The content range of every line of `source`, where a line ends at `\n`,
+/// `\r\n`, or a lone `\r`, matching the parser's line structure. The group
+/// and window boundaries this path cuts must fall where the parser cuts, or
+/// a reused block's range does not match the one a full parse assigns.
+fn line_ranges(source: &str) -> Vec<Range<usize>> {
+	let bytes = source.as_bytes();
+	let mut lines = Vec::new();
+	let mut start = 0usize;
+	let mut i = 0usize;
+	while i < bytes.len() {
+		let terminated = matches!(bytes[i], b'\n' | b'\r');
+		if terminated {
+			lines.push(start..i);
+			if bytes[i] == b'\r' && i + 1 < bytes.len() && bytes[i + 1] == b'\n'
+			{
+				i += 2;
+			} else {
+				i += 1;
+			}
+			start = i;
+		} else {
+			i += 1;
+		}
+	}
+	lines.push(start..source.len());
+	lines
+}
+
+/// Whether the line at `index` of `lines` is blank.
+fn line_blank(lines: &[Range<usize>], source: &str, index: usize) -> bool {
+	blank(&source[lines[index].clone()])
+}
+
+/// The line of `source` that owns the byte at `at`: a terminator position
+/// belongs to the line it ends.
+fn line_at(lines: &[Range<usize>], at: usize) -> usize {
+	lines
+		.iter()
+		.position(|line| at <= line.end)
+		.unwrap_or(lines.len() - 1)
 }
 
 fn common_prefix(a: &[u8], b: &[u8]) -> usize {
@@ -275,35 +343,23 @@ fn common_suffix(a: &[u8], b: &[u8]) -> usize {
 
 /// The offset of the first line of the run of non-blank lines holding `at`.
 fn group_start(source: &str, at: usize) -> usize {
-	let at = at.min(source.len());
-	let mut start = source[..at].rfind('\n').map_or(0, |i| i + 1);
-	while start > 0 {
-		let end = start - 1;
-		let prev = source[..end].rfind('\n').map_or(0, |i| i + 1);
-		if blank(&source[prev..end]) {
-			break;
-		}
-		start = prev;
+	let lines = line_ranges(source);
+	let mut index = line_at(&lines, at.min(source.len()));
+	while index > 0 && !line_blank(&lines, source, index - 1) {
+		index -= 1;
 	}
-	start
+	lines[index].start
 }
 
-/// The offset of the newline ending the run of non-blank lines holding `at`,
+/// The offset of the line end after the run of non-blank lines holding `at`,
 /// or the end of the source.
 fn group_end(source: &str, at: usize) -> usize {
-	let at = at.min(source.len());
-	let mut end = source[at..].find('\n').map_or(source.len(), |i| at + i);
-	loop {
-		let next = end + 1;
-		if next >= source.len() {
-			return end;
-		}
-		let line = source[next..].find('\n').map_or(source.len(), |i| next + i);
-		if blank(&source[next..line]) {
-			return end;
-		}
-		end = line;
+	let lines = line_ranges(source);
+	let mut index = line_at(&lines, at.min(source.len()));
+	while index + 1 < lines.len() && !line_blank(&lines, source, index + 1) {
+		index += 1;
 	}
+	lines[index].end
 }
 
 fn shift_range(range: &mut Range<usize>, delta: isize) {

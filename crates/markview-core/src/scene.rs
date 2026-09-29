@@ -190,7 +190,9 @@ pub fn fit_corners(rect: Rect, corners: [f32; 4]) -> [f32; 4] {
 pub fn fit_edges(rect: Rect, mut edges: [f32; 4]) -> [f32; 4] {
 	for (a, b, extent) in [(0, 2, rect.h), (1, 3, rect.w)] {
 		let sum = edges[a] + edges[b];
-		if sum > extent && sum > 0.0 {
+		// A non-positive extent holds no border, so there is nothing to fit
+		// and the `0 / denormal` scale must not run.
+		if sum > extent && sum > 0.0 && extent > 0.0 {
 			edges[a] *= extent / sum;
 			edges[b] *= extent / sum;
 		}

@@ -1,0 +1,41 @@
+name: Fuzz
+on:
+  workflow_call:
+permissions:
+  contents: read
+# F6: prove the harness compiles and the library's `fuzz` feature builds,
+# then one brief smoke per a couple of targets. No campaigns in CI: the
+# corpora and long runs are local, recorded under artifacts/ (R2, R3).
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ github.ref }}-fuzz
+      - name: Linux native development libraries
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libwayland-dev
+      # The `fuzz` feature must stay a visibility relaxation only: it
+      # compiles in every configuration the libraries support (F5).
+      - run: cargo check -p markview-core -p markview-pdf -p markview-render --features fuzz --locked
+      - name: Install cargo-fuzz
+        run: cargo +nightly install cargo-fuzz --locked
+      - name: Build all harness targets (ASAN)
+        working-directory: fuzz
+        run: cargo +nightly fuzz build
+      # Seeds from the official specs so the smoke covers real documents.
+      - name: Prepare seed corpora
+        working-directory: fuzz
+        run: ./scripts/prepare_seeds.sh
+      # Smoke: a handful of inputs per target against the seed corpus.
+      # Leak detection stays off: fontconfig's C caches outlive the process.
+      - name: Smoke run
+        working-directory: fuzz
+        run: |
+          for target in parse reparse mvss math geometry; do
+            ASAN_OPTIONS=detect_leaks=0 cargo +nightly fuzz run $target -- -runs=200
+          done
+        env:
+          FONTCONFIG_FILE: ${{ github.workspace }}/tests/fontconfig.conf

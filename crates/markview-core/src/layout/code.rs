@@ -79,19 +79,13 @@ impl BlockContext<'_> {
 			.theme
 			.as_deref());
 		let highlight_key = super::highlights::key(language, text, theme);
+		let lines = code_lines(text);
 		let highlighted = self
 			.highlight_cache
 			.get(&highlight_key)
 			.cloned()
-			.unwrap_or_else(|| {
-				Arc::new(vec![
-					Vec::new();
-					text.trim_end_matches('\n').split('\n').count()
-				])
-			});
-		for (line_index, line) in
-			text.trim_end_matches('\n').split('\n').enumerate()
-		{
+			.unwrap_or_else(|| Arc::new(vec![Vec::new(); lines.len()]));
+		for (line_index, line) in lines.iter().enumerate() {
 			let original = line;
 			let (line, offsets) = expand_tabs_mapped(line, 4);
 			// Syntax colors are applied after shaping. Keeping the shaper input
@@ -181,4 +175,35 @@ impl BlockContext<'_> {
 		}
 		h
 	}
+}
+
+/// The source lines of a code block, where a line ends at `\n`, `\r\n`,
+/// or a lone `\r` — the parser's line structure. The shaper treats a
+/// carriage return as a newline character, so a line carrying one would
+/// break the layout; trailing blank lines are dropped, as before.
+pub(crate) fn code_lines(text: &str) -> Vec<&str> {
+	let bytes = text.as_bytes();
+	let mut end = bytes.len();
+	while end > 0 && matches!(bytes[end - 1], b'\n' | b'\r') {
+		end -= 1;
+	}
+	let mut lines = Vec::new();
+	let mut start = 0usize;
+	let mut i = 0usize;
+	while i < end {
+		if matches!(bytes[i], b'\n' | b'\r') {
+			lines.push(&text[start..i]);
+			i += 1;
+			if bytes[i.saturating_sub(1)] == b'\r'
+				&& i < end && bytes[i] == b'\n'
+			{
+				i += 1;
+			}
+			start = i;
+		} else {
+			i += 1;
+		}
+	}
+	lines.push(&text[start..end]);
+	lines
 }

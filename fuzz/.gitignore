@@ -1,0 +1,7 @@
+target
+corpus
+artifacts
+coverage
+crash-*
+leak-*
+fuzzlib/Cargo.lock

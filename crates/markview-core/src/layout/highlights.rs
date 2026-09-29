@@ -145,9 +145,9 @@ impl Highlights {
 /// for the queue to drain is never left waiting on a job that never ran.
 fn color(jobs: &[Job], tx: &mpsc::Sender<HighlightMessage>, line_bytes: usize) {
 	let color_one = |(key, language, text, theme): &Job| {
-		let lines = text
-			.trim_end_matches('\n')
-			.split('\n')
+		let code = super::code::code_lines(text);
+		let lines = code
+			.iter()
 			.map(|line| expand_tabs_mapped(line, 4).0.to_owned());
 		let highlighted = crate::highlight::highlight_block(
 			language,

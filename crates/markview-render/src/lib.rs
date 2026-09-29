@@ -271,3 +271,31 @@ fn intersect(a: Rect, b: Rect) -> Option<Rect> {
 	let h = (a.y + a.h).min(b.y + b.h) - y;
 	(w > 0.0 && h > 0.0).then_some(Rect { x, y, w, h })
 }
+
+/// The GPU-free geometry the fuzz targets reach without a device. This is the
+/// only consumer of the crate's `fuzz` feature; the default build sees none of
+/// it.
+#[cfg(feature = "fuzz")]
+pub mod fuzz_api {
+	use markview_core::scene::{Rect, Viewport};
+
+	/// The clip the renderer applies before drawing a region.
+	pub fn intersect(a: Rect, b: Rect) -> Option<Rect> {
+		crate::intersect(a, b)
+	}
+	pub fn fit_corners(rect: Rect, corners: [f32; 4]) -> [f32; 4] {
+		markview_core::scene::fit_corners(rect, corners)
+	}
+	pub fn fit_edges(rect: Rect, edges: [f32; 4]) -> [f32; 4] {
+		markview_core::scene::fit_edges(rect, edges)
+	}
+	pub fn viewport_clip(v: Viewport) -> Rect {
+		v.clip()
+	}
+	pub fn viewport_document_point(v: Viewport, x: f32, y: f32) -> (f32, f32) {
+		v.document_point(x, y)
+	}
+	pub fn viewport_window_rect(v: Viewport, r: Rect) -> Rect {
+		v.window_rect(r)
+	}
+}

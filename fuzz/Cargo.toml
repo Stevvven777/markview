@@ -1,0 +1,132 @@
+[package]
+name = "markview-fuzz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Standalone workspace: the fuzz crate must not leak into the root workspace's
+# build or its dependency graph (F1).
+[workspace]
+members = ["fuzzlib"]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+lopdf = { version = "0.45", default-features = false }
+markview-core = { path = "../crates/markview-core", features = ["fuzz"] }
+markview-pdf = { path = "../crates/markview-pdf", features = ["fuzz"] }
+markview-render = { path = "../crates/markview-render", features = ["fuzz"] }
+mvfuzz = { path = "fuzzlib" }
+tempfile = "3"
+
+# Mirror the workspace patches so the harness fuzzes the same comrak the app
+# does; the mermaid patch is binary-crate-only and not needed here.
+[patch.crates-io]
+comrak = { git = "https://github.com/kivikakk/comrak", rev = "cf8955abe961454dff39cfb64952e1933645d870" }
+
+# Overflow checks stay on (the `dev` default): an integer overflow in a
+# fuzzed path panics and becomes a regression test (O1).
+[profile.dev]
+opt-level = 3
+debug = "line-tables-only"
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+debug = "line-tables-only"
+[profile.release.package."*"]
+opt-level = 3
+
+# G1: parsing and incremental entry points (Tier 1).
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+# G1/G3: incremental reparse versus full parse (Tier 3 differential).
+[[bin]]
+name = "reparse"
+path = "fuzz_targets/reparse.rs"
+test = false
+doc = false
+bench = false
+
+# G2: MVSS stylesheet parsing (Tier 1).
+[[bin]]
+name = "mvss"
+path = "fuzz_targets/mvss.rs"
+test = false
+doc = false
+bench = false
+
+# G3: the layout pipeline (Tier 1).
+[[bin]]
+name = "layout"
+path = "fuzz_targets/layout.rs"
+test = false
+doc = false
+bench = false
+
+# G3: cached vs uncached and prefix vs final snapshots (Tier 3 differential).
+[[bin]]
+name = "layout_diff"
+path = "fuzz_targets/layout_diff.rs"
+test = false
+doc = false
+bench = false
+
+# G4: math through ratex (Tier 1 + Tier 2).
+[[bin]]
+name = "math"
+path = "fuzz_targets/math.rs"
+test = false
+doc = false
+bench = false
+
+# G4: syntax highlighting through syntect (Tier 1 + Tier 2).
+[[bin]]
+name = "highlight"
+path = "fuzz_targets/highlight.rs"
+test = false
+doc = false
+bench = false
+
+# G5: text shaping (Tier 1 + Tier 2).
+[[bin]]
+name = "shaping"
+path = "fuzz_targets/shaping.rs"
+test = false
+doc = false
+bench = false
+
+# G5: font byte and directory validation (Tier 1 + Tier 2).
+[[bin]]
+name = "fonts"
+path = "fuzz_targets/fonts.rs"
+test = false
+doc = false
+bench = false
+
+# G6: PDF export with byte determinism and a structured readback (Tier 1 +
+# Tier 2 + Tier 3).
+[[bin]]
+name = "pdf"
+path = "fuzz_targets/pdf.rs"
+test = false
+doc = false
+bench = false
+
+# G7: the renderer's GPU-free geometry (Tier 1 + Tier 3).
+[[bin]]
+name = "geometry"
+path = "fuzz_targets/geometry.rs"
+test = false
+doc = false
+bench = false
