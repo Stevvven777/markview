@@ -17,6 +17,7 @@ ratex-katex-fonts.workspace = true
 ratex-types.workspace = true
 swash.workspace = true
 tiny-skia.workspace = true
+web-time.workspace = true
 # No windowing toolkit: the host hands over a `SurfaceSource`, so drawing and
 # driving text never names a window.
 # No font directories: a front end that compiles this for the Web has no

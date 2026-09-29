@@ -2,7 +2,7 @@
 use super::{LayoutOptions, expand_tabs_mapped};
 use crate::{document::Block, style::Condition};
 use std::ops::Range;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{
 	collections::{HashMap, HashSet},
 	sync::{
@@ -12,6 +12,7 @@ use std::{
 	},
 	thread,
 };
+use web_time::Instant;
 pub(super) type HighlightLines =
 	Vec<Vec<(Range<usize>, Option<crate::style::Color>)>>;
 pub(super) type HighlightResult = Arc<HighlightLines>;

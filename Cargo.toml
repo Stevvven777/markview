@@ -91,6 +91,10 @@ serde_json = "1"
 skrifa = "0.42"
 swash = "0.2.9"
 tiny-skia = "0.11"
+# `std::time::Instant::now` panics on `wasm32-unknown-unknown`, so a library a
+# browser drives takes its clock from here instead. On every other target
+# this is `std::time` re-exported, so nothing changes there.
+web-time = "1.1"
 # Archive readers for downloadable font families. `zip` and `tar` are pure
 # Rust; `zstd` compiles its own C sources, which the tree already does.
 zip = { version = "8", default-features = false, features = ["deflate"] }

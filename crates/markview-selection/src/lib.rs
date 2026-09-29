@@ -13,7 +13,8 @@
 
 use markview_core::layout::LayoutSnapshot;
 use markview_core::text::{TextPosition, TextSelection};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 /// How long two presses still count as the same click.
 const CLICK_INTERVAL: Duration = Duration::from_millis(500);
