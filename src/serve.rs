@@ -1,8 +1,8 @@
 //! The windowless server an editor plugin drives.
 //!
 //! The client owns the text and the viewport; this side owns layout. A request
-//! is one line of JSON on stdin and its response is one line on stdout, so the
-//! client reads exactly one line per request. Reaching the end of stdin ends
+//! is one line of JSON on stdin. A response is a JSON header on stdout; tile
+//! headers are followed by exactly `tile.bytes` raw PNG bytes, without a delimiter. Reaching the end of stdin ends
 //! the process, which is what keeps a host that crashes or is killed from
 //! leaving a server behind.
 use crate::{
@@ -12,11 +12,10 @@ use crate::{
 	settings::{ExportFormat, ExportSettings},
 };
 use anyhow::{Context, Result, bail};
-use base64::Engine as _;
 use markview_core::{
 	document,
 	layout::{LayoutEngine, LayoutOptions, LayoutSnapshot},
-	scene::{PlacedBlock, Rect},
+	scene::{Paint, PlacedBlock, Rect},
 	style::{StyleTarget, Stylesheet},
 };
 use serde_json::{Value, json};
@@ -31,6 +30,8 @@ use std::{
 
 /// A document the client handed over, with the layout it last produced.
 struct Open {
+	/// Explicit templates retain their palette when the host theme changes.
+	templated: bool,
 	document: document::Document,
 	images: crate::images::Images,
 	/// The layout options this document was laid out with. The host resolves
@@ -71,6 +72,28 @@ fn state(id: &str, open: &Open) -> Value {
 	})
 }
 
+/// A response header, optionally followed by an encoded image body.
+pub struct Reply {
+	header: String,
+	pixels: Vec<u8>,
+}
+
+impl From<String> for Reply {
+	fn from(header: String) -> Self {
+		Self {
+			header,
+			pixels: Vec::new(),
+		}
+	}
+}
+
+impl Reply {
+	fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+		writeln!(writer, "{}", self.header)?;
+		writer.write_all(&self.pixels)
+	}
+}
+
 /// The state a session carries across requests.
 pub struct Session {
 	engine: LayoutEngine,
@@ -99,15 +122,15 @@ impl Session {
 		}
 	}
 
-	/// Handles one request line and returns the response line.
+	/// Handles one request line and returns its header and optional image body.
 	///
 	/// A malformed request is answered rather than fatal, so one bad message
 	/// from a client does not take the session's other documents down.
-	pub fn handle(&mut self, line: &str) -> String {
+	pub fn handle(&mut self, line: &str) -> Reply {
 		let request: Value = match serde_json::from_str(line) {
 			Ok(request) => request,
 			Err(error) => {
-				return failure(&format!("Malformed request: {error}"));
+				return failure(&format!("Malformed request: {error}")).into();
 			}
 		};
 		let Some((method, params)) = request
@@ -115,12 +138,12 @@ impl Session {
 			.filter(|fields| fields.len() == 1)
 			.and_then(|fields| fields.iter().next())
 		else {
-			return failure("A request is one { method: params } pair");
+			return failure("A request is one { method: params } pair").into();
 		};
 		match method.as_str() {
 			"open" => self.open(params),
 			"close" => self.close(params),
-			"tile" => self.tile(params),
+			"tile" => return self.tile(params),
 			"text" => self.text(params),
 			"rendered" => self.rendered(params),
 			"appearance" => self.appearance(params),
@@ -129,6 +152,7 @@ impl Session {
 			"saved" => self.saved(params),
 			_ => failure(&format!("Unknown method {method}")),
 		}
+		.into()
 	}
 
 	/// Takes the client's text and answers with its geometry.
@@ -206,6 +230,8 @@ impl Session {
 		}
 		let directory = path.parent().map(Path::to_path_buf);
 		let open = Open {
+			templated: params.get("template").is_some()
+				|| params.get("stylesheet").is_some(),
 			document,
 			text: Arc::from(text),
 			images,
@@ -244,6 +270,22 @@ impl Session {
 	/// served from one session can differ.
 	fn options_with(&self, params: &Value) -> Result<LayoutOptions> {
 		let mut options = self.options.clone();
+		if params.get("template").is_some()
+			|| params.get("stylesheet").is_some()
+		{
+			let names = params
+				.get("template")
+				.map(|value| {
+					value
+						.as_str()
+						.context("template must be a name")
+						.map(str::to_owned)
+				})
+				.transpose()?
+				.into_iter()
+				.collect::<Vec<_>>();
+			options.stylesheet = Self::template_stylesheet(&names, params)?;
+		}
 		let Some(settings) = params.get("settings") else {
 			return Ok(options);
 		};
@@ -353,6 +395,25 @@ impl Session {
 		}
 	}
 
+	/// Preview and export use the same native template resolver.
+	fn template_stylesheet(
+		names: &[String],
+		params: &Value,
+	) -> Result<Arc<Stylesheet>> {
+		let mut sheet = (*crate::export::export_stylesheet(
+			names,
+			markview_core::style::CjkType::Sc,
+			&[],
+		)?)
+		.clone();
+		if let Some(rules) = params.get("stylesheet") {
+			sheet.merge(&Stylesheet::parse(
+				rules.as_str().context("stylesheet must be MVSS text")?,
+			)?);
+		}
+		Ok(Arc::new(sheet))
+	}
+
 	fn run_export(&mut self, params: &Value) -> Result<String> {
 		let started = std::time::Instant::now();
 		let id = params
@@ -366,19 +427,7 @@ impl Session {
 				.context("export needs an output path")?,
 		);
 		let settings = Self::export_settings(params)?;
-		// A template the client holds but has not installed travels as MVSS
-		// text, layered on whatever the named styles already said.
-		let mut sheet = (*crate::export::export_stylesheet(
-			&settings.style,
-			markview_core::style::CjkType::Sc,
-			&[],
-		)?)
-		.clone();
-		if let Some(rules) = params.get("stylesheet") {
-			sheet.merge(&Stylesheet::parse(
-				rules.as_str().context("stylesheet must be MVSS text")?,
-			)?);
-		}
+		let sheet = Self::template_stylesheet(&settings.style, params)?;
 		// Only explicit page settings override the selected template.
 		let mut page = sheet.page().clone();
 		if params.get("paper").is_some() {
@@ -392,7 +441,7 @@ impl Session {
 		}
 		let geometry =
 			markview_core::paginate::PageGeometry::from_style(&page)?;
-		let stylesheet = Arc::new(sheet);
+		let stylesheet = sheet;
 		let open = self
 			.documents
 			.get(id)
@@ -745,6 +794,9 @@ impl Session {
 				self.base = base;
 			}
 			for open in self.documents.values_mut() {
+				if open.templated {
+					continue;
+				}
 				let diagrams_changed = open.options.stylesheet.diagram_key()
 					!= sheet.diagram_key();
 				open.options.stylesheet = sheet.clone();
@@ -779,6 +831,9 @@ impl Session {
 				engine, documents, ..
 			} = self;
 			for open in documents.values_mut() {
+				if open.templated {
+					continue;
+				}
 				open.layout = engine.layout_with_images(
 					&open.document,
 					&open.options,
@@ -885,17 +940,17 @@ impl Session {
 	}
 
 	/// Renders one viewport rectangle and answers with the encoded image.
-	fn tile(&mut self, params: &Value) -> String {
+	fn tile(&mut self, params: &Value) -> Reply {
 		match self.render_tile(params) {
 			Ok(response) => response,
-			Err(error) => failure(&format!("{error:#}")),
+			Err(error) => failure(&format!("{error:#}")).into(),
 		}
 	}
 
 	/// A tile is a pure rendering of the snapshot the document already holds:
 	/// the viewport moves what is shown, not where anything sits, so the tiled
 	/// layout stays the one the client was given at `open`.
-	fn render_tile(&mut self, params: &Value) -> Result<String> {
+	fn render_tile(&mut self, params: &Value) -> Result<Reply> {
 		let id = params
 			.get("id")
 			.and_then(Value::as_str)
@@ -954,7 +1009,11 @@ impl Session {
 			// tile has no chrome: the whole rectangle is document.
 			top: 0.0,
 			bottom: 0.0,
-			theme: self.theme,
+			theme: if self.documents[id].templated {
+				Theme::Light
+			} else {
+				self.theme
+			},
 			horizontal: &horizontal,
 		};
 		let mut renderer = match self.renderer.take() {
@@ -969,20 +1028,35 @@ impl Session {
 		// settling a raster needs it mutably while the layout is still being
 		// read for the draw.
 		let mut open = self.documents.remove(id).expect("checked above");
+		renderer.set_stylesheet(open.options.stylesheet.clone());
 		let drawn = self.draw_tile(&mut renderer, &mut open, &view);
 		self.documents.insert(id.to_owned(), open);
 		self.renderer = Some(renderer);
 		let png = drawn?;
-		Ok(json!({ "tile": {
+		// Match the renderer's opaque clear color from this document's sheet.
+		let color = self.documents[id]
+			.options
+			.stylesheet
+			.paint(Paint::Background);
+		let background =
+			[color[0], color[1], color[2]].map(|v| (v * 255.0).round() as u8);
+		if png.len() > 64 * 1024 * 1024 {
+			bail!("A tile PNG exceeds the 64 MiB transport limit");
+		}
+		Ok(Reply {
+			header: json!({ "tile": {
 			"id": id,
 			"width": view.width,
 			"height": view.height,
 			"scale": view.scale,
 			"scroll": view.scroll,
 			"bytes": png.len(),
-			"png": base64::engine::general_purpose::STANDARD.encode(&png),
+			"encoding": "png",
+            "background": background,
 		} })
-		.to_string())
+			.to_string(),
+			pixels: png,
+		})
 	}
 
 	/// Draws one tile, settling any raster the draw itself asked for.
@@ -1274,7 +1348,7 @@ pub fn run(args: &LaunchOptions) -> Result<()> {
 		};
 		if let Some(line) = request.filter(|line| !line.trim().is_empty()) {
 			let response = session.handle(&line);
-			writeln!(stdout, "{response}")?;
+			response.write_to(&mut stdout)?;
 		}
 		for published in session.pump() {
 			writeln!(stdout, "{published}")?;
@@ -1297,8 +1371,41 @@ mod tests {
 	}
 
 	fn answered(session: &mut Session, request: Value) -> Value {
-		let line = session.handle(&request.to_string());
-		serde_json::from_str(&line).expect("a response is JSON")
+		let reply = session.handle(&request.to_string());
+		let mut header: Value = serde_json::from_str(&reply.header)
+			.expect("a response header is JSON");
+		if !reply.pixels.is_empty() {
+			assert_eq!(header["tile"]["bytes"], reply.pixels.len());
+			assert_eq!(header["tile"]["encoding"], "png");
+			assert!(header["tile"].get("png").is_none());
+			// Keep the body alongside the header for in-process pixel assertions.
+			header["tile"]["png"] = json!(reply.pixels);
+		}
+		header
+	}
+
+	#[test]
+	fn binary_reply_keeps_headers_and_png_bytes_separate() {
+		let pixels = vec![137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 123, 125];
+		let header =
+			json!({"tile": {"encoding": "png", "bytes": pixels.len()}})
+				.to_string();
+		let reply = Reply {
+			header: header.clone(),
+			pixels: pixels.clone(),
+		};
+		let mut wire = Vec::new();
+		reply.write_to(&mut wire).unwrap();
+		Reply::from(failure("next response"))
+			.write_to(&mut wire)
+			.unwrap();
+		let boundary = header.len() + 1;
+		assert_eq!(&wire[..boundary], format!("{header}\n").as_bytes());
+		assert_eq!(&wire[boundary..boundary + pixels.len()], pixels);
+		assert_eq!(
+			&wire[boundary + pixels.len()..],
+			format!("{}\n", failure("next response")).as_bytes()
+		);
 	}
 
 	#[test]
@@ -1489,9 +1596,8 @@ mod tests {
 	}
 
 	fn decode_tile(response: &Value) -> Vec<u8> {
-		base64::engine::general_purpose::STANDARD
-			.decode(response["tile"]["png"].as_str().expect("a png"))
-			.expect("valid base64")
+		serde_json::from_value(response["tile"]["png"].clone())
+			.expect("PNG bytes")
 	}
 
 	fn png_size(png: &[u8]) -> (u32, u32) {
@@ -2684,13 +2790,13 @@ mod tests {
 		let output = dir.path().join("out.pdf");
 		std::fs::write(&source, "# Disk version").unwrap();
 		let mut session = session();
-		let opened = serde_json::from_str::<Value>(&session.handle(&json!({"open":{"id":"doc","path":source,"text":"# Unsaved buffer\n\nNative export."}}).to_string())).unwrap();
+		let opened = serde_json::from_str::<Value>(&session.handle(&json!({"open":{"id":"doc","path":source,"text":"# Unsaved buffer\n\nNative export."}}).to_string()).header).unwrap();
 		assert!(opened.get("opened").is_some());
-		let refused = serde_json::from_str::<Value>(&session.handle(&json!({"export":{"id":"doc","output":dir.path().join("./source.md")}}).to_string())).unwrap();
+		let refused = serde_json::from_str::<Value>(&session.handle(&json!({"export":{"id":"doc","output":dir.path().join("./source.md")}}).to_string()).header).unwrap();
 		assert!(refused["error"].as_str().unwrap().contains("overwrite"));
-		let failed = serde_json::from_str::<Value>(&session.handle(&json!({"export":{"id":"doc","output":output,"style":"no-such-template"}}).to_string())).unwrap();
+		let failed = serde_json::from_str::<Value>(&session.handle(&json!({"export":{"id":"doc","output":output,"style":"no-such-template"}}).to_string()).header).unwrap();
 		assert!(failed.get("error").is_some());
-		let result = serde_json::from_str::<Value>(&session.handle(&json!({"export":{"id":"doc","output":output,"stylesheet":"format_version = 2\nversion = 1\ntargets = [\"pdf\"]\n[page]\nsize = \"a5\"\nmargin = [5, 5, 5, 5]\nheader_center = \"{path}\"\n[[rule]]\nwhen = [\"h1\"]\ncolor = \"#244C80\""}}).to_string())).unwrap();
+		let result = serde_json::from_str::<Value>(&session.handle(&json!({"export":{"id":"doc","output":output,"stylesheet":"format_version = 2\nversion = 1\ntargets = [\"pdf\"]\n[page]\nsize = \"a5\"\nmargin = [5, 5, 5, 5]\nheader_center = \"{path}\"\n[[rule]]\nwhen = [\"h1\"]\ncolor = \"#244C80\""}}).to_string()).header).unwrap();
 		assert!(result.get("exported").is_some(), "{result}");
 		let bytes = std::fs::read(&output).unwrap();
 		assert!(bytes.starts_with(b"%PDF"));
@@ -2783,5 +2889,99 @@ mod tests {
 			session.renderer.is_none(),
 			"diagram preparation is CPU-only"
 		);
+	}
+	#[test]
+	fn preview_templates_are_per_document_and_invalid_changes_are_atomic() {
+		let mut session = session();
+		let text = "# Heading\n\nBody text.\n\nAnother paragraph.";
+		for (id, extra) in [
+			("plain", json!({})),
+			("named", json!({"template": "mondrian"})),
+			("custom", json!({"stylesheet": mvss("line_height = 3.0")})),
+		] {
+			let mut open = json!({"id": id, "text": text});
+			open.as_object_mut()
+				.unwrap()
+				.extend(extra.as_object().unwrap().clone());
+			let response = answered(&mut session, json!({"open": open}));
+			assert!(response.get("opened").is_some(), "{response}");
+		}
+		assert!(!session.documents["plain"].templated);
+		assert!(session.documents["named"].templated);
+		let before = session.documents["custom"].layout.height;
+		assert_ne!(before, session.documents["plain"].layout.height);
+		let bad = answered(
+			&mut session,
+			json!({"open": {
+				"id": "custom", "text": text, "stylesheet": "not valid MVSS"
+			}}),
+		);
+		assert!(bad.get("error").is_some(), "{bad}");
+		assert_eq!(session.documents["custom"].layout.height, before);
+		answered(&mut session, json!({"appearance": {"theme": "dark"}}));
+		assert_eq!(session.documents["custom"].layout.height, before);
+		answered(
+			&mut session,
+			json!({"open": {"id": "custom", "text": text}}),
+		);
+		assert!(!session.documents["custom"].templated);
+	}
+
+	#[test]
+	#[ignore = "requires a GPU; run the serve tests with --ignored"]
+	fn preview_template_pixels_survive_other_documents_and_host_themes() {
+		let mut session = session();
+		let text = "# Heading\n\nA paragraph with **bold** words.";
+		for (id, template) in [("named", Some("mondrian")), ("plain", None)] {
+			let mut open = json!({"id": id, "text": text});
+			if let Some(template) = template {
+				open["template"] = json!(template);
+			}
+			let response = answered(&mut session, json!({"open": open}));
+			assert!(response.get("opened").is_some(), "{response}");
+		}
+		let tile = |session: &mut Session, id: &str| {
+			let response = answered(
+				session,
+				json!({"tile": {
+					"id": id, "width": 800, "height": 400
+				}}),
+			);
+			assert!(response.get("tile").is_some(), "{response}");
+			decode_tile(&response)
+		};
+		let named = tile(&mut session, "named");
+		let plain = tile(&mut session, "plain");
+		assert_ne!(named, plain);
+		assert_eq!(named, tile(&mut session, "named"));
+		answered(&mut session, json!({"appearance": {"theme": "dark"}}));
+		assert_eq!(named, tile(&mut session, "named"));
+		assert_ne!(plain, tile(&mut session, "plain"));
+		assert_eq!(named, tile(&mut session, "named"));
+	}
+	#[test]
+	#[ignore = "requires a GPU; run the serve tests with --ignored"]
+	fn tile_background_matches_the_native_clear_pixels() {
+		let mut session = session();
+		answered(
+			&mut session,
+			json!({"open": {
+				"id": "custom", "text": "Text", "stylesheet": mvss("background = \"#123456\"")
+			}}),
+		);
+		for theme in ["light", "dark"] {
+			answered(&mut session, json!({"appearance": {"theme": theme}}));
+			let response = answered(
+				&mut session,
+				json!({"tile": {
+					"id": "custom", "width": 800, "height": 40
+				}}),
+			);
+			assert_eq!(response["tile"]["background"], json!([18, 52, 86]));
+			let image = image::load_from_memory(&decode_tile(&response))
+				.unwrap()
+				.to_rgb8();
+			assert_eq!(image.get_pixel(0, 0).0, [18, 52, 86]);
+		}
 	}
 }

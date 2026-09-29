@@ -11,13 +11,15 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 editor="${VSCODE_EXEC_PATH:-/Applications/Visual Studio Code.app/Contents/MacOS/Code}"
-scratch="$(mktemp -d "$here/.vscode-test.XXXXXX")"
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/mv-vscode.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 engine="$(cd "$here/../.." && pwd)/target/release/markview"
 
 # The host loads `out/`, so the sources are compiled here rather than left to
 # whoever ran the tests last.
 (cd "$here" && ./node_modules/.bin/tsc -p tsconfig.json)
+node --test "$here/../shared/test/frames.cjs"
+node "$here/test/pickers.js"
 
 # The tests need folders to resolve settings against: the workspace-folder and
 # language-scoped layers of EXT-8 only exist inside one, and two of them show
@@ -46,9 +48,10 @@ cat >"$scratch/ws.code-workspace" <<JSON
 JSON
 development="$here"
 if [ -n "${MARKVIEW_VSIX:-}" ]; then
-    cli="$(dirname "$editor")/../Resources/app/bin/code"
+    cli="${VSCODE_CLI_PATH:-$(dirname "$editor")/../Resources/app/bin/code}"
+    if [[ "$OSTYPE" == linux* ]]; then cli="${VSCODE_CLI_PATH:-$(dirname "$editor")/bin/code}"; fi
     "$cli" --user-data-dir "$scratch/user" --extensions-dir "$scratch/ext" --install-extension "$MARKVIEW_VSIX" --force
-    development="$(node -e 'const fs=require("node:fs"),p=process.argv[1]; const name=fs.readdirSync(p).find(n=>n.startsWith("stevvven.markview-preview-")); if(!name) process.exit(1); console.log(require("node:path").join(p,name));' "$scratch/ext")"
+    development="$(node -e 'const fs=require("node:fs"),p=process.argv[1]; const name=fs.readdirSync(p).find(n=>n.startsWith("stevvven.markview-export-")); if(!name) process.exit(1); console.log(require("node:path").join(p,name));' "$scratch/ext")"
     platform="$(node -p 'process.platform+"-"+process.arch')"
     engine="$development/bin/$platform/markview"
     export MARKVIEW_PACKAGED_EXTENSION=1

@@ -21,6 +21,15 @@ exports.run = async (extension, scratch) => {
 	const sourceEditor = await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
 	await vscode.commands.executeCommand("markview.openPreview", document.uri);
 	await until(() => api.panelReport().rendered.includes("Audit Needle third."), "find index ready");
+	await until(() => api.panelReport().paintedVersion === document.version, "preview tiles painted");
+	const bounds = api.panelReport().tileBounds;
+	assert.ok(bounds.length > 0);
+	for (const tile of bounds) {
+		assert.ok(tile.width > 0 && tile.expectedHeight > 0);
+		assert.ok(Math.abs(tile.height - tile.expectedHeight) < 0.1, "VS Code image defaults must not collapse preview tiles");
+		assert.equal(tile.pixels, tile.expectedPixels, "native raster density matches the display");
+	}
+	console.log("MARKVIEW-TILE-BOUNDS", JSON.stringify(bounds));
 	sourceEditor.selection = new vscode.Selection(2, 0, 2, 5);
 	await until(() => api.panelReport().selection?.text === "Audit", "a selection exists in the visible overlay before find");
 	const positions = [...text.matchAll(/Audit Needle/g)].map((match) => match.index);
@@ -92,5 +101,11 @@ exports.run = async (extension, scratch) => {
 		release();
 		Session.prototype.open = original;
 	}
+	await require("./repaint.js").run(extension, scratch);
+	await require("./templates.js").run(extension);
+	await require("./scroll-top.js").run(extension, scratch);
+	await require("./fit.js").run(extension, scratch);
+    await require("./follow-editor.js").run(extension);
+    await require("./export-compat.js").run(extension, scratch);
 	console.log("MARKVIEW-REGRESSIONS ok native-find entity-copy initial-open-race");
 };

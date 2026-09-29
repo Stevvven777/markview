@@ -1,6 +1,7 @@
-name: Preview extension packages
+name: Markview4vsc packages
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     paths: ['editors/**', 'src/**', 'crates/**', 'Cargo.*', '.github/workflows/preview-extension.yml']
   pull_request:
@@ -40,6 +41,6 @@ jobs:
         run: editors/vscode/package-vsix.sh '${{ matrix.platform }}'
       - uses: actions/upload-artifact@v6
         with:
-          name: markview-preview-${{ matrix.platform }}
+          name: markview4vsc-platform-${{ matrix.platform }}
           path: editors/vscode/dist/*.vsix
           if-no-files-found: error

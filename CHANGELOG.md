@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Add Markview4vsc: native live preview and PDF/PNG export in one extension, with shared templates, legacy export compatibility and CI tests.
+
 ### Changed
 
 - Focus security documentation on policy and the threat model, with implementation details and verification work in separate references.
@@ -34,9 +38,6 @@ This release adds in-document text search with a bottom search bar, MVSS `table.
 - Offer artist-template font downloads through international CTAN and TUNA mirrors, with matching SHA-256 pins and template fonts preferred over system alternatives.
 
 - Add MVSS `table.border_collapse` modes to share cell borders or retain independent, optionally rounded cell borders.
-- Prepare **Better markdown PDF**, the standalone export extension, for the personal Marketplace publisher `Stevvven`.
-
-- Add a standalone VS Code PDF/PNG export extension with bundled native engine, custom MVSS templates and document-scoped context-menu exports.
 
 - Find text throughout a document with a bottom search bar, Unicode case folding, whole-word matching, disclosure navigation and independent match highlights.
 

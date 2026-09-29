@@ -18,6 +18,13 @@ VS Code window
 └── webview  <──── tiles, block map, text layer ────┘
 ```
 
+Requests and ordinary responses use JSON lines. A tile response is a JSON header
+with `encoding: "png"` and `bytes`, immediately followed by exactly that many
+PNG bytes, with no trailing delimiter. The shared client handles arbitrary pipe
+chunk boundaries and forwards a `Uint8Array`; the webview decodes a Blob URL and
+revokes it after decoding. Preview tiles never use base64. A configured engine
+using the old tile protocol is refused with an update instruction.
+
 The plugin instance is private: it never discovers, attaches to, or shares
 state with a Markview the user launched.
 
@@ -60,15 +67,15 @@ Violating any of these is a defect regardless of behavior.
 | ID | Requirement |
 |:--|:--|
 | EXT-1 | The server starts lazily on first use and is reused across documents for the life of a VS Code window. |
-| EXT-2 | A webview panel shows the document, opens from the command palette and the editor title, and can sit beside the source. |
+| EXT-2 | A webview panel shows the document, opens from the command palette and a distinct icon fixed in the Markdown editor title toolbar, and can sit beside the source. An open preview follows the active Markdown document without stealing focus; non-Markdown editors leave it unchanged. |
 | EXT-3 | Scrolling is virtualized: the scrollable extent matches the document height and only the visible band is fetched. |
 | EXT-4 | Edits to an unsaved buffer update the preview, coalesced so a burst of keystrokes converges on the latest state. |
 | EXT-5 | Scroll synchronization is bidirectional, moves the view without moving the caret, and does not oscillate between the two surfaces. |
 | EXT-6 | Native drag selection, clipboard copy, and in-panel find work over the rendered content. |
 | EXT-7 | Clicking in the preview reveals the corresponding source range in the editor. |
-| EXT-8 | Every setting comes from VS Code configuration, resolved per document, including workspace-folder and language-scoped layers. |
+| EXT-8 | Every setting comes from VS Code configuration, resolved per document, including workspace-folder and language-scoped layers. Preview and default export share `markview.template`, falling back to `markviewExport.template` only when the former is unset; an explicit empty value disables the fallback. |
 | EXT-9 | Commands live in the command palette, menus, and user keybindings. The preview surface binds no keys of its own. |
-| EXT-10 | Appearance follows the editor's color theme. |
+| EXT-10 | Appearance follows the editor's color theme when no template is configured; an explicit template retains its own palette. |
 | EXT-11 | Local Markdown links open in the editor and remote links open in the browser. The preview opens no tabs of its own. |
 | EXT-12 | Export commands run and reveal the result. |
 | EXT-13 | The reader exports the document as PDF or PNG under a template of their choosing: one of the engine's own, or a `.mvss.toml` of their own that never has to be installed. |
@@ -128,7 +135,7 @@ be added, but nothing in this plan may depend on it.
 ## Progress
 
 The records below describe the original preview implementation. The port onto
-main `67f1955` plus the published export extension is in progress; affected
+main `9f61e25` plus the published export extension is in progress; affected
 requirements need fresh tests and review before this branch is accepted.
 The independently published export subset retains its history in
 [export-plugin-requirements.md](export-plugin-requirements.md).
@@ -136,6 +143,9 @@ The independently published export subset retains its history in
 
 | Port scope | Result |
 |:--|:--|
+| EXT-1/2/4/8, TST-4 active-editor follow-up | **Approve, round 1**, 2026-09-29 (`review-follow.log`). One preview follows actual Markdown tab changes without stealing focus, with scoped settings and latest-request protection; non-Markdown and closed-panel behavior remain stable. Full suite (`follow-full-7.log`), installed regressions and actual reload pass. Creation focus and early-ready races were fixed; background-edit/link tests were aligned with following semantics. |
+| EXT-2, EXT-8/10, INV-1..4, NFR-3/4, TST-4 reload/background follow-up | **Approve, round 1**, 2026-09-29 (`review-restore.log`). Serializer restores editor buffers, scroll and panel group without awaiting webview delivery; native tile metadata colors the outer spacing with the committed frame. Actual installed-window reload, installed full suite, 798 CPU and 13 GPU tests pass. |
+| ENG-5, INV-2, EXT-2..4, NFR-2; TST-4 transport follow-up | **Approve, round 1**, 2026-09-29 (`review-binary.log`). Raw PNG frames and typed-array/Blob display replace base64. 798 workspace tests, 12 GPU tests, framing tests, final full-host and both installed packages pass; fixed PNG bytes match the baseline with 24.99% less wire data. The old string-identity assertion and export whitelist omission were fixed before review; intermittent resize evidence stays open. |
 | TST-1, TST-2, TST-3, ENG-10 | **Approve, round 2**, 2026-09-27. Round 1 caught stale Mermaid images and missing diagram reflow; round 2 verified refreshed pixels, preserved palette geometry and published size changes. 794 default tests and 11 server GPU tests pass; clippy passes. |
 | EXT-8, EXT-9 | **Approve, round 1**, 2026-09-27. `review-settings.log` verifies document-scoped configuration and host-owned commands against the completed installed-VSIX integration run. |
 | NFR-7 | **Approve, round 1**, 2026-09-27. `review-platform.log` verifies Linux dependencies and the glibc 2.35 baseline on both architectures. NFR-6 remains open until all six packages build. |
@@ -169,6 +179,9 @@ touches one of these reopens it.
 | ENG-16, EXT-13 | approve | Export by template, 2026-09-22, after three reviews, all of them real. The first found that picking "None" in the template picker fell back to the configured template, and that the setting was read without the exported document's scope, so a `[markdown]` or folder override never reached it. The second found that a templated PNG export left its stylesheet installed on the session's shared renderer, so the next preview tile was drawn in the export's appearance. The test now draws a band before and after such an export and asserts the pixels are unchanged. |
 | EXT-4 | approve | Live buffer updates, 2026-09-21, after two reviews. The first found that five of the six edits in the burst were refused by the editor and that one update opened the document twice; the second approved it with six applied edits, seven buffer changes and one layout. |
 | EXT-2, EXT-3 | approve | The panel and virtualized scrolling, 2026-09-21, after three reviews in a real VS Code. The first found a preview that stayed hidden behind another tab and bands that accumulated and were refetched; the second found a previously previewed document's change listener outliving the switch, so editing it blanked the panel now showing another document and replaced its extent. The panel now reveals itself when asked for, keeps one tile per band and drops the ones it has scrolled past, asks for every band the viewport shows rather than only the one its offset falls in, drops tile answers whose document id is not the one on screen, and watches one document at a time. |
+| EXT-2, EXT-3, INV-2, TST-4 | approve | Repaint continuity, 2026-09-29, round 1 (`.work/logs/review-repaint.log`): retain previous pixels until the visible replacement decodes, atomically publish bands, guard stale interactions, and clear pixels on document switches. Final full suite (`repaint-full-3.log`) and installed-VSIX regressions (`repaint-installed.log`) passed with clean shutdown. NFR-1 remains open. |
+| EXT-2, EXT-3, INV-2, TST-4 | approve | Demo audit follow-up, 2026-09-27, round 1: override VS Code image max-height and request physical pixels at display density. Completed `.work/logs/demo-full-suite-3.log` verifies visible CSS bounds and DPR 2 rasters; `.work/logs/review-demo.log` approves. Manual preview and PDF/PNG export succeeded in the installed host. |
+| EXT-2, EXT-8, EXT-10, EXT-13; ENG-5, ENG-10; INV-1..4 | approve | Shared templates and fixed toolbar icon, 2026-09-27, round 2 (`.work/logs/review-template-2.log`). Round 1 found invalid configured preview templates blocked explicit exports; export now uses an independent short-lived document. Native workspace tests, 12 GPU tests, installed-package regressions (`template-installed-2.log`) and final full suite (`template-extension-4.log`) passed. The fixed icon opened a Mondrian preview in the installed host. |
 | INV-1..5, ENG-16, EXT-8, EXT-12, EXT-13, NFR-4, TST-4 (export-only package scope) | approve | 2026-09-26, first completed review of `editors/vscode-export`; an earlier connection attempt did not run. The installed darwin-arm64 VSIX exports dirty buffers with bundled/custom templates and scoped defaults, explicitly bypasses defaults for None, and leaves no engine after graceful close. Picker sequencing uses mocked dialogs; actual dialog driving and host-kill behavior were not re-established. This does not close the full preview extension's outstanding requirements. |
 | EXT-8, EXT-9, EXT-12, EXT-13, TST-4 (export-only context menu) | approve | 2026-09-26, first review of 0.1.1. Native UI driving verified both Markdown editor context-menu entries go directly to Save and export under the workspace template. Installed-VSIX tests verify scoped defaults and dirty buffers; a command regression verifies the menu's URI wins over a different active editor. Full-preview requirements remain pending. |
 
@@ -183,13 +196,59 @@ extension host. See [State of play](#state-of-play) for what is left.
 
 ## State of play
 
-The full Path B implementation is being ported on `feat/vscode-path-b`, based on
-main `67f1955` plus the published standalone export extension. Better markdown
-PDF remains a separate package. Both hosts use `editors/shared/sidecar.ts` and
-the same native rendering/export engine.
+Active Markdown editor following is implemented, including serialized opens
+and stale-response rejection. The final full real-editor suite passes
+(`follow-full-7.log`): dirty buffers, per-folder settings, focus, panel reuse,
+non-Markdown retention, rapid switching and closed-panel behavior are covered.
+Installed regressions (`follow-installed.log`) and actual window reload
+(`follow-reload.log`) also pass with clean engine shutdown. Round 1 approved
+the focused follow-up (`review-follow.log`).
+
+Window-reload restoration and template-colored outer spacing are implemented;
+the installed ordinary-window reload test passed (`restore-real-reload-final.log`),
+including dirty buffers, reading position, editor group, template background and
+later edits. The installed full suite (`restore-installed-full.log`), 798 CPU
+tests and 13 GPU tests also pass. Round 1 approved the focused follow-up
+(`review-restore.log`). Older panels with no saved URI need reopening once after
+upgrading; newly opened panels persist the information needed for restoration. Saved webview state
+contains only the document URI and reading position; the editor still owns text.
+The engine sends its resolved opaque page background with each tile.
+
+Binary preview transport now uses raw PNG frames and typed arrays. The fixed
+1200×800 sample preserves the exact PNG SHA-256 while reducing a tile response
+from 308,793 to 231,625 bytes (24.99%). Workspace tests (798), GPU tests (12),
+framing tests (3), render parity, installed-preview regressions, the final full
+host suite (`binary-full-3.log`) and installed export (`binary-export-2.log`) pass.
+The first completed review approved this transport follow-up (`review-binary.log`);
+fit/scroll reviews, NFR-1 and six-platform distribution remain open. These are transport figures,
+not end-to-end keyboard latency or zero-copy claims.
+
+Preview repaint follow-up retains the previous pixels until all replacement visible
+bands decode, then publishes them together. The final full extension suite
+(`repaint-full-3.log`) and installed VSIX regressions (`repaint-installed.log`)
+passed, including delayed two-band replacement and clean engine shutdown. The first
+completed review approved this repaint follow-up (`review-repaint.log`); NFR-1
+remains open.
+
+The full Path B implementation now lives in `editors/vscode` on
+`feat/markview4vsc`, rebased on main `9f61e25`. Markview4vsc retains the published
+`Stevvven.markview-export` identity and legacy export settings/commands. Preview
+and export share one native process and the client in `editors/shared`; the
+standalone export package has been retired. The consolidation review is pending.
+
+Fit-to-window display now keeps a fixed 16px outer inset and shrinks narrow panes without native reflow, with the full
+suite and installed-package tests green. Its review is pending due to connection failures.
+
+Continuous scrolling was updated on 2026-09-27 and passed the full extension suite
+and installed-package regressions. EXT-5 remains reopened pending a review verdict.
 
 Implemented and approved in the fresh port reviews (NFR-1 and NFR-6 remain open):
 
+- Preview and default export share document-scoped templates, with legacy export-setting
+  fallback and explicit palettes preserved. A distinct M document icon opens preview
+  from the Markdown toolbar. Round 2 approved independent explicit exports.
+- Demo audit fixed collapsed tile images and Retina blur. Real-webview bounds/density
+  regressions and the completed full suite passed; review approved the follow-up.
 - Preview, virtualization, source mapping, editing and scroll synchronization;
   document-scoped settings, theme following, links and template export.
   EXT-8/9 passed the first fresh review against the installed package;
@@ -208,6 +267,17 @@ Implemented and approved in the fresh port reviews (NFR-1 and NFR-6 remain open)
   documentation passed NFR-7 review; the build matrix alone does not close NFR-6.
 
 ## Known defects and missing evidence
+
+- Binary transport follow-up: one full-host run (`binary-full-2.log`) saw a ~47px
+  layout-coordinate resize-anchor shift. Installed regressions subsequently passed
+  unchanged; the separate fit/scroll review remains open.
+
+- **16px inset follow-up (2026-09-27):** locally installed; actual four-edge dimensions, resize, density, selection and pointer mapping passed installed-VSIX regressions (`inset-installed.log`). Full suite passed (`inset-full-5.log`) with clean shutdown. Review gate could not connect (`review-inset.log`, exit 2), so approval remains pending.
+- An expanded 800-paragraph PNG export fixture failed both with and without the inset (`inset-full-2.log`, `inset-baseline.log`); the cause remains unconfirmed. Final validation restores the original 400-paragraph fixture and bounds virtualization requests per scroll instead of assuming a particular number of screens.
+
+- **EXT-2/3/5/6/7 follow-up (2026-09-27):** shrink-to-fit display is implemented and locally installed. It preserves native layout, display-density rasterization, scaled selection/click/drag coordinates, scrolling and resize anchors. Final full suite (`fit-full-8.log`) and installed-package regressions (`fit-installed-6.log`) passed with clean engine shutdown. Review remains pending: the gate could not connect (`review-fit.log`, exit 2); no approve verdict was obtained.
+
+- **EXT-5 reopened (2026-09-27):** continuous scroll following now coalesces updates at 50 ms, removes the 120 px dead zone and already-visible-source skip, and uses native row positions with top/gap handling. Full real-editor tests (`scroll-follow-full-2.log`) and installed-VSIX regressions (`scroll-follow-installed-2.log`) passed, including caret stability, no-op reveals, stale mappings and clean shutdown. The local update is installed. Review remains pending: connection timeouts prevented the gate from running (`review-scroll-follow.log`, exit 2); no approve verdict was obtained.
 
 - **NFR-1** remains open: the test host refuses `type`/`default:type` commands even
   with the source editor active. Automated timing measures `TextEditor.edit` to
@@ -230,9 +300,10 @@ Implemented and approved in the fresh port reviews (NFR-1 and NFR-6 remain open)
 
 ## Open questions
 
-The user authorized committing and pushing `feat/vscode-path-b` to the personal
-fork on 2026-09-27 to run the six-platform packaging workflow. Publishing the
-full preview extension to Marketplace remains a separate decision.
+On 2026-09-29 the user authorized consolidation, CI, a PR from their personal
+fork into `szdytom/markview` main, and a local extension update. Marketplace
+publication is explicitly deferred. The tag-triggered publishing workflow is
+prepared but no release tag or Marketplace upload is part of this change.
 
 ## Port verification
 

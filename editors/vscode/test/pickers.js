@@ -2,6 +2,10 @@
 const assert = require("node:assert/strict");
 const Module = require("node:module");
 const path = require("node:path");
+const manifest = require("../package.json");
+assert.equal(`${manifest.publisher}.${manifest.name}`, "Stevvven.markview-export");
+assert.equal(manifest.displayName, "Markview4vsc");
+for (const entry of manifest.contributes.menus["editor/context"]) assert.ok(entry.command.startsWith("markview."));
 const commands = new Map();
 const calls = [];
 const answers = [];
@@ -19,9 +23,9 @@ const vscode = {
 			return document;
 		},
 		getConfiguration: (name, scope) => {
-			assert.equal(name, "markviewExport");
+			assert.ok(["markview", "markviewExport"].includes(name));
 			assert.equal(scope, document);
-			return { get: () => "configured-template" };
+			return { inspect: () => undefined, get: () => "configured-template" };
 		},
 		fs: { readFile: async () => Buffer.from("custom rules") },
 	},
@@ -55,9 +59,9 @@ Module._load = function (name, ...args) {
 	if (name.endsWith("/sidecar.js")) return { Session };
 	return original.call(this, name, ...args);
 };
-const extension = require("../out/vscode-export/src/extension.js");
+const { registerExports } = require("../out/vscode/src/export.js");
 Module._load = original;
-extension.activate({ subscriptions: [], globalStorageUri: uri("/storage"), asAbsolutePath: (name) => path.resolve(name) });
+registerExports({ subscriptions: [] }, async () => new Session(), () => {});
 
 (async () => {
 	const run = commands.get("markviewExport.exportWithTemplate");
@@ -81,14 +85,14 @@ extension.activate({ subscriptions: [], globalStorageUri: uri("/storage"), asAbs
 	}
 	// A context-menu URI must win over another editor's active document.
 	vscode.window.activeTextEditor = { document: { languageId: "plaintext" } };
-	for (const [command, format] of [["exportPdf", "pdf"], ["exportPng", "png"]]) {
+	for (const prefix of ["markview", "markviewExport"]) for (const [command, format] of [["exportPdf", "pdf"], ["exportPng", "png"]]) {
 		calls.length = 0;
-		await commands.get(`markviewExport.${command}`)(document.uri);
+		await commands.get(`${prefix}.${command}`)(document.uri);
 		assert.equal(calls.find((call) => call.open).text, "# Buffer");
 		assert.deepEqual(calls.find((call) => call.options).options, { format, template: "configured-template" });
 		assert.equal(answers.length, 0, "direct export does not ask for a template");
 	}
-	extension.deactivate();
+
 	const NativeSession = require("../out/shared/sidecar.js").Session;
 	const failed = new NativeSession(path.join(__dirname, "missing-engine"));
 	await assert.rejects(failed.styles());

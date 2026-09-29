@@ -15,6 +15,7 @@
  * the two cannot drive each other.
  */
 import * as vscode from "vscode";
+import { templateFor } from "./template.js";
 import * as path from "path";
 import { randomBytes } from "node:crypto";
 import type { Block, Cluster, Row, Session, State } from "./sidecar.js";
@@ -25,6 +26,9 @@ const COALESCE_MS = 40;
 let panel: vscode.WebviewPanel | undefined;
 /** The group the panel was opened in, for revealing it again. */
 let panelColumn: vscode.ViewColumn | undefined;
+let opening = Promise.resolve();
+let openRequest = 0;
+let requestedDocument: vscode.TextDocument | undefined;
 /**
  * What the panel has observed, for a test to assert against.
  *
@@ -34,6 +38,9 @@ let panelColumn: vscode.ViewColumn | undefined;
  */
 const report = {
 	ready: false,
+    documentUri: "",
+    background: "",
+    restored: false,
 	webviewBytes: 0,
 	selectionRequest: undefined as { start: number; end: number } | undefined,
 	selectionState: null as unknown,
@@ -95,6 +102,10 @@ const report = {
 	painted: 0,
 	/** Version acknowledged after decoded visible tiles pass a paint frame. */
 	paintedVersion: -1,
+	displayedTiles: 0,
+	pixelVersions: [] as number[],
+	refreshing: false,
+	tileBounds: [] as Array<{ width: number; height: number; expectedHeight: number; pixels: number; expectedPixels: number; scale: number; fit: number; viewportWidth: number; documentWidth: number; inset: number[] }>,
 	paintedAt: 0,
 	/** The characters drawn so far, and how they are ordered. */
 	text: "",
@@ -113,9 +124,14 @@ const report = {
 	editorEvents: 0,
 };
 
-/** JSON size estimates the payload; VS Code's transport framing is not included. */
+/** Counts JSON metadata and binary bytes; VS Code's transport framing is excluded. */
 function post(message: unknown) {
-    report.webviewBytes += Buffer.byteLength(JSON.stringify(message));
+    let binaryBytes = 0;
+    const json = JSON.stringify(message, (_key, value) => {
+        if (value instanceof Uint8Array) { binaryBytes += value.byteLength; return null; }
+        return value;
+    });
+    report.webviewBytes += Buffer.byteLength(json) + binaryBytes;
     return panel?.webview.postMessage(message);
 }
 
@@ -138,6 +154,7 @@ const ids = new Map<string, string>();
 let sequence = 0;
 let findEcho: { start: number; end: number } | undefined;
 let coalescing: NodeJS.Timeout | undefined;
+let layoutRequest = 0;
 /** Stops listening to the geometry of the document shown before this one. */
 let unfollow: (() => void) | undefined;
 /** How long an edit keeps the two surfaces from carrying each other's moves. */
@@ -173,18 +190,18 @@ const shifts = new Map<number, number>([[0, 0]]);
 /** The editor listeners for the document the panel is showing. */
 let watching: vscode.Disposable[] = [];
 
-function render(): string {
+function render(uri: string, scroll: number): string {
 	const nonce = randomBytes(16).toString("hex");
 	return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
 	html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-	#viewport { position: absolute; inset: 0; overflow-y: auto; }
-	#spacer { width: 1px; }
-	#page { position: absolute; top: 0; left: 0; right: 0; }
+	#viewport { position: absolute; inset: 16px; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
+	#spacer { position: relative; width: 100%; overflow: hidden; }
+	#page { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 	#tiles { position: absolute; top: 0; left: 0; width: 100%; }
-	#tiles img { position: absolute; left: 0; width: 100%; display: block; }
+	#tiles img { position: absolute; left: 0; width: 100%; max-height: none; display: block; }
 	#text { position: absolute; top: 0; left: 0; right: 0;
 		pointer-events: none; }
 	#text span { position: absolute; color: transparent; white-space: pre;
@@ -200,12 +217,28 @@ function render(): string {
 		white-space: pre; color: transparent; }
 </style></head><body>
 <div id="source"></div>
-<div id="viewport"><div id="spacer"></div><div id="page"><div id="tiles"></div><div id="text"></div></div></div>
+<div id="viewport"><div id="spacer"><div id="page"><div id="tiles"></div><div id="text"></div></div></div></div>
 <div id="notice"></div>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
+const documentUri = ${JSON.stringify(uri).replace(/</g, '\\u003c')};
+let restoredTop = ${scroll};
+const persist = () => vscode.setState({ uri: documentUri, scroll: scrollY() });
 const viewport = document.getElementById('viewport');
 const spacer = document.getElementById('spacer');
+const page = document.getElementById('page');
+let fit = 1;
+const scrollY = () => viewport.scrollTop / fit;
+const viewHeight = () => Math.ceil(viewport.clientHeight / fit);
+const rasterScale = () => window.devicePixelRatio * fit;
+function fitPage(top = scrollY()) {
+    if (!state || viewport.clientWidth <= 0) return;
+    fit = state ? Math.min(1, viewport.clientWidth / state.width) : 1;
+    page.style.width = (state ? state.width : viewport.clientWidth) + 'px';
+    page.style.transform = 'scale(' + fit + ')';
+    spacer.style.height = height() * fit + 'px';
+    viewport.scrollTop = top * fit;
+}
 const tiles = document.getElementById('tiles');
 const text = document.getElementById('text');
 const notice = document.getElementById('notice');
@@ -215,6 +248,7 @@ let state = null;
 let shown = 0;
 let epoch = 0;
 let paintedEpoch = -1;
+let displayEpoch = -1;
 const KEEP = ${KEEP};
 /** What is on screen: the band index, its tile, its text and its rows. */
 let resident = new Map();
@@ -238,18 +272,21 @@ function lastBand(top, view) {
 }
 
 function report() {
-	const top = rowAt(viewport.scrollTop);
+	const top = rowAt(scrollY());
 	vscode.postMessage({
 		generation: shown,
         selectionState: { pending: pendingSelection, selected: selected(), first: text.firstChild?.dataset.start, last: text.lastChild?.dataset.end },
 		live: resident.size,
-		viewport: viewport.clientHeight,
-		scrollHeight: viewport.scrollHeight,
-		at: viewport.scrollTop,
+		displayedTiles: tiles.childElementCount,
+		pixelVersions: [...tiles.children].map(image => Number(image.dataset.version)),
+		refreshing: displayEpoch !== epoch,
+		viewport: viewHeight(),
+		scrollHeight: viewport.scrollHeight / fit,
+		at: scrollY(),
 		// What the reader is looking at, as a source offset and how far into
 		// its row the top of the view is.
 		source: top ? top.source_start : -1,
-		into: top ? viewport.scrollTop - top.y : 0,
+		into: top ? scrollY() - top.y : 0,
 		// The characters drawn so far, which is what a copy would take, and
 		// whether the spans carrying them are in reading order and one per
 		// source offset. Bands arrive in the order the reader scrolls, which
@@ -309,9 +346,11 @@ function blockAtSource(offset) {
  * the reader is in through the edit and sends its new offset, and the view is
  * put back the same distance into that block.
  */
-function forget() {
+function forget(clear = false) {
 	epoch += 1;
-	tiles.replaceChildren();
+	// Keep the last complete pixels until the replacement viewport decodes.
+	if (clear) tiles.replaceChildren();
+	text.inert = true;
 	resident.clear();
 	pending.clear();
 }
@@ -359,7 +398,9 @@ function rowAt(y) {
 			}
 		}
 	}
-	return top;
+	// Spacing follows the next row from the currently painted band.
+	const band = resident.get(firstBand(y, viewHeight()));
+	return top || band?.rows.find(row => row.y > y) || null;
 }
 
 /** The row a source offset belongs to, if one of them was drawn from it. */
@@ -446,9 +487,9 @@ function drawnRows() {
  */
 function ask() {
 	if (!state) return;
-	const view = viewport.clientHeight;
+	const view = viewHeight();
 	if (!view) return;
-	const top = viewport.scrollTop;
+	const top = scrollY();
 	const first = firstBand(top, view);
 	const last = lastBand(top, view);
 	for (let index = first; index <= last; index += 1) {
@@ -456,10 +497,12 @@ function ask() {
 		pending.add(index);
 		vscode.postMessage({
 			tile: index * view, band: index, generation: shown, epoch,
-			width: viewport.clientWidth, height: view,
+			width: state.width, height: view, scale: rasterScale(),
 		});
 	}
 	prune(first, last);
+	present();
+	acknowledgePaint();
 	report();
 }
 
@@ -470,52 +513,99 @@ async function place(data) {
 	// A band answers the document it was asked for, and a panel that has
 	// moved on to another one must not draw it.
 	if (!state || data.id !== state.id) return;
-	if (data.height !== viewport.clientHeight) return;
-	const previous = resident.get(data.band);
-	if (previous) previous.image.remove();
+	if (data.height !== viewHeight() || data.scale !== rasterScale()) return;
 	const image = document.createElement('img');
-	image.src = 'data:image/png;base64,' + data.png;
-	try { await image.decode(); } catch { return; }
+	const url = URL.createObjectURL(new Blob([data.png], { type: 'image/png' }));
+	image.src = url;
+	try { await image.decode(); } catch {
+		if (data.generation === shown && data.epoch === epoch) pending.delete(data.band);
+		return;
+	} finally { URL.revokeObjectURL(url); }
 	if (data.generation !== shown || data.epoch !== epoch) return;
 	pending.delete(data.band);
 	image.style.top = data.scroll + 'px';
 	image.style.height = data.height + 'px';
 	image.dataset.band = data.band;
-	tiles.appendChild(image);
+	image.dataset.version = drawnVersion;
+	const previous = resident.get(data.band);
 	resident.set(data.band, {
 		image,
+        background: data.background,
 		clusters: data.clusters || [],
 		rows: data.rows || [],
 	});
-	rows = rows.concat(data.rows || []);
-	layer(resident.get(data.band));
-	// A selection the editor made in a part of the document that had not been
-	// drawn yet is applied now that its band is here.
-	if (pendingSelection) {
-		selectRange(pendingSelection.start, pendingSelection.end);
+	if (displayEpoch === epoch) {
+		// Decode first, then replace within the same browser task.
+		if (previous) previous.image.replaceWith(image);
+		else tiles.appendChild(image);
+		rows = rows.concat(data.rows || []);
+		layer(resident.get(data.band));
 	}
 	ask();
+	if (displayEpoch === epoch && pendingSelection) {
+		selectRange(pendingSelection.start, pendingSelection.end);
+	}
+}
+
+/** Publish a complete visible generation, never a partly decoded frame. */
+function present() {
+	if (displayEpoch === epoch) return;
+	const view = viewHeight();
+	for (let i = firstBand(scrollY(), view); i <= lastBand(scrollY(), view); i += 1) {
+		if (!resident.has(i)) return;
+	}
+    const background = resident.get(firstBand(scrollY(), view)).background;
+    if (background) document.body.style.backgroundColor = 'rgb(' + background.join(',') + ')';
+	tiles.replaceChildren(...[...resident.values()].map(band => band.image));
+	rows = [];
+	for (const band of resident.values()) {
+		rows = rows.concat(band.rows);
+		layer(band);
+	}
+	displayEpoch = epoch;
+	text.inert = false;
+	if (pendingSelection) selectRange(pendingSelection.start, pendingSelection.end);
+}
+
+function acknowledgePaint() {
+    if (displayEpoch !== epoch || paintedEpoch === epoch) return;
     const painted = epoch;
     requestAnimationFrame(() => requestAnimationFrame(() => {
         if (painted !== epoch || paintedEpoch === epoch) return;
-        const view = viewport.clientHeight;
-        for (let i = firstBand(viewport.scrollTop, view); i <= lastBand(viewport.scrollTop, view); i += 1) {
+        const view = viewHeight();
+        for (let i = firstBand(scrollY(), view); i <= lastBand(scrollY(), view); i += 1) {
             if (!resident.has(i)) return;
         }
         paintedEpoch = epoch;
-        vscode.postMessage({ paintedVersion: drawnVersion, generation: shown });
+        vscode.postMessage({
+            paintedVersion: drawnVersion, generation: shown,
+            background: getComputedStyle(document.body).backgroundColor,
+            tileBounds: [...resident.values()].map(({ image }) => ({
+                width: image.getBoundingClientRect().width,
+                height: image.getBoundingClientRect().height,
+                expectedHeight: parseFloat(image.style.height) * fit,
+                pixels: image.naturalHeight,
+                expectedPixels: Math.ceil(parseFloat(image.style.height) * rasterScale()),
+                scale: window.devicePixelRatio, fit, viewportWidth: viewport.clientWidth, documentWidth: state.width,
+                inset: (() => {
+                    const box = viewport.getBoundingClientRect();
+                    return [box.top, window.innerWidth - box.right, window.innerHeight - box.bottom, box.left];
+                })(),
+            })),
+        });
     }));
 }
 
 viewport.addEventListener('scroll', () => {
+    persist();
 	ask();
-	const top = rowAt(viewport.scrollTop);
+	const top = rowAt(scrollY());
 	// The source offset and the distance into its row travel with the scroll,
 	// so the reader's anchor is never half of one report and half of another.
 	vscode.postMessage({
-		scroll: viewport.scrollTop,
+		scroll: scrollY(),
 		source: top ? top.source_start : -1,
-		into: top ? viewport.scrollTop - top.y : 0,
+		into: top ? scrollY() - top.y : 0,
 	});
 });
 /**
@@ -526,6 +616,7 @@ viewport.addEventListener('scroll', () => {
  * A click that ends a selection is the reader selecting, not pointing.
  */
 viewport.addEventListener('click', function (event) {
+	if (displayEpoch !== epoch) return;
 	if (String(window.getSelection()) !== '') return;
 	const link = linkAt(event.clientX, event.clientY);
 	if (link) {
@@ -547,7 +638,7 @@ viewport.addEventListener('click', function (event) {
 /** The document coordinates of a point on the page. */
 function point(x, y) {
 	const box = viewport.getBoundingClientRect();
-	return { x: x - box.left, y: y - box.top + viewport.scrollTop };
+	return { x: (x - box.left) / fit, y: (y - box.top) / fit + scrollY() };
 }
 
 /** The link whose rectangle holds a point, if the engine drew one there. */
@@ -685,32 +776,53 @@ document.addEventListener('selectionchange', function () {
 });
 
 // The bands are viewport-tall, so a resize makes every one of them stale.
-window.addEventListener('resize', () => { forget(); ask(); });
+let resizingTop;
+let resizeEnd;
+window.addEventListener('resize', () => {
+    // Keep one native anchor through animated resizing, avoiding cumulative
+    // rounding of the browser's physical scroll position at each step.
+    resizingTop ??= scrollY();
+    fitPage(resizingTop);
+    forget(); ask();
+    clearTimeout(resizeEnd);
+    resizeEnd = setTimeout(() => { resizingTop = undefined; }, 150);
+});
+viewport.addEventListener('wheel', () => { resizingTop = undefined; }, { passive: true });
+// Moving between monitors can change density without changing CSS dimensions.
+function watchDensity() {
+    matchMedia('(resolution: ' + window.devicePixelRatio + 'dppx)').addEventListener('change', () => {
+        forget(); ask(); watchDensity();
+    }, { once: true });
+}
+watchDensity();
 window.addEventListener('message', async (event) => {
 	const message = event.data;
 	if (message.state) {
 		// A resend is the host answering a webview that had not run when the
 		// state was first sent: one that already holds a state needs nothing.
 		if (message.resend && state) return;
+		const changedDocument = state?.id !== message.state.id;
 		state = message.state;
 		shown = message.generation;
-		spacer.style.height = height() + 'px';
+		fitPage(restoredTop ?? scrollY());
+        restoredTop = undefined;
+        persist();
 		// The drawn text belongs to the text the state replaced, so it goes
 		// with it — but only when the text changed: a layout that moved
 		// without an edit leaves what is drawn where it is, and the spans that
 		// arrive next move to their new positions.
-		if (typeof message.version === 'number' && message.version !== drawnVersion) {
+		if (changedDocument || (typeof message.version === 'number' && message.version !== drawnVersion)) {
 			forgetText();
 			drawnVersion = message.version;
 			source.textContent = '';
 			ranges = [];
 		}
-		forget();
+		forget(changedDocument);
 		ask();
-		if (message.notice) notice.textContent = message.notice;
 	}
+	if (message.notice) notice.textContent = message.notice;
 	if (message.tile) place(message.tile);
-	if (message.scroll !== undefined) viewport.scrollTop = message.scroll;
+	if (message.scroll !== undefined) viewport.scrollTop = message.scroll * fit;
 	if (message.select) selectRange(message.select.start, message.select.end);
 	if (message.redraw) {
 		forget();
@@ -738,8 +850,8 @@ window.addEventListener('message', async (event) => {
 		// one here, in document coordinates. It is dispatched at the element
 		// under the point and goes through the same listener a click does.
 		const box = viewport.getBoundingClientRect();
-		const clientX = box.left + message.clickAt.x;
-		const clientY = box.top + message.clickAt.y - viewport.scrollTop;
+		const clientX = box.left + message.clickAt.x * fit;
+		const clientY = box.top + (message.clickAt.y - scrollY()) * fit;
 		const target = document.elementFromPoint(clientX, clientY);
 		if (target) {
 			target.dispatchEvent(
@@ -767,8 +879,8 @@ window.addEventListener('message', async (event) => {
 		const box = viewport.getBoundingClientRect();
 		const at = function (point) {
 			return document.caretRangeFromPoint(
-				box.left + point.x,
-				box.top + point.y - viewport.scrollTop,
+				box.left + point.x * fit,
+				box.top + (point.y - scrollY()) * fit,
 			);
 		};
 		const from = at(message.dragAt.from);
@@ -868,6 +980,8 @@ function adopt(state: State): State {
 	const table = current ? tableFor(current.document) : undefined;
 	return {
 		...state,
+		// The server uses the requested column width but omits it from state.
+		width: Number(report.settings.width ?? 760),
 		blocks: state.blocks.map((block) => ({
 			...block,
 			source_start: utf16Of(table, block.source_start),
@@ -902,30 +1016,25 @@ function adoptRows(rows: Row[]): Row[] {
  * One request opens it, so a host that has just been given a document's
  * geometry has not silently asked for it twice.
  */
-export async function previewDocument(
-	session: Session,
-	document: vscode.TextDocument,
-): Promise<string> {
-	return (await openInEngine(session, document)).id;
-}
-
 async function openInEngine(
 	session: Session,
 	document: vscode.TextDocument,
-): Promise<{ id: string; state: State; version: number }> {
+): Promise<{ id: string; state: State; version: number; settings: ReturnType<typeof settingsOf> }> {
+	layoutRequest += 1;
 	const key = document.uri.toString();
 	const existing = ids.get(key);
 	const id = existing ?? `doc-${sequence++}`;
+	const rules = await templateFor({}, document);
 	const settings = settingsOf(document);
 	const version = document.version;
 	const state = await session.open(id, document.getText(), {
 		path: document.uri.fsPath,
+		...rules,
 		settings,
 	});
 	ids.set(key, id);
 	report.opens += 1;
-	report.settings = settings as Record<string, unknown>;
-	return { id, state, version };
+	return { id, state, version, settings };
 }
 
 function settingsOf(document: vscode.TextDocument) {
@@ -964,10 +1073,11 @@ function schedule(session: Session, document: vscode.TextDocument): void {
 			if (!showing(document)) {
 				return;
 			}
-			const { state, version } = await openInEngine(session, document);
+			const { state, version, settings } = await openInEngine(session, document);
 			if (!showing(document) || !current || version !== document.version) {
 				return;
 			}
+			report.settings = settings;
 			const adopted = adopt(state);
 			current.blocks = adopted.blocks;
 			current.bands.clear();
@@ -1173,19 +1283,22 @@ let revealGraceUntil = 0;
 /** A scroll the panel made in the preview, whose report is its own answer. */
 let previewEcho: { y: number; until: number } | undefined;
 
-/**
- * How far apart two positions may be and still be the same place.
- *
- * The editor reveals a byte at the top of its viewport, and what it then
- * reports as visible can be a line or two either side of that byte. Carrying
- * a move that would shift the other surface by less than this would make the
- * two chase each other down the document, so a move has to be worth making.
- * The distance is in the document's own pixels, so it means the same thing
- * whether the lines are three bytes long or three hundred. It only decides
- * whether a move is worth making; the answer to a move the panel itself made is
- * recognised by `ECHO_MS` rather than measured by this.
- */
-const SAME_PLACE_PX = 120;
+/** Coalesce scroll updates while invalidating older asynchronous mappings. */
+let scrollSequence = 0;
+let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+let pendingScroll: (() => Promise<void>) | undefined;
+let previewRow: number | undefined;
+function scheduleScroll(move: (sequence: number) => Promise<void>): void {
+	const sequence = ++scrollSequence;
+	pendingScroll = () => move(sequence);
+	if (scrollTimer) return;
+	scrollTimer = setTimeout(() => {
+		scrollTimer = undefined;
+		const pending = pendingScroll;
+		pendingScroll = undefined;
+		void pending?.();
+	}, 50);
+}
 
 /** The block a position in the document falls in. */
 function blockAt(
@@ -1242,6 +1355,8 @@ async function restoreAnchor(): Promise<void> {
 	if (y === undefined) {
 		return;
 	}
+	report.source = held.offset;
+	report.into = held.into;
 	report.scroll = y + held.into;
 	previewEcho = { y: report.scroll, until: Date.now() + ECHO_MS };
 	void post({ scroll: report.scroll });
@@ -1277,6 +1392,13 @@ async function yOf(offset: number): Promise<number | undefined> {
 	const block = blockFor(shown.blocks, offset);
 	if (!block) {
 		return undefined;
+	}
+	// Blank lines and leading Markdown syntax follow the next native row.
+	if (offset <= block.source_start) {
+		const layer = await shown.session.text(shown.id, block.y, block.y + SEARCH_PX);
+		const rows = adoptRows(layer.rows);
+		shown.bands.set(block.y, rows);
+		return rows.find(row => row.source_start >= offset)?.y;
 	}
 	// The block is searched using the text density of the band the last probe
 	// returned: source units per pixel over that band say how far to step for
@@ -1362,20 +1484,12 @@ async function rowAtY(y: number): Promise<Row | undefined> {
 	const layer = await shown.session.text(shown.id, top, y + SEARCH_PX);
 	const rows = adoptRows(layer.rows);
 	shown.bands.set(top, rows);
-	return rows.find(
-		(candidate) => candidate.y <= y && y < candidate.y + candidate.height,
-	);
+	// Paragraph spacing has no text row; follow the next native row.
+	return rows.find(candidate => y < candidate.y + candidate.height) ?? rows.at(-1);
 }
 
-/**
- * Moves the editor to what the preview is showing.
- *
- * The byte at the top of the preview is revealed in the editor without moving
- * the caret. A byte the editor's own view already starts near is left alone:
- * revealing one puts the editor's view a line or two either side of it, so
- * carrying that back would walk the two surfaces down the document.
- */
-async function carryPreview(y: number): Promise<void> {
+/** Aligns the editor with the preview's native row without moving the caret. */
+async function carryPreview(y: number, sequence = ++scrollSequence): Promise<void> {
 	const shown = current;
 	if (!shown || !syncs(shown)) {
 		return;
@@ -1393,33 +1507,18 @@ async function carryPreview(y: number): Promise<void> {
 		report.stoodDown += 1;
 		return;
 	}
-	const row = await rowAtY(y);
+	const row = y <= 0 ? { source_start: 0, y: 0 } : await rowAtY(y);
+	if (sequence !== scrollSequence || shown !== current) return;
 	if (!row) {
 		report.unmapped += 1;
 		return;
 	}
-	const editor = editorFor(shown);
-	const top = editor?.visibleRanges[0]?.start;
-	if (editor && top) {
-		const there = await yOf(editor.document.offsetAt(top));
-		if (there !== undefined && Math.abs(there - y) <= SAME_PLACE_PX) {
-			report.stoodDown += 1;
-			return;
-		}
-		// A byte the editor already shows is not worth revealing, and a
-		// reveal of one would change nothing and so be answered by nothing.
-		// Asking only when the byte is out of view is what lets every reveal
-		// the panel makes be recognised by the view it produces.
-		const shows = editor.visibleRanges.some(
-			(candidate) =>
-				editor.document.offsetAt(candidate.start) <= row.source_start &&
-				row.source_start <= editor.document.offsetAt(candidate.end),
-		);
-		if (shows) {
-			report.stoodDown += 1;
-			return;
-		}
-	}
+	// The mapped row also anchors gaps before their pixels have arrived.
+	report.source = row.source_start;
+	report.into = y - row.y;
+	anchor = { offset: row.source_start, into: report.into };
+	if (previewRow === row.source_start) return;
+	previewRow = row.source_start;
 	report.syncs.preview += 1;
 	report.carried = row.source_start;
 	reveal(shown, row.source_start, row.source_start);
@@ -1442,7 +1541,10 @@ function syncs(shown: { document: vscode.TextDocument }): boolean {
 }
 
 async function carryEditor(offset: number): Promise<void> {
-	await carryEditorAt(offset, await yOf(offset));
+	const sequence = ++scrollSequence;
+	const shown = current;
+	const y = offset === 0 ? 0 : await yOf(offset);
+	if (sequence === scrollSequence && shown === current) await carryEditorAt(offset, y);
 }
 
 /** Moves the preview to a position the editor is showing, already resolved. */
@@ -1454,7 +1556,11 @@ async function carryEditorAt(
 	if (!shown || !syncs(shown)) {
 		return;
 	}
-	if (there === undefined || Math.abs(there - report.scroll) <= SAME_PLACE_PX) {
+	// The source origin is a viewport boundary, even when its Markdown
+	// syntax or leading blank lines have no rendered row.
+	if (there === undefined || (offset === 0
+		? report.scroll === 0
+		: Math.abs(there - report.scroll) <= 1)) {
 		report.stoodDown += 1;
 		return;
 	}
@@ -1462,23 +1568,47 @@ async function carryEditorAt(
 	// landing the panel remembered is no longer what an editor report of that
 	// position means. Returning to it is a move like any other.
 	revealedAt = undefined;
+	previewRow = undefined;
+	report.source = offset;
+	report.into = 0;
+	anchor = offset === 0 ? undefined : { offset, into: 0 };
 	report.syncs.editor += 1;
 	report.scroll = there;
 	previewEcho = { y: there, until: Date.now() + ECHO_MS };
 	void post({ scroll: there });
 }
 
-export async function openPreview(
-	context: vscode.ExtensionContext,
-	session: Session,
-	document: vscode.TextDocument,
+export function openPreview(
+    context: vscode.ExtensionContext,
+    session: Session,
+    document: vscode.TextDocument,
+    restored?: { panel: vscode.WebviewPanel; scroll: number },
+    follow = false,
+): Promise<void> {
+    const request = ++openRequest;
+    requestedDocument = document;
+    // Serialize engine opens and skip superseded tab changes.
+    const task = opening.then(() => {
+        if (request === openRequest) return showPreview(context, session, document, request, restored, follow);
+    });
+    opening = task.catch(() => {});
+    return task;
+}
+
+async function showPreview(
+    context: vscode.ExtensionContext,
+    session: Session,
+    document: vscode.TextDocument,
+    request: number,
+    restored: { panel: vscode.WebviewPanel; scroll: number } | undefined,
+    follow: boolean,
 ): Promise<void> {
 	const column = vscode.ViewColumn.Beside;
 	if (!panel) {
-		panel = vscode.window.createWebviewPanel(
+		panel = restored?.panel ?? vscode.window.createWebviewPanel(
 			"markview.preview",
 			`Preview ${document.uri.path.split("/").pop() ?? ""}`,
-			column,
+			{ viewColumn: column, preserveFocus: true },
 			{
 				enableScripts: true,
 				retainContextWhenHidden: true,
@@ -1487,7 +1617,29 @@ export async function openPreview(
 				enableFindWidget: true,
 			},
 		);
+		panel.webview.options = { enableScripts: true };
+        let lastEditor = vscode.window.activeTextEditor?.document.uri.toString();
+        let followTimer: ReturnType<typeof setTimeout> | undefined;
+        const active = vscode.window.onDidChangeActiveTextEditor(() => {
+            // Creating/revealing a panel emits transient editor changes too.
+            if (followTimer) clearTimeout(followTimer);
+            followTimer = setTimeout(() => {
+                const editor = vscode.window.activeTextEditor;
+                if (panel?.active || !editor) return;
+                const uri = editor.document.uri.toString();
+                if (uri === lastEditor) return;
+                lastEditor = uri;
+                if (editor.document.languageId !== "markdown" || uri === requestedDocument?.uri.toString()) return;
+                void openPreview(context, session, editor.document, undefined, true).catch(error => {
+                    void vscode.window.showErrorMessage(`Markview: ${String(error)}`);
+                });
+            }, COALESCE_MS);
+        });
 		panel.onDidDispose(() => {
+            active.dispose();
+            if (followTimer) clearTimeout(followTimer);
+            ++openRequest;
+            requestedDocument = undefined;
 			panel = undefined;
 			panelColumn = undefined;
 			shownState = undefined;
@@ -1503,9 +1655,19 @@ export async function openPreview(
 		panelColumn = panel.viewColumn;
 	context.subscriptions.push(panel);
 	}
+    // Old notifications must not refill a webview that is loading another file.
+    current = undefined;
+    shownState = undefined;
+    ++layoutRequest;
+    unwatch();
+    unfollow?.();
+    unfollow = undefined;
+    if (coalescing) clearTimeout(coalescing);
+    coalescing = undefined;
 	// A new document has not been drawn yet: what was observed of the last one
 	// would answer a test's wait before the new webview has run at all.
 	report.ready = false;
+    report.documentUri = document.uri.toString();
 	report.paintedVersion = -1;
 	report.paintedAt = 0;
 	report.live = 0;
@@ -1521,15 +1683,21 @@ export async function openPreview(
 	report.ordered = true;
 	report.unique = true;
 	report.findable = { length: 0, head: "", tail: "" };
-	panel.webview.html = render();
+	report.restored = !!restored;
+    panel.title = `Preview ${document.uri.path.split("/").pop() ?? ""}`;
+	panel.webview.html = render(document.uri.toString(), restored?.scroll ?? 0);
 	// A panel that is behind another tab in its group is shown again, so
 	// asking for the preview brings it back rather than reloading it unseen.
-	panel.reveal(panel.viewColumn ?? column, true);
+	if (!restored && !follow) panel.reveal(panel.viewColumn ?? column, true);
 
 	let opened;
-	do { opened = await openInEngine(session, document); }
+	do {
+        opened = await openInEngine(session, document);
+        if (request !== openRequest) return;
+    }
 	while (opened.version !== document.version);
-	const { id, state, version } = opened;
+	const { id, state, version, settings } = opened;
+    report.settings = settings;
 	current = { document, session, id, blocks: [], bands: new Map() };
 	anchor = undefined;
 	generation += 1;
@@ -1538,7 +1706,6 @@ export async function openPreview(
 	// A raster that settles moves the blocks under it, so the engine
 	// republishes the geometry. The scroll extent is a function of that
 	// geometry and has to follow it, which is what the subscription is for.
-	unfollow?.();
 	unfollow = session.onLayout((moved) => {
 		if (!current || moved.id !== current.id) {
 			return;
@@ -1574,7 +1741,9 @@ export async function openPreview(
 		}
 	});
 	shownState = adopted;
-	await post({
+    // A restored webview starts only after its serializer returns. Its `ready`
+    // handshake resends this state, so never await delivery during restoration.
+	void post({
 		state: adopted,
 		version,
 		generation,
@@ -1610,7 +1779,7 @@ export async function openPreview(
 	});
 	// The editor's own scrolling moves the preview: the block holding the
 	// first byte it shows is the block the preview puts at the top.
-	const scrolled = vscode.window.onDidChangeTextEditorVisibleRanges(async (event) => {
+	const scrolled = vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
 		if (!current || !showing(event.textEditor.document)) {
 			return;
 		}
@@ -1619,54 +1788,61 @@ export async function openPreview(
 			return;
 		}
 		report.editorEvents += 1;
-		const offset = event.textEditor.document.offsetAt(range.start);
-		const where = await yOf(offset);
-		if (expectReveal >= 0) {
-			const asked = expectReveal;
-			expectReveal = -1;
-			const shows = event.visibleRanges.some(
-				(candidate) =>
-					event.textEditor.document.offsetAt(candidate.start) <= asked &&
-					asked <= event.textEditor.document.offsetAt(candidate.end),
-			);
-			if (shows) {
-				// The answer to the reveal: the editor is reporting a view with
-				// the byte the panel asked for in it, not a move of the
-				// reader's. A report that does not show it is their move, and
-				// falls through to be carried.
-				revealedAt = where;
-				revealGraceUntil = Date.now() + ECHO_MS;
+		const shown = current;
+		scheduleScroll(async (sequence) => {
+			const offset = event.textEditor.document.offsetAt(range.start);
+			const where = offset === 0 ? 0 : await yOf(offset);
+			if (sequence !== scrollSequence || shown !== current) return;
+			if (expectReveal >= 0 && Date.now() < revealGraceUntil) {
+				const asked = expectReveal;
+				expectReveal = -1;
+				const shows = event.visibleRanges.some(
+					(candidate) =>
+						event.textEditor.document.offsetAt(candidate.start) <= asked &&
+						asked <= event.textEditor.document.offsetAt(candidate.end),
+				);
+				if (shows) {
+					// The answer to the reveal: the editor is reporting a view with
+					// the byte the panel asked for in it, not a move of the
+					// reader's. A report that does not show it is their move, and
+					// falls through to be carried.
+					revealedAt = where;
+					revealGraceUntil = Date.now() + ECHO_MS;
+					report.stoodDown += 1;
+					return;
+				}
+			}
+			if (
+				revealedAt !== undefined &&
+				Date.now() < revealGraceUntil &&
+				where !== undefined &&
+				Math.abs(where - revealedAt) <= 1
+			) {
+				// The same landing reported again, still not a move of the
+				// reader's. A different position is one, and is carried.
 				report.stoodDown += 1;
 				return;
 			}
-		}
-		if (
-			revealedAt !== undefined &&
-			Date.now() < revealGraceUntil &&
-			where !== undefined &&
-			Math.abs(where - revealedAt) <= 1
-		) {
-			// The same landing reported again, still not a move of the
-			// reader's. A different position is one, and is carried.
-			report.stoodDown += 1;
-			return;
-		}
-		if (Date.now() < updatingUntil) {
-			// The document is being relaid out, so this is the view moving
-			// under the text rather than the reader scrolling. It is kept in
-			// case it was a scroll, and released once the edit has settled.
-			deferred.editor = true;
-			report.stoodDown += 1;
-			return;
-		}
-		void carryEditorAt(offset, where);
+			if (Date.now() < updatingUntil) {
+				// The document is being relaid out, so this is the view moving
+				// under the text rather than the reader scrolling. It is kept in
+				// case it was a scroll, and released once the edit has settled.
+				deferred.editor = true;
+				report.stoodDown += 1;
+				return;
+			}
+			void carryEditorAt(offset, where);
+		});
 	});
 	// A setting that shapes the layout is resolved for the document at hand,
 	// so moving one re-lays out the preview showing it rather than waiting for
 	// the next edit or the next open.
 	const configured = vscode.workspace.onDidChangeConfiguration((event) => {
-		if (event.affectsConfiguration("markview", document)) {
-			void relayout(session, document, id);
+		if (event.affectsConfiguration("markview", document) ||
+			event.affectsConfiguration("markviewExport.template", document)) {
+			void relayout(session, document, id).catch((error) => {
+				void vscode.window.showErrorMessage(`Markview: ${String(error)}`);
+			});
 		}
 	});
 	// Only the document on screen is watched. A previewed document left
@@ -1692,12 +1868,17 @@ async function relayout(
 	if (!showing(document)) {
 		return;
 	}
+	const request = ++layoutRequest;
+	const rules = await templateFor({}, document);
+	if (request !== layoutRequest || !showing(document)) return;
 	const settings = settingsOf(document);
 	const version = document.version;
 	const state = await session.open(id, document.getText(), {
 		path: document.uri.fsPath,
+		...rules,
 		settings,
 	});
+	if (request !== layoutRequest || !showing(document) || version !== document.version) return;
 	report.settings = settings as Record<string, unknown>;
 	report.opens += 1;
 	const adopted = adopt(state);
@@ -1721,6 +1902,11 @@ function unwatch(): void {
 		listener.dispose();
 	}
 	watching = [];
+	++scrollSequence;
+	if (scrollTimer) clearTimeout(scrollTimer);
+	scrollTimer = undefined;
+	pendingScroll = undefined;
+	previewRow = undefined;
 }
 
 export function closePreview(): void {
@@ -1735,6 +1921,7 @@ export function closePreview(): void {
  */
 async function receive(message: {
 	ready?: boolean;
+    background?: string;
 	scrollHeight?: number;
 	live?: number;
 	viewport?: number;
@@ -1747,6 +1934,10 @@ async function receive(message: {
 	generation?: number;
 	epoch?: number;
 	paintedVersion?: number;
+	displayedTiles?: number;
+	pixelVersions?: number[];
+	refreshing?: boolean;
+	tileBounds?: Array<{ width: number; height: number; expectedHeight: number; pixels: number; expectedPixels: number; scale: number; fit: number; viewportWidth: number; documentWidth: number; inset: number[] }>;
 	/** What the webview did to restore the reader's place. */
 	/** A scroll the reader made. */
 	scroll?: number;
@@ -1754,6 +1945,7 @@ async function receive(message: {
 	band?: number;
 	width?: number;
 	height?: number;
+	scale?: number;
 	reveal?: { start?: number; end?: number };
 	find?: boolean;
 	link?: string;
@@ -1781,14 +1973,6 @@ async function receive(message: {
 	selectionState?: unknown;
 
 }): Promise<void> {
-	const shown = current;
-	if (!shown) {
-		return;
-	}
-	if (message.paintedVersion !== undefined && message.generation === generation) {
-		report.paintedVersion = message.paintedVersion;
-		report.paintedAt = performance.now();
-	}
 	if (message.ready === true) {
 		report.ready = true;
 		// The panel was made a moment ago and its own document has only now
@@ -1803,9 +1987,23 @@ async function receive(message: {
 			});
 		}
 	}
+	const shown = current;
+	if (!shown) {
+		return;
+	}
+	if (message.paintedVersion !== undefined && message.generation === generation) {
+		report.paintedVersion = message.paintedVersion;
+        report.background = message.background ?? "";
+		report.tileBounds = message.tileBounds ?? [];
+		report.paintedAt = performance.now();
+	}
+
 	if (typeof message.scrollHeight === "number") {
 		report.scrollHeight = message.scrollHeight;
 	}
+	if (message.pixelVersions) report.pixelVersions = message.pixelVersions;
+	if (typeof message.displayedTiles === "number") report.displayedTiles = message.displayedTiles;
+	if (typeof message.refreshing === "boolean") report.refreshing = message.refreshing;
 	if (typeof message.live === "number") {
 		report.live = message.live;
 	}
@@ -1832,20 +2030,23 @@ async function receive(message: {
 			report.stoodDown += 1;
 			return;
 		}
-		void carryPreview(message.scroll);
+		const y = message.scroll;
+		scheduleScroll(sequence => carryPreview(y, sequence));
 	}
 	if (typeof message.tile === "number") {
 		if (message.generation !== generation) return;
 		report.requested.push(message.tile);
 		report.tile = message.tile;
 		const view = Math.max(1, Math.floor(message.height ?? 1));
+		const scale = message.scale ?? 1;
 		try {
 			// The pixels and the text over them are one screenful, so they
 			// are asked for together and answered together.
 			const [tile, layer] = await Promise.all([
 				shown.session.tile(shown.id, {
-					width: Math.max(1, Math.floor(message.width ?? 1)),
-					height: view,
+					width: Math.max(1, Math.ceil((message.width ?? 1) * scale)),
+					height: Math.ceil(view * scale),
+					scale,
 					scroll: Math.max(0, message.tile),
 				}),
 				shown.session.text(shown.id, message.tile, message.tile + view),
@@ -1856,24 +2057,27 @@ async function receive(message: {
 			// A cheap fingerprint of the pixels: enough to see that a theme
 			// changed them without carrying megabytes into a report.
 			let hash = 2166136261;
-			const png = String(tile.png);
+			const png = tile.png;
 			for (let index = 0; index < png.length; index += 1) {
-				hash = ((hash ^ png.charCodeAt(index)) * 16777619) >>> 0;
+				hash = ((hash ^ png[index]) * 16777619) >>> 0;
 			}
 			report.painted = hash;
 			await post({
 				tile: {
 					...tile,
+					scale,
+					height: view,
 					band: message.band,
 					generation: message.generation, epoch: message.epoch,
 					clusters: adoptClusters(layer.clusters),
 					rows: adoptRows(layer.rows),
 				},
 			});
-		} catch {
+		} catch (error) {
 			// The band is not coming, so the webview stops waiting on it and
 			// asks again the next time the viewport moves.
 			await post({
+                notice: String(error),
 				tile: { band: message.band,
 					generation: message.generation, epoch: message.epoch, failed: true },
 			});
@@ -1988,6 +2192,7 @@ async function revealRange(
 	// reader's next scroll instead.
 	if (!editor.visibleRanges.some((shown) => shown.contains(range))) {
 		expectReveal = start;
+		revealGraceUntil = Date.now() + 200;
 	}
 	editor.revealRange(
 		range,
@@ -2082,12 +2287,13 @@ function reveal(
 	}
 	if (asked >= 0) {
 		expectReveal = asked;
+		revealGraceUntil = Date.now() + 200;
 	}
 	const position = editor.document.positionAt(offset);
 	// `revealRange` moves the view without moving the caret, which is what
 	// following the other surface should do.
 	editor.revealRange(
-		new vscode.Range(position, position),
+		new vscode.Range(position, shown.document.validatePosition(new vscode.Position(position.line + 1, 0))),
 		vscode.TextEditorRevealType.AtTop,
 	);
 }

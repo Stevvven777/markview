@@ -14,7 +14,7 @@ Usage: scripts/serve_latency.py [PATH-TO-MARKVIEW] [--iterations N]
 
 Exit status is 0 unless the session could not be driven.
 """
-import base64
+from serve_protocol import read_response
 import json
 import queue
 import statistics
@@ -39,11 +39,10 @@ class Session:
     def __init__(self, binary):
         self.state = tempfile.TemporaryDirectory()
         self.process = subprocess.Popen(
-            [binary, "--fonts", str(pathlib.Path(__file__).resolve().parents[1] / "crates/markview-core/tests/fonts"), "--ignore-system-fonts", "serve", "--offline", "--state-dir", self.state.name],
+            [binary, "serve", "--fonts", str(pathlib.Path(__file__).resolve().parents[1] / "crates/markview-core/tests/fonts"), "--ignore-system-fonts", "--offline", "--state-dir", self.state.name],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True,
         )
         self.answers = queue.Queue()
         threading.Thread(
@@ -51,12 +50,12 @@ class Session:
         ).start()
 
     def _read(self):
-        for line in self.process.stdout:
-            self.answers.put(json.loads(line))
+        while (answer := read_response(self.process.stdout)) is not None:
+            self.answers.put(answer)
 
     def send(self, message):
         """Write one request and read until its answer, skipping notifications."""
-        self.process.stdin.write(json.dumps(message) + "\n")
+        self.process.stdin.write((json.dumps(message) + "\n").encode())
         self.process.stdin.flush()
         # A response is named for its request's outcome, so it is recognised by
         # what it is not: only a `layout` is a notification.
@@ -108,15 +107,13 @@ def main():
         print(f"the session refused a request: {tile.get('error')}"
               f" {layer.get('error')}", file=sys.stderr)
         return 1
-    png = base64.b64decode(tile["tile"]["png"])
+    png = tile["tile"]["png"]
     screen_bytes = (
-        len(tile["tile"]["png"])
-        + len(json.dumps(layer["text"]))
-        + len(json.dumps(opened["opened"]["blocks"]))
+        tile["_wire_bytes"] + layer["_wire_bytes"] + opened["_wire_bytes"]
     )
     print(f"a screenful costs {screen_bytes} bytes: "
-          f"{len(png)} of PNG, {len(json.dumps(layer['text']))} of text layer, "
-          f"{len(json.dumps(opened['opened']['blocks']))} of block map")
+          f"{len(png)} of PNG, {layer['_wire_bytes']} of text response, "
+          f"{opened['_wire_bytes']} of open response")
 
     # Engine-only edit latency, not the end-to-end NFR-1 boundary.
     body = document()

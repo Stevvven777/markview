@@ -89,7 +89,7 @@ exports.run = async function () {
 		.update("enginePath", process.env.MARKVIEW_PACKAGED_EXTENSION ? "" : binary, vscode.ConfigurationTarget.Global);
 
 	const extension = vscode.extensions.getExtension(
-		"Stevvven.markview-preview",
+		"Stevvven.markview-export",
 	);
 	assert.ok(extension, "the extension is installed");
 	await extension.activate();
@@ -293,6 +293,10 @@ exports.run = async function () {
 		settings,
 	});
 
+    const binaryTile = await probe.tile("probe", { width: 80, height: 40 });
+    assert.ok(binaryTile.png instanceof Uint8Array, "engine pixels arrive as binary bytes");
+    assert.deepEqual([...binaryTile.png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+
 	let observed = before;
 	for (let attempt = 0; attempt < 100; attempt += 1) {
 		observed = exports.panelReport();
@@ -340,7 +344,7 @@ exports.run = async function () {
 	assert.ok(fresh <= 2, `a fresh panel asked for ${fresh} bands, not one`);
 	assert.ok(
 		observed.live >= 1 && observed.live <= 3,
-		`the webview holds ${observed.live} bands at once`,
+		`the webview holds ${observed.live} bands at once: ${JSON.stringify(observed)}`,
 	);
 
 	// Scrolling the preview fetches the bands the viewport comes to show, and
@@ -350,7 +354,7 @@ exports.run = async function () {
 	// stays bounded however far the reader goes.
 	const seen = [];
 	for (const fraction of [0.5, 0.5, 0.9, 0.2]) {
-		const top = Math.round(observed.documentHeight * fraction);
+		const top = Math.max(0, Math.floor(Math.min(observed.documentHeight * fraction, observed.documentHeight - observed.viewport)));
 		await scrollPreview(
 			exports,
 			top,
@@ -412,8 +416,8 @@ exports.run = async function () {
 	);
 	assert.ok(fetched >= 3, `scrolling fetched the bands it moved to: ${fetched}`);
 	assert.ok(
-		fetched < screens,
-		`scrolling fetched ${fetched} bands of ${screens}, not the document`,
+		fetched <= fresh + 6,
+		`three distinct scrolls fetch at most two bands each: ${fetched} including ${fresh} initial bands`,
 	);
 	for (const step of seen) {
 		say(`scroll-${step.fraction}`, {
@@ -434,14 +438,11 @@ exports.run = async function () {
 	// Editing one that was previewed earlier must leave this preview alone:
 	// its extent, and the tiles it is holding, are the ones for the document
 	// on screen.
-	const left = await vscode.window.showTextDocument(
-		await vscode.workspace.openTextDocument(first),
-		vscode.ViewColumn.One,
-	);
+	const left = await vscode.workspace.openTextDocument(first);
 	const settled = exports.panelReport();
-	await left.edit((builder) =>
-		builder.insert(new vscode.Position(0, 0), "Edited after leaving.\n\n"),
-	);
+    const backgroundEdit = new vscode.WorkspaceEdit();
+    backgroundEdit.insert(left.uri, new vscode.Position(0, 0), "Edited after leaving.\n\n");
+    assert.ok(await vscode.workspace.applyEdit(backgroundEdit));
 	await delay(1500);
 	const untouched = exports.panelReport();
 	assert.ok(
@@ -508,6 +509,7 @@ exports.run = async function () {
 		converged = exports.panelReport();
 		if (
 			Math.abs(converged.documentHeight - expected.height) <= 1 &&
+            converged.paintedVersion === longDocument.version && !converged.refreshing &&
 			converged.live >= 1
 		) {
 			break;
@@ -570,7 +572,7 @@ exports.run = async function () {
 	});
 	assert.ok(
 		followed.syncs.preview > beforePreviewScroll.syncs.preview,
-		"the editor was moved by the preview",
+		`the editor was moved by the preview: ${JSON.stringify(followed)}`,
 	);
 	// One move, and the moved surface did not move the other one back: the
 	// answer to a carried scroll is not another carried scroll.
@@ -1324,6 +1326,15 @@ exports.run = async function () {
 		`the local link opened in the editor: ${JSON.stringify(exports.panelReport().routed)}`,
 	);
 
+    // Following the local link also switches preview; return to test its other links.
+    await vscode.window.showTextDocument(linkedDocument, vscode.ViewColumn.One);
+    for (let attempt = 0; attempt < 100; attempt++) {
+        const report = exports.panelReport();
+        if (report.documentUri === linkedDocument.uri.toString() && report.paintedVersion === linkedDocument.version) break;
+        await delay(100);
+    }
+    assert.strictEqual(exports.panelReport().documentUri, linkedDocument.uri.toString());
+
 	// A local target the engine would not open by itself — a script, which
 	// the desktop would run — is confirmed rather than handed over. The test
 	// host refuses dialogs, so a route that asked before opening leaves the
@@ -2006,11 +2017,11 @@ exports.run = async function () {
 	const plainPath = path.join(firstFolder.uri.fsPath, "notes.txt");
 	await vscode.workspace.openTextDocument(plainPath);
 	const refused = path.join(scratch, "refused.pdf");
-	await exports.exportDocument({
+	await assert.rejects(exports.exportDocument({
 		uri: vscode.Uri.file(plainPath),
 		target: vscode.Uri.file(refused),
 		format: "pdf",
-	});
+	}));
 	await delay(400);
 	assert.ok(
 		!fs.existsSync(refused),
@@ -2027,7 +2038,7 @@ exports.run = async function () {
 	const exported = path.join(scratch, "exported.pdf");
 	await vscode.commands.executeCommand(
 		"markview.exportPdf",
-		vscode.Uri.file(exported),
+		{ target: vscode.Uri.file(exported) },
 	);
 	for (let attempt = 0; attempt < 100; attempt += 1) {
 		if (fs.existsSync(exported)) {
@@ -2053,7 +2064,7 @@ exports.run = async function () {
 	// The same document as one PNG, and as a PDF under a template the caller
 	// holds rather than installs: both are what "render by template" means.
 	const png = path.join(scratch, "exported.png");
-	await exports.exportDocument({ target: vscode.Uri.file(png), format: "png" });
+	await exports.exportDocument({ uri: longDocument.uri, target: vscode.Uri.file(png), format: "png" });
 	assert.ok(fs.existsSync(png), "the PNG export wrote a file");
 	const pngBytes = fs.readFileSync(png);
 	assert.deepStrictEqual(
@@ -2078,9 +2089,10 @@ exports.run = async function () {
 	);
 	const templated = path.join(scratch, "templated.pdf");
 	await exports.exportDocument({
+		uri: longDocument.uri,
 		target: vscode.Uri.file(templated),
 		format: "pdf",
-		template: path.relative(path.dirname(vscode.window.activeTextEditor.document.uri.fsPath), template),
+		template: path.relative(path.dirname(longDocument.uri.fsPath), template),
 	});
 	assert.ok(fs.existsSync(templated), "the templated export wrote a file");
 	assert.notDeepStrictEqual(
@@ -2090,9 +2102,10 @@ exports.run = async function () {
 	);
 	const templatedPng = path.join(scratch, "templated.png");
 	await exports.exportDocument({
+		uri: longDocument.uri,
 		target: vscode.Uri.file(templatedPng),
 		format: "png",
-		template: path.relative(path.dirname(vscode.window.activeTextEditor.document.uri.fsPath), template),
+		template: path.relative(path.dirname(longDocument.uri.fsPath), template),
 	});
 	assert.notDeepStrictEqual(
 		fs.readFileSync(templatedPng),
@@ -2104,7 +2117,7 @@ exports.run = async function () {
 	// template means no template rather than falling back to the setting.
 	await vscode.workspace
 		.getConfiguration("markview")
-		.update("template", path.relative(path.dirname(vscode.window.activeTextEditor.document.uri.fsPath), template), vscode.ConfigurationTarget.Global);
+		.update("template", path.relative(path.dirname(longDocument.uri.fsPath), template), vscode.ConfigurationTarget.Global);
 	await delay(200);
 	const fromSetting = path.join(scratch, "from-setting.pdf");
 	await exports.exportDocument({
@@ -2135,11 +2148,11 @@ exports.run = async function () {
 
 	// A template nobody has is refused rather than quietly ignored.
 	const unknown = path.join(scratch, "unknown.pdf");
-	await exports.exportDocument({
+	await assert.rejects(exports.exportDocument({
 		target: vscode.Uri.file(unknown),
 		format: "pdf",
 		template: "no-such-template",
-	});
+	}));
 	assert.ok(
 		!fs.existsSync(unknown),
 		"an unknown template wrote nothing rather than falling back",

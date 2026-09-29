@@ -2,13 +2,13 @@
  * The engine, as an editor host drives it.
  *
  * One session is one engine process with one pipe to it. A request is written
- * as a single JSON line; its answer comes back as a single JSON line named for
- * the outcome, and a `layout` line is a notification the engine sends when
- * geometry it already published has changed. This file deliberately imports
+ * as a single JSON line; its answer comes back as a JSON header named for
+ * the outcome, followed by raw PNG bytes for a tile. A `layout` line notifies
+ * the client when geometry it already published has changed. This file deliberately imports
  * nothing from the editor, so a test can drive a real session.
  */
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { createInterface, type Interface } from "node:readline";
+import { Frames } from "./frames.js";
 
 /** One block of the document, at block precision. */
 /** One clickable fragment: where it is, what it points at, and where that is. */
@@ -78,8 +78,10 @@ export interface Tile {
 	height: number;
 	scale: number;
 	scroll: number;
-	/** Base64 PNG, ready for a data URL. */
-	png: string;
+    /** Opaque sRGB page clear color, matching the native renderer. */
+    background: [number, number, number];
+	/** Encoded PNG bytes, never a base64 string. */
+	png: Uint8Array;
 }
 
 /** The settings a host resolves for one document and sends with it. */
@@ -131,7 +133,7 @@ interface Pending {
  */
 export class Session {
 	private readonly child: ChildProcessWithoutNullStreams;
-	private readonly lines: Interface;
+
 	private readonly pending: Pending[] = [];
 	private readonly layouts = new Set<LayoutListener>();
 	private closed = false;
@@ -146,8 +148,17 @@ export class Session {
 		this.child.on("exit", () =>
 			this.fail(new Error("the engine ended")),
 		);
-		this.lines = createInterface({ input: this.child.stdout });
-		this.lines.on("line", (line) => this.receive(line));
+        const frames = new Frames(answer => this.receive(answer));
+        this.child.stdout.on("data", (chunk: Buffer) => {
+            if (this.closed) return;
+            this.traffic.received += chunk.length;
+            try { frames.push(chunk); }
+            catch (error) { this.fail(error as Error); }
+        });
+        this.child.stdout.on("end", () => {
+            try { frames.finish(); }
+            catch (error) { this.fail(error as Error); }
+        });
 	}
 
 	/** Whether the engine process is still running. */
@@ -168,6 +179,8 @@ export class Session {
 		options: {
 			path?: string;
 			settings?: DocumentSettings;
+			template?: string;
+			stylesheet?: string;
 			settle?: boolean;
 		} = {},
 	): Promise<State> {
@@ -267,7 +280,6 @@ export class Session {
 			return;
 		}
 		this.closed = true;
-		this.lines.close();
 		this.child.stdin.end();
 		this.child.kill();
 		this.fail(new Error("the session ended"));
@@ -289,21 +301,14 @@ export class Session {
 	}
 
 	/**
-	 * Reads one line: an answer, or a notification.
+	 * Receives a complete frame: an answer, or a notification.
 	 *
 	 * The engine answers each request in the order it was written and writes
 	 * the answer before any layout that request provoked, so answers are
 	 * matched first in, first out. A `layout` answers nothing and may arrive at
 	 * any time, which is why it is recognised by name rather than position.
 	 */
-	private receive(line: string): void {
-		this.traffic.received += Buffer.byteLength(line) + 1;
-		let answer: Record<string, unknown>;
-		try {
-			answer = JSON.parse(line);
-		} catch {
-			return;
-		}
+	private receive(answer: Record<string, unknown>): void {
 		if (answer.layout) {
 			for (const listener of this.layouts) {
 				listener(answer.layout as State);
@@ -323,6 +328,7 @@ export class Session {
 
 	private fail(error: Error): void {
 		this.closed = true;
+		this.child.kill();
 		for (const waiting of this.pending) {
 			waiting.reject(error);
 		}

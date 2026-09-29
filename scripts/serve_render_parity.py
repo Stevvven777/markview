@@ -12,7 +12,7 @@ Usage: scripts/serve_render_parity.py [PATH-TO-MARKVIEW]
 Exit status is 0 when every case matches, 1 when a case differs, and 2 when the
 probe could not run.
 """
-import base64
+from serve_protocol import read_response
 import json
 import pathlib
 import queue
@@ -112,22 +112,21 @@ def main():
         document = root / "doc.md"
 
         server = subprocess.Popen(
-            [binary, "--fonts", str(pathlib.Path(__file__).resolve().parents[1] / "crates/markview-core/tests/fonts"), "--ignore-system-fonts", "serve", "--offline", "--state-dir", str(root / "state")],
+            [binary, "serve", "--fonts", str(pathlib.Path(__file__).resolve().parents[1] / "crates/markview-core/tests/fonts"), "--ignore-system-fonts", "--offline", "--state-dir", str(root / "state")],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True,
         )
         answers = queue.Queue()
         threading.Thread(
             target=lambda: [
-                answers.put(json.loads(line)) for line in server.stdout
+                answers.put(answer) for answer in iter(lambda: read_response(server.stdout), None)
             ],
             daemon=True,
         ).start()
 
         def send(message):
-            server.stdin.write(json.dumps(message) + "\n")
+            server.stdin.write((json.dumps(message) + "\n").encode())
             server.stdin.flush()
             return answers.get(timeout=30)
 
@@ -230,11 +229,11 @@ def main():
         subprocess.run(
             [
                 binary,
+                "pdf",
+                str(document),
                 "--fonts",
                 str(pathlib.Path(__file__).resolve().parents[1] / "crates/markview-core/tests/fonts"),
                 "--ignore-system-fonts",
-                "pdf",
-                str(document),
                 "--output",
                 str(over_command_line),
                 "--offline",
@@ -284,10 +283,10 @@ def main():
             return 2
         headingless_cli = root / "headingless-cli.pdf"
         subprocess.run(
-            [binary, "--fonts",
+            [binary, "pdf", str(document), "--fonts",
                 str(pathlib.Path(__file__).resolve().parents[1] / "crates/markview-core/tests/fonts"),
                 "--ignore-system-fonts",
-                "pdf", str(document), "--output", str(headingless_cli),
+                "--output", str(headingless_cli),
              "--offline"],
             check=True,
             stdout=subprocess.DEVNULL,
@@ -324,11 +323,11 @@ def main():
             subprocess.run(
                 [
                     binary,
+                    "render",
+                    str(document),
                     "--fonts",
                     str(pathlib.Path(__file__).resolve().parents[1] / "crates/markview-core/tests/fonts"),
                     "--ignore-system-fonts",
-                    "render",
-                    str(document),
                     "--offline",
                     "--width",
                     str(TILE_WIDTH),
@@ -341,7 +340,7 @@ def main():
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            served_rows = pixels(base64.b64decode(tile["png"]))
+            served_rows = pixels(tile["png"])
             render_rows = pixels(rendered.read_bytes())
             expected = render_rows[RENDER_INSET : RENDER_INSET + TILE_HEIGHT]
             differed = differing_bytes(served_rows, expected)

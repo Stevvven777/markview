@@ -17,21 +17,13 @@ members = ["cargo:."]
 # Linux archives are built on Ubuntu 22.04 and must not require a newer glibc
 # than 2.35. `min-glibc-version` tells installers the requirement;
 # `scripts/verify_linux_packages.sh` checks the binary symbol versions.
-#
-# Every platform the editor plugin ships for has a target here, so one release
-# covers the six VS Code platform names — `win32-x64`, `win32-arm64`,
-# `linux-x64`, `linux-arm64`, `darwin-x64`, and `darwin-arm64`. The plugin
-# packaging in `editors/vscode/package-vsix.sh` maps one set to the other.
 [dist]
 cargo-dist-version = "0.32.0"
 ci = "github"
 allow-dirty = ["msi"]
 targets = [
     "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
     "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
     "aarch64-apple-darwin",
 ]
 installers = ["shell", "powershell", "msi"]
@@ -45,7 +37,6 @@ include = ["THIRD_PARTY.md", "licenses/"]
 
 [dist.min-glibc-version]
 x86_64-unknown-linux-gnu = "2.35"
-aarch64-unknown-linux-gnu = "2.35"
 
 # Build-only system libraries for the Linux archive.
 [dist.dependencies.apt]
@@ -53,11 +44,5 @@ libfontconfig1-dev = "*"
 libxkbcommon-dev = "*"
 libwayland-dev = "*"
 
-# An arm64 Linux archive is linked on an arm64 host rather than cross-linked
-# from an x86_64 one, so the glibc symbols it needs are the host's own. The
-# Intel macOS runner is named rather than implied because `macos-13` has been
-# retired.
 [dist.github-custom-runners]
 x86_64-unknown-linux-gnu = "ubuntu-22.04"
-aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
-x86_64-apple-darwin = "macos-15-intel"

@@ -210,6 +210,11 @@ enum Command {
 		/// Private engine storage; never use the desktop reader settings.
 		#[arg(long)]
 		state_dir: PathBuf,
+		/// Font directories for deterministic or custom rendering.
+		#[arg(long = "fonts", value_name = "DIR")]
+		fonts: Vec<PathBuf>,
+		#[arg(long)]
+		ignore_system_fonts: bool,
 	},
 	/// Render one document to a PNG image.
 	Render(RenderArgs),
@@ -506,7 +511,21 @@ fn parse_arguments(
 
 fn apply_command(out: &mut LaunchOptions, command: Command) -> Result<()> {
 	match command {
-		Command::Serve { state_dir } => {
+		Command::Serve {
+			state_dir,
+			fonts,
+			ignore_system_fonts,
+		} => {
+			for directory in &fonts {
+				if !directory.is_dir() {
+					bail!(
+						"--fonts: {} is not a directory",
+						directory.display()
+					);
+				}
+			}
+			out.options.fonts.directories = fonts;
+			out.options.fonts.ignore_system_fonts = ignore_system_fonts;
 			out.mode = Mode::Serve;
 			out.state_dir = Some(state_dir);
 			Ok(())

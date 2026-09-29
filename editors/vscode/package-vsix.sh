@@ -28,7 +28,7 @@ for platform in "${wanted[@]}"; do
         mkdir -p "$here/bin/$platform" "$here/dist"
         cp "$binary" "$here/bin/$platform/$name"
         chmod +x "$here/bin/$platform/$name"
-        npm_config_cache="$here/.npm-cache" npx --yes @vscode/vsce@4.0.0 package \
-            --target "$platform" --out "$here/dist/markview-preview-$platform.vsix"
+        "$here/node_modules/.bin/vsce" package \
+            --target "$platform" --out "$here/dist/markview-export-$platform.vsix"
     done
 done

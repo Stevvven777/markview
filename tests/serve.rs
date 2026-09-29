@@ -13,17 +13,13 @@ struct Host {
 impl Host {
 	fn new(state: &std::path::Path) -> Self {
 		let mut child = Command::new(env!("CARGO_BIN_EXE_markview"))
+			.arg("serve")
 			.arg("--fonts")
 			.arg(
 				std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
 					.join("crates/markview-core/tests/fonts"),
 			)
-			.args([
-				"--ignore-system-fonts",
-				"serve",
-				"--offline",
-				"--state-dir",
-			])
+			.args(["--ignore-system-fonts", "--offline", "--state-dir"])
 			.arg(state)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())

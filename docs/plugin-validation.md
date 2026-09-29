@@ -1,8 +1,7 @@
 # Path B validation
 
 This is the maintainer acceptance guide for the full preview extension,
-`Stevvven.markview-preview`. Better markdown PDF remains the separate export-only
-package. Requirement closure is recorded in [plugin-requirements.md](plugin-requirements.md)
+`Stevvven.markview-export`. Markview4vsc combines the previously separate preview and export packages. Requirement closure is recorded in [plugin-requirements.md](plugin-requirements.md)
 only after the review gate approves the evidence.
 
 ## Reproduce the installed-package test
@@ -13,7 +12,7 @@ Build the release engine, then run:
 cd editors/vscode
 npm ci
 ./package-vsix.sh darwin-arm64
-MARKVIEW_VSIX="$PWD/dist/markview-preview-darwin-arm64.vsix" ./run-tests.sh
+MARKVIEW_VSIX="$PWD/dist/markview-export-darwin-arm64.vsix" ./run-tests.sh
 ```
 
 The runner installs the VSIX into an isolated VS Code profile and uses the
