@@ -13,7 +13,31 @@ use markview_core::{
 };
 pub use raster::RasterStats;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use winit::window::Window;
+
+/// A render target the host owns.
+///
+/// The renderer never names a window. It asks this for a surface when it
+/// starts and again whenever the driver reports the surface it holds lost,
+/// and for the size to configure that surface to. A native host implements
+/// it over its window; a front end that draws into a canvas implements it
+/// over the canvas.
+pub trait SurfaceSource: 'static {
+	/// How the GPU instance is created.
+	///
+	/// A host that has a display handle overrides this to hand it over; one
+	/// that has none, such as a browser, keeps the default.
+	fn instance_descriptor(&self) -> wgpu::InstanceDescriptor {
+		wgpu::InstanceDescriptor::new_without_display_handle_from_env()
+	}
+	/// Builds the surface. Called once at startup, and again after a loss.
+	fn create_surface(
+		&self,
+		instance: &wgpu::Instance,
+	) -> Result<wgpu::Surface<'static>>;
+	/// The target's size in physical pixels.
+	fn size(&self) -> (u32, u32);
+}
+
 #[derive(
 	Clone,
 	Copy,
@@ -130,8 +154,8 @@ impl Renderer {
 		}
 	}
 
-	pub async fn new(window: Option<Arc<Window>>) -> Result<Self> {
-		let gpu = gpu::Gpu::new(window).await?;
+	pub async fn new(surface: Option<Box<dyn SurfaceSource>>) -> Result<Self> {
+		let gpu = gpu::Gpu::new(surface).await?;
 		let (pipeline, image_pipeline) =
 			pipeline::create(&gpu.device, gpu.format);
 		let raster =
@@ -152,8 +176,8 @@ impl Renderer {
 			fallback: None,
 		})
 	}
-	pub fn acquire(&mut self, window: Arc<Window>) -> Result<FrameStatus> {
-		self.gpu.acquire(window)
+	pub fn acquire(&mut self) -> Result<FrameStatus> {
+		self.gpu.acquire()
 	}
 	pub fn resize(&mut self, width: u32, height: u32) {
 		self.gpu.resize(width, height);

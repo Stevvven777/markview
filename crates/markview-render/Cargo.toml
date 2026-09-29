@@ -17,9 +17,10 @@ ratex-katex-fonts.workspace = true
 ratex-types.workspace = true
 swash.workspace = true
 tiny-skia.workspace = true
-winit.workspace = true
-# No font directories: this crate draws and drives text, and a front
-# end that compiles it for the Web has no filesystem to read.
+# No windowing toolkit: the host hands over a `SurfaceSource`, so drawing and
+# driving text never names a window.
+# No font directories: a front end that compiles this for the Web has no
+# filesystem to read.
 markview-core = { path = "../markview-core" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -30,6 +31,12 @@ wgpu = { workspace = true, features = ["vulkan"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 wgpu = { workspace = true, features = ["metal"] }
+
+# The browser backend. A front end that draws into a canvas builds this crate
+# for `wasm32-unknown-unknown`, where none of the native backends above apply
+# and the GL backend is the one a canvas can present through.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { workspace = true, features = ["webgl"] }
 
 [lints]
 workspace = true

@@ -34,6 +34,8 @@ at the same level, without `[brackets]`.
 - Focus security documentation on policy and the threat model, with implementation details and verification work in separate references.
 - Name the loop generically in `handle_user_event` and the new `tick`, so the event and timer paths run without a window server.
 - Separate the reading text a copy takes from the clipboard write that stores it.
+- Take a `SurfaceSource` in `markview-render` instead of a window, so the renderer never names a windowing toolkit and a canvas front end can drive it the way the desktop window does.
+- Declare wgpu's `webgl` backend for `wasm32-unknown-unknown`, so `markview-render` builds for the Web; `winit` leaves its dependency tree.
 
 ### Fixed
 
@@ -42,6 +44,7 @@ at the same level, without `[brackets]`.
 - Take a formula or a drawn image whole, since its source text is not what is displayed, instead of selecting an arbitrary slice of it.
 - Mark the selected part of a ligature from the glyph's own advance, so a horizontally scrolled line never lights the letter that is still onscreen in place of the one selected.
 - Keep selection painting linear in the paragraph length by scanning only the cluster's own grapheme boundaries.
+- Ask a WebGL2 device only for the limits it has, so the browser backend gets past `request_device` instead of failing it on the desktop storage-buffer and compute defaults.
 
 ## 0.1.9 - 2026-09-29
 
