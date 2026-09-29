@@ -354,5 +354,5 @@ pub(crate) fn changed_span(old: &str, new: &str) -> (usize, usize, usize) {
 	(prefix, old.len() - suffix, new.len() - suffix)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "font-directories"))]
 mod tests;

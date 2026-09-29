@@ -25,9 +25,12 @@ at the same level, without `[brackets]`.
 
 - Add `markview-selection`, the pointer-driven selection machine taken out of `InteractionState`, so a second front end can drive the same grains, click counting and drag rules.
 - Cover the selection paths that had no test: what a copy takes, the drag-past-edge auto-scroll tick, the deferred `Ctrl+A`, and carrying a selection across an update.
+- Let a host with no filesystem supply its own faces as bytes through `FontConfig::from_faces`, so the shaper can be driven from a front end that has no directory to scan.
 
 ### Changed
 
+- Split the font module into validation, directory scanning and diagram selection, so a front end reuses the parts it has and leaves the rest behind.
+- Put directory scanning behind a `font-directories` feature that is off by default, so a build for a host without a filesystem leaves every `std::fs` call out of the binary.
 - Focus security documentation on policy and the threat model, with implementation details and verification work in separate references.
 - Name the loop generically in `handle_user_event` and the new `tick`, so the event and timer paths run without a window server.
 - Separate the reading text a copy takes from the clipboard write that stores it.

@@ -2,6 +2,10 @@
 //! shaping, not of reading, so a ligature setting several letters as one glyph
 //! still lets the pointer land between them, while a single grapheme is never
 //! parted.
+// These shape with the committed subset faces, so they need a filesystem to
+// read them from.
+#![cfg(feature = "font-directories")]
+
 use markview_core::{
 	document,
 	fonts::FontConfig,

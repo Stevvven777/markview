@@ -18,6 +18,8 @@ ratex-types.workspace = true
 swash.workspace = true
 tiny-skia.workspace = true
 winit.workspace = true
+# No font directories: this crate draws and drives text, and a front
+# end that compiles it for the Web has no filesystem to read.
 markview-core = { path = "../markview-core" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
