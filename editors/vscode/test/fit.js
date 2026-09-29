@@ -3,6 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vscode = require("vscode");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Convert one physical pixel into native layout coordinates.
+const pixel = tile => 1 / (tile.scale * tile.fit);
 async function until(check, label) {
 	for (let i = 0; i < 100; i++) { if (check()) return; await delay(100); }
 	assert.fail(label);
@@ -36,7 +38,7 @@ exports.run = async (extension, scratch) => {
 		await api.clickPreviewAt(link.x + link.width / 2, link.y + link.height / 2);
 		await until(() => api.panelReport().clicked?.kind === "remote", "scaled hit test resolves link");
 		await api.scrollPreviewTo(1000);
-		await until(() => Math.abs(api.panelReport().scroll - 1000) < 2, "scroll uses layout coordinates");
+		await until(() => Math.abs(api.panelReport().scroll - 1000) <= pixel(tile) + 0.01, "scroll uses layout coordinates");
 		await delay(700);
 		const old = api.panelReport();
 		await vscode.commands.executeCommand("workbench.action.toggleSidebarVisibility");
@@ -46,7 +48,7 @@ exports.run = async (extension, scratch) => {
 		const resized = api.panelReport();
 		assert.equal(resized.opens, old.opens, "window resizing does not request native reflow");
 		assert.equal(resized.documentHeight, old.documentHeight, "native layout height is unchanged");
-		assert.ok(Math.abs(resized.scroll - old.scroll) < 3, `resizing preserves reading position: ${old.scroll} -> ${resized.scroll}; fit ${tile.fit} -> ${resized.tileBounds[0].fit}`);
+		assert.ok(Math.abs(resized.scroll - old.scroll) <= (pixel(tile) + pixel(resized.tileBounds[0])) / 2 + 0.01, `resizing preserves reading position: ${old.scroll} -> ${resized.scroll}; fit ${tile.fit} -> ${resized.tileBounds[0].fit}`);
 		for (const band of resized.tileBounds) {
 			assert.ok(Math.abs(band.width - band.viewportWidth) < 1, "resized page stays within the pane");
 			assert.equal(band.pixels, band.expectedPixels);

@@ -21,6 +21,13 @@ function say(label, value) {
 	console.log(`MARKVIEW-EXT ${label} ${JSON.stringify(value)}`);
 }
 
+/** Browser scrolling rounds to physical pixels, before conversion to layout units. */
+function scrollPixel(report) {
+    const tile = report.tileBounds[0];
+    assert.ok(tile?.scale > 0 && tile?.fit > 0, "painted display scale is known");
+    return 1 / (tile.scale * tile.fit) + 0.01;
+}
+
 function delay(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -768,7 +775,7 @@ exports.run = async function () {
 	await delay(500);
 	const scrolled = exports.panelReport();
 	assert.ok(
-		Math.abs(scrolled.into - 10) <= 1,
+		Math.abs(scrolled.into - 10) <= scrollPixel(scrolled),
 		`the view is ten pixels into a row: ${scrolled.into}`,
 	);
 	await editor.edit((builder) =>
@@ -777,7 +784,7 @@ exports.run = async function () {
 	await delay(1500);
 	const stayed = exports.panelReport();
 	assert.ok(
-		Math.abs(stayed.into - scrolled.into) <= 1,
+		Math.abs(stayed.into - scrolled.into) <= Math.max(scrollPixel(scrolled), scrollPixel(stayed)),
 		`the reader is still part-way into the same row: ${scrolled.into} then ${stayed.into}`,
 	);
 	assert.ok(
