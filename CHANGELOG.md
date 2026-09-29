@@ -47,6 +47,7 @@ at the same level, without `[brackets]`.
 - Mark the selected part of a ligature from the glyph's own advance, so a horizontally scrolled line never lights the letter that is still onscreen in place of the one selected.
 - Keep selection painting linear in the paragraph length by scanning only the cluster's own grapheme boundaries.
 - Ask a WebGL2 device only for the limits it has, so the browser backend gets past `request_device` instead of failing it on the desktop storage-buffer and compute defaults.
+- Color a document's code blocks without spawning a thread where the target has none, since `thread::spawn` panics on `wasm32-unknown-unknown` and every fenced block went through it.
 
 ## 0.1.9 - 2026-09-29
 
