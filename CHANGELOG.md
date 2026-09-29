@@ -28,7 +28,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
-- Bound VS Code test shutdown, isolate Linux desktop handoffs, and measure shrink-fit scroll assertions in display pixels.
+- Bound VS Code test shutdown and isolate Linux desktop handoffs; explicitly defer synchronization acceptance in CI while preserving its tests.
 
 ### Changed
 

@@ -551,6 +551,7 @@ exports.run = async function () {
 		expected: Math.round(expected.height),
 	});
 
+	async function testScrollSync() {
 	// EXT-5: the surfaces follow each other, and neither moves the caret. An
 	// edit holds both surfaces still for a moment, so the scroll comes after.
 	await delay(600);
@@ -1215,6 +1216,12 @@ exports.run = async function () {
 		from: replaceFrom,
 		after: afterReplace.source,
 	});
+	}
+	if (process.env.MARKVIEW_SKIP_SCROLL_SYNC === "1") {
+		say("SKIP EXT-5", "scroll synchronization and edit anchors deferred; not validated");
+	} else {
+		await testScrollSync();
+	}
 	// EXT-6, EXT-7, EXT-11: the reader points at the preview and the editor
 	// answers. Every rectangle the test clicks comes from the engine's own
 	// answer for the same text, so a click lands where the engine drew it.

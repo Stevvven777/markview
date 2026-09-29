@@ -143,6 +143,7 @@ The independently published export subset retains its history in
 
 | Port scope | Result |
 |:--|:--|
+| EXT-5, NFR-4, TST-4 test-harness follow-up | **Approve, round 1**, 2026-09-29 (`review-host-cleanup.log`). Display-pixel scroll bounds, recorded Linux desktop handoffs and bounded process-group cleanup. Lifecycle tests and installed regressions pass; full-suite first-frame failure remains open. |
 | INV-1..6, EXT-1/2/8/9/10/12/13, NFR-4, TST-1/2/4 consolidation | **Approve, round 2 of completed reviews**, 2026-09-29 (`review-unify-4.log`). Round 1 found following retained the dead engine after restart; the listener now uses the replacement session. The reviewer independently reran installed regressions. Final full/reload logs (`unify-recovery-full.log`, `unify-recovery-reload.log`) and 821 CPU / 13 GPU tests pass. Linux CI and NFR-1/NFR-6 closure remain separate. |
 | EXT-1/2/4/8, TST-4 active-editor follow-up | **Approve, round 1**, 2026-09-29 (`review-follow.log`). One preview follows actual Markdown tab changes without stealing focus, with scoped settings and latest-request protection; non-Markdown and closed-panel behavior remain stable. Full suite (`follow-full-7.log`), installed regressions and actual reload pass. Creation focus and early-ready races were fixed; background-edit/link tests were aligned with following semantics. |
 | EXT-2, EXT-8/10, INV-1..4, NFR-3/4, TST-4 reload/background follow-up | **Approve, round 1**, 2026-09-29 (`review-restore.log`). Serializer restores editor buffers, scroll and panel group without awaiting webview delivery; native tile metadata colors the outer spacing with the committed frame. Actual installed-window reload, installed full suite, 798 CPU and 13 GPU tests pass. |
@@ -216,7 +217,14 @@ handoffs, and runs the editor with bounded process-group cleanup. Lifecycle
 checks and installed regressions pass (`unify-host-lifecycle.log`,
 `unify-host-regressions.log`); fresh full runs reproduce the known first-frame
 stall (`unify-host-cleanup.log`, `unify-host-cleanup-2.log`) and now exit promptly.
-Review and updated Linux CI for this test-only follow-up remain pending.
+The test-only follow-up passed review round 1 (`review-host-cleanup.log`);
+Linux CI then exited promptly on an edit-anchor assertion (`unify-host-ci.log`).
+At the user's request, CI now sets `MARKVIEW_SKIP_SCROLL_SYNC=1` to defer the
+EXT-5 synchronization/edit-anchor group and `scroll-top.js`; cases remain
+available when the flag is unset. A passing reduced run does not approve EXT-5.
+Preview rendering, fit/resize, links, export and lifecycle checks remain enabled.
+The reduced installed-VSIX suite passes with clean shutdown
+(`unify-deferred-scroll.log`); hosted CI is pending.
 Marketplace publication is explicitly deferred.
 
 

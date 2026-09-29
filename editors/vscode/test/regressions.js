@@ -103,7 +103,11 @@ exports.run = async (extension, scratch) => {
 	}
 	await require("./repaint.js").run(extension, scratch);
 	await require("./templates.js").run(extension);
-	await require("./scroll-top.js").run(extension, scratch);
+	if (process.env.MARKVIEW_SKIP_SCROLL_SYNC === "1") {
+		console.log("MARKVIEW-SKIP EXT-5 scroll-top deferred; not validated");
+	} else {
+		await require("./scroll-top.js").run(extension, scratch);
+	}
 	await require("./fit.js").run(extension, scratch);
     await require("./follow-editor.js").run(extension);
     await require("./export-compat.js").run(extension, scratch);

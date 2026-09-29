@@ -41,6 +41,8 @@ jobs:
         working-directory: editors/vscode
         run: xvfb-run -a node test/ci.cjs
         env:
+          # Deferred by the maintainer; keep the cases available for explicit runs.
+          MARKVIEW_SKIP_SCROLL_SYNC: "1"
           MARKVIEW_VSIX: ${{ github.workspace }}/editors/vscode/dist/markview-export-linux-x64.vsix
           WGPU_BACKEND: vulkan
       - uses: actions/upload-artifact@v6
