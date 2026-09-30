@@ -211,7 +211,9 @@ impl ReaderSettings {
 	/// stylesheet that has not been told about it would set Han text in a
 	/// system fallback face. Applying it here rather than at each call site
 	/// keeps the two from drifting apart.
-	fn styled(&self) -> std::sync::Arc<markview_core::style::Stylesheet> {
+	pub(crate) fn styled(
+		&self,
+	) -> std::sync::Arc<markview_core::style::Stylesheet> {
 		if self.stylesheet.cjk_type() == self.cjk_type {
 			return self.stylesheet.clone();
 		}

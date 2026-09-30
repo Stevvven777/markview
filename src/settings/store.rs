@@ -476,6 +476,10 @@ impl SettingsStore {
 			Some("theme"),
 			config.style.is_none().then_some("style"),
 			config.language.is_none().then_some("language"),
+			config
+				.fontdef_overrides
+				.is_empty()
+				.then_some("fontdef-override"),
 		]
 		.into_iter()
 		.flatten()

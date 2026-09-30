@@ -605,6 +605,30 @@ fn app_with_pinned_fonts() -> App<StubProxy> {
 	app
 }
 
+#[test]
+fn language_and_font_menus_are_drawn_once() {
+	for (mut app, id) in [
+		(app_with_panel(), DropdownId::Language),
+		(app_with_pinned_fonts(), DropdownId::Font(FontRole::Serif)),
+	] {
+		app.action(Command::ToggleDropdown(id, 0));
+		let menu = app.dropdown_menu().expect("the chooser anchors its list");
+		let overlay = app.chrome().overlay();
+		assert_eq!(
+			overlay
+				.iter()
+				.filter(|draw| matches!(draw,
+					crate::layout::Draw::Rect(rect, _)
+						if (rect.x, rect.y, rect.w, rect.h)
+							== (menu.rect.x, menu.rect.y, menu.rect.w, menu.rect.h)
+				))
+				.count(),
+			1,
+			"{id:?}: the menu background is painted once"
+		);
+	}
+}
+
 /// The family chooser takes the pointer exactly as the language chooser does:
 /// a release over an option commits it, the list closes and focus returns to
 /// the row it belongs to. The default entry takes the override back out.

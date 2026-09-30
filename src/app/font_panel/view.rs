@@ -43,18 +43,22 @@ fn fonts_rect(width: f32, height: f32) -> Rect {
 
 /// The roles the page offers a family chooser for.
 ///
-/// The Han three follow the `cjk-type` setting: with no variant in force the
-/// stylesheet resolves no `[cjk]` definition for them to override, so their
-/// rows are not shown at all.
+/// A Han role is offered only when the stylesheet resolves its definition
+/// for the selected `cjk-type` variant.
 pub(in crate::app) fn roles(settings: &ReaderSettings) -> Vec<FontRole> {
 	let mut roles =
 		vec![FontRole::Serif, FontRole::SansSerif, FontRole::Monospace];
 	if settings.cjk_type != CjkType::None {
-		roles.extend([
-			FontRole::SerifHan,
-			FontRole::SansSerifHan,
-			FontRole::MonospaceHan,
-		]);
+		let sheet = settings.styled();
+		roles.extend(
+			[
+				FontRole::SerifHan,
+				FontRole::SansSerifHan,
+				FontRole::MonospaceHan,
+			]
+			.into_iter()
+			.filter(|role| sheet.fontdefs.contains_key(role.id())),
+		);
 	}
 	roles
 }
@@ -1483,11 +1487,8 @@ mod tests {
 		assert_eq!(control(&settings).label, t.settings_font_default());
 	}
 
-	/// With no CJK variant in force the sheet resolves no `[cjk]` definition,
-	/// so the Han rows are not offered at all — there is nothing for a pick to
-	/// shape. A variant brings them back.
 	#[test]
-	fn without_a_cjk_variant_the_han_choosers_are_hidden() {
+	fn font_choosers_only_offer_resolved_han_roles() {
 		let fonts = crate::test_support::fonts();
 		let jobs = HashMap::new();
 		let view = super::super::View {
@@ -1499,32 +1500,48 @@ mod tests {
 			status_filter: None,
 			choosers: true,
 		};
-		let plain = ReaderSettings {
-			cjk_type: CjkType::None,
-			..Default::default()
-		};
-		let buttons =
-			buttons(&view, &plain, &fonts, false, 820., 600., Lang::En);
-		assert!(buttons.iter().any(|b| matches!(
-			b.action,
-			Command::ToggleDropdown(DropdownId::Font(FontRole::Serif), _)
-		)));
-		for role in [
-			FontRole::SerifHan,
-			FontRole::SansSerifHan,
-			FontRole::MonospaceHan,
+		let mut sheet = (*ReaderSettings::default().stylesheet).clone();
+		sheet.set_cjk_type(CjkType::Sc);
+		let mut custom = sheet.clone();
+		custom.merge(&markview_core::style::Stylesheet::parse(
+			"format_version=2\nversion=1\n[[fontdef]]\nid='monospace[cjk]'\ntype='JP'\nlookfor=['Custom Han Mono']",
+		).unwrap());
+		for (sheet, cjk_type, han_mono) in [
+			(&sheet, CjkType::None, false),
+			(&sheet, CjkType::Sc, true),
+			(&sheet, CjkType::Tc, false),
+			(&sheet, CjkType::Jp, false),
+			(&custom, CjkType::Jp, true),
 		] {
-			assert!(
-				!buttons
-					.iter()
-					.any(|b| matches!(b.action, Command::ToggleDropdown(DropdownId::Font(shown), _) if shown == role)),
-				"the {role:?} row is hidden"
-			);
+			let settings = ReaderSettings {
+				cjk_type,
+				stylesheet: std::sync::Arc::new(sheet.clone()),
+				..Default::default()
+			};
+			let buttons =
+				buttons(&view, &settings, &fonts, false, 1200., 800., Lang::En);
+			for (role, offered) in [
+				(FontRole::Serif, true),
+				(FontRole::SansSerif, true),
+				(FontRole::Monospace, true),
+				(FontRole::SerifHan, cjk_type != CjkType::None),
+				(FontRole::SansSerifHan, cjk_type != CjkType::None),
+				(FontRole::MonospaceHan, han_mono),
+			] {
+				assert_eq!(
+					buttons.iter().any(|b| matches!(b.action, Command::ToggleDropdown(DropdownId::Font(shown), _) if shown == role)),
+					offered,
+					"{cjk_type:?}: {role:?} chooser"
+				);
+				let mut open = Dropdown::new(DropdownId::Font(role), 0);
+				assert_eq!(
+					menu(&view, &settings, &fonts, &mut open, (1200., 800.))
+						.is_some(),
+					offered,
+					"{cjk_type:?}: {role:?} menu"
+				);
+			}
 		}
-		// A variant in force shows all six.
-		let settings = ReaderSettings::default();
-		assert_eq!(super::roles(&settings).len(), 6);
-		assert_eq!(super::roles(&plain).len(), 3);
 	}
 
 	/// A chooser the scroll has moved out of the clip holds no list, exactly as

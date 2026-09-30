@@ -368,13 +368,6 @@ pub(super) fn draw_controls(
 		let form =
 			settings_form(ui, settings, interaction, width, height, backend);
 		let rect = form.rect;
-		// An open option list is only reached through a form, so the form
-		// measures it and the same value answers the pointer. Measuring also
-		// brings its highlight into view, on a copy: the state is corrected
-		// the next time the input paths measure it.
-		let menu = interaction
-			.dropdown
-			.and_then(|mut open| form.menu(&mut open, (width, height)));
 		let mut out = form
 			.without_header()
 			.preview(interaction.settings_preview)
@@ -404,11 +397,6 @@ pub(super) fn draw_controls(
 			interaction.settings_preview,
 			t,
 		));
-		// The list floats over the page, so it goes on after everything the
-		// page draws.
-		if let Some(menu) = &menu {
-			out.extend(super::components::draw_menu(ui, interaction, menu));
-		}
 		out
 	} else {
 		draw_toolbar(ui, interaction, width, settings.lang())

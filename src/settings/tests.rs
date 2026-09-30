@@ -423,9 +423,9 @@ fn a_font_family_round_trips_and_the_default_removes_the_override() {
 	store.changed(&settings, Some(Setting::FontFamily));
 	store.flush().unwrap();
 
-	let (loaded, warning) = SettingsStore::load(Some(path));
+	let (mut observer, warning) = SettingsStore::load(Some(path.clone()));
 	assert!(warning.is_none());
-	let loaded = loaded.settings();
+	let loaded = observer.settings();
 	assert_eq!(loaded.font_family(FontRole::Serif), Some("Noto Sans"));
 	assert_eq!(loaded.font_family(FontRole::Monospace), None);
 	// The override reaches the stylesheet in force, replacing that role's own
@@ -448,6 +448,18 @@ fn a_font_family_round_trips_and_the_default_removes_the_override() {
 	reset.set_font_family(FontRole::Serif, None);
 	assert_eq!(reset.font_family(FontRole::Serif), None);
 	assert!(reset.fontdef_overrides.is_empty());
+	store.changed(&reset, Some(Setting::FontFamily));
+	store.flush().unwrap();
+	assert!(
+		!fs::read_to_string(&path)
+			.unwrap()
+			.contains("fontdef-override")
+	);
+	assert!(observer.reload().unwrap());
+	assert!(observer.settings().fontdef_overrides.is_empty());
+	let (restarted, warning) = SettingsStore::load(Some(path));
+	assert!(warning.is_none());
+	assert!(restarted.settings().fontdef_overrides.is_empty());
 	assert_eq!(
 		crate::stylesheet::apply_font_overrides(
 			reset.stylesheet.clone(),

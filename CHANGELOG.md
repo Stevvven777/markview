@@ -51,6 +51,9 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Persist restoring the last font role to Default by removing its saved override.
+- Offer Han font choosers only for definitions resolved by the selected CJK variant.
+- Draw open language menus once to preserve translucent backgrounds and avoid redundant shaping.
 - Fix image viewer activation without selectable text, capture covered controls' input, and cancel or latch drags correctly across focus loss and pointer movement.
 - Refresh open image viewers after decoding and keep very thin images within the window's fit bounds.
 - Keep the last completed pass's block geometry when a later pass is cancelled, so typing past a document no longer flushes the warm cache.
