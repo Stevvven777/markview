@@ -24,6 +24,7 @@ images it embeds are reproduced by `scripts/capture_screenshots.sh`.
 - [Security verification](security-verification.md) tracks security evidence, outstanding work, and proposed verification harnesses.
 - [Development guide](development.md) is the how-to page for building, testing, changing behavior, and adding a new document node.
 - [Stylesheet guide](stylesheets.md) is the how-to/reference page for authoring and installing MVSS themes.
+- [MVaaC web demo](mvaac-web-demo.md) freezes the browser front end's JavaScript API, page behavior and acceptance suite.
 
 ## Ship the implementation
 

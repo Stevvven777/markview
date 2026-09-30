@@ -35,6 +35,7 @@ members = [
 	"crates/markview-pdf",
 	"crates/markview-render",
 	"crates/markview-selection",
+	"crates/markview-web",
 	"xtask",
 ]
 resolver = "3"

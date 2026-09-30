@@ -1,0 +1,59 @@
+[package]
+name = "markview-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "The browser front end: Markview driven from JavaScript through WebAssembly"
+
+[lib]
+# `cdylib` is what `wasm-bindgen` reads; `rlib` keeps the crate a normal
+# workspace member so a native `cargo check` covers the glue that is not
+# behind the `wasm32` gate.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+markview-core = { path = "../markview-core" }
+markview-render = { path = "../markview-render" }
+markview-selection = { path = "../markview-selection" }
+anyhow.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+web-time.workspace = true
+# `FontConfig::from_faces` takes `parley::fontique::Blob`, which has to be
+# named to hand a browser its faces as bytes.
+parley.workspace = true
+
+# A browser is the only host this crate has. The pin must equal the
+# `wasm-bindgen` CLI's version, because the CLI refuses a schema mismatch.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# The canvas surface is built here, so the front end names the GPU API the
+# renderer hides behind `SurfaceSource`.
+wgpu = { workspace = true, features = ["webgl"] }
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = [
+	"CanvasRenderingContext2d",
+	"Clipboard",
+	"console",
+	"Document",
+	"DomRect",
+	"Element",
+	"Event",
+	"EventTarget",
+	"HtmlCanvasElement",
+	"HtmlElement",
+	"KeyboardEvent",
+	"MouseEvent",
+	"Navigator",
+	"Performance",
+	"PointerEvent",
+	"Window",
+] }
+
+[lints]
+workspace = true
