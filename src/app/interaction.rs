@@ -250,6 +250,15 @@ impl<P: super::SendEvent> App<P> {
 			| Command::ExportMargin(_)
 			| Command::ExportScale(_) => return,
 			Command::Fonts(command) => {
+				// Switching the page's view leaves the chooser rows the open
+				// list anchors to, so the list goes with them.
+				if matches!(
+					command,
+					super::font_panel::Command::StatusFilter(_)
+						| super::font_panel::Command::Choosers
+				) {
+					self.interaction.dropdown = None;
+				}
 				let proxy = self.proxy.clone();
 				if self.font_panel.command(
 					command,
@@ -498,6 +507,19 @@ impl<P: super::SendEvent> App<P> {
 				// change reaches the document too: the request relabels that
 				// one block and leaves every other line's geometry alone.
 				self.request(false);
+				self.redraw();
+				return;
+			}
+			Command::FontFamily(role, family) => {
+				self.preferences
+					.values
+					.set_font_family(role, family.map(str::to_owned));
+				self.setting_changed(Some(Setting::FontFamily));
+				// The stylesheet's own definitions are what the override
+				// replaces, so they are read again and every line is laid out
+				// with the family now in force.
+				self.reload_styles();
+				self.close_dropdown();
 				self.redraw();
 				return;
 			}
