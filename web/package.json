@@ -1,0 +1,16 @@
+{
+  "name": "markview-monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p packages/markview && tsc --noEmit -p apps/demo",
+    "serve": "node serve.mjs",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0-alpha-2026-08-31",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.9.0"
+  }
+}

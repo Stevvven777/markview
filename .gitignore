@@ -16,3 +16,16 @@ CLAUDE.md
 AGENTS.local.md
 .dsh
 .workbuddy
+
+# Web monorepo
+web/**/node_modules/
+web/dist/
+web/packages/*/dist/
+web/packages/*/wasm/
+web/apps/*/dist/
+web/test-results/
+web/playwright-report/
+web/.tsbuildinfo
+
+# Vendored tools
+.tools/
