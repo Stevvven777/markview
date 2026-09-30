@@ -7,25 +7,18 @@
 use crate::{
 	fonts,
 	selection::{Pointer, Reading},
+	state::{Published, SelectionLength},
 };
 use markview_core::{
 	document::{Document, parse},
 	image::ImageSnapshot,
-	layout::{
-		LayoutEngine, LayoutOptions, LayoutSnapshot, ProgressiveLayout,
-		Viewport,
-	},
+	layout::{LayoutEngine, LayoutOptions, ProgressiveLayout, Viewport},
 	style::Stylesheet,
 };
 use markview_render::{FrameStatus, Renderer, SurfaceSource, Theme, View};
 use markview_selection::{Host, Modifiers};
 use serde::Deserialize;
-use std::{
-	cell::Cell,
-	collections::HashMap,
-	sync::{Arc, OnceLock},
-	time::Duration,
-};
+use std::{collections::HashMap, sync::OnceLock, time::Duration};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use web_time::Instant;
@@ -107,7 +100,7 @@ pub async fn create(
 		frame_ms: 0.0,
 		frames: 0,
 		glyphs: 0,
-		selection_chars: Cell::new(None),
+		selection_chars: SelectionLength::default(),
 	})
 }
 
@@ -140,10 +133,8 @@ pub struct Markview {
 	frame_ms: f64,
 	frames: u64,
 	glyphs: u64,
-	/// The UTF-16 length of the selected text, or `None` after a change.
-	/// `stats_json` runs at least once per frame, while extracting the
-	/// selection scans every block and allocates the whole text.
-	selection_chars: Cell<Option<usize>>,
+	/// The UTF-16 length of the selected text, cached between changes.
+	selection_chars: SelectionLength,
 }
 
 #[wasm_bindgen]
@@ -220,7 +211,7 @@ impl Markview {
 		if let Some(parsed) = pending.parsed {
 			self.document = parsed;
 		}
-		self.forget_selection_length();
+		self.selection_chars.forget();
 		self.clamp_scroll();
 	}
 
@@ -350,7 +341,7 @@ impl Markview {
 			// Re-hit-testing can land on the position already selected, and
 			// then the cached count still describes the text on screen.
 			if self.pointer.drag_to(&reading, x, y) {
-				self.forget_selection_length();
+				self.selection_chars.forget();
 			}
 		}
 	}
@@ -401,7 +392,7 @@ impl Markview {
 			viewport: self.viewport(),
 		};
 		self.pointer.press(&reading, x as f32, y as f32);
-		self.forget_selection_length();
+		self.selection_chars.forget();
 	}
 
 	/// Extends the press in flight. A hover that is not dragging, or one that
@@ -416,7 +407,7 @@ impl Markview {
 			viewport: self.viewport(),
 		};
 		if self.pointer.drag_to(&reading, x as f32, y as f32) {
-			self.forget_selection_length();
+			self.selection_chars.forget();
 		}
 	}
 
@@ -424,20 +415,20 @@ impl Markview {
 	#[wasm_bindgen(js_name = pointerUp)]
 	pub fn pointer_up(&mut self, x: f64, y: f64) {
 		self.pointer.release(x as f32, y as f32);
-		self.forget_selection_length();
+		self.selection_chars.forget();
 	}
 
 	#[wasm_bindgen(js_name = selectAll)]
 	pub fn select_all(&mut self) {
 		self.pointer
 			.select_all(&self.published.snapshot, self.published.revision);
-		self.forget_selection_length();
+		self.selection_chars.forget();
 	}
 
 	#[wasm_bindgen(js_name = clearSelection)]
 	pub fn clear_selection(&mut self) {
 		self.pointer.clear();
-		self.forget_selection_length();
+		self.selection_chars.forget();
 	}
 
 	/// The reading text of the selection, `""` when empty or stale.
@@ -563,7 +554,7 @@ impl Markview {
 	fn relayout(&mut self) {
 		// `accept` rebases the selection onto the new snapshot, so its text
 		// may differ even where the reading positions survive.
-		self.forget_selection_length();
+		self.selection_chars.forget();
 		let Markview {
 			engine,
 			options,
@@ -605,7 +596,7 @@ impl Markview {
 			if let Some(parsed) = pending.parsed {
 				self.document = parsed;
 			}
-			self.forget_selection_length();
+			self.selection_chars.forget();
 		} else {
 			let prefix = pending.layout.snapshot();
 			let pass = pending.layout.pass_id();
@@ -627,7 +618,7 @@ impl Markview {
 					Some(pass),
 					&mut self.pointer,
 				);
-				self.forget_selection_length();
+				self.selection_chars.forget();
 			}
 			self.pending = Some(pending);
 		}
@@ -638,20 +629,9 @@ impl Markview {
 	/// [`Markview::selected_text`] scans the whole snapshot and allocates the
 	/// selected text, so it is extracted at most once between changes.
 	fn selection_length(&self) -> usize {
-		if let Some(length) = self.selection_chars.get() {
-			return length;
-		}
 		// `selectedText().length` counts UTF-16 code units, so a character
 		// outside the basic plane counts as two here as well.
-		let length = self.selected_text().encode_utf16().count();
-		self.selection_chars.set(Some(length));
-		length
-	}
-
-	/// Drops the cached count after the selection or the snapshot it was
-	/// extracted from changes.
-	fn forget_selection_length(&self) {
-		self.selection_chars.set(None);
+		self.selection_chars.get(|| self.selected_text())
 	}
 
 	fn stats_json(&self) -> String {
@@ -684,87 +664,6 @@ struct Pending {
 	/// The suspended pass. It holds everything the layout needs between calls,
 	/// so a step never re-measures a block an earlier step already laid out.
 	layout: ProgressiveLayout,
-}
-
-/// The snapshot the canvas last drew, and the revision it was accepted at.
-#[derive(Default)]
-struct Published {
-	snapshot: LayoutSnapshot,
-	revision: u64,
-	/// The source of the document `snapshot` describes, and the pass that laid
-	/// it out. Together they say whether a prefix merely adds blocks to what is
-	/// on screen: the same document laid out for a new column width does not.
-	source: Option<Arc<str>>,
-	pass: Option<u64>,
-}
-impl Published {
-	/// Accepts `next` as a whole new snapshot, moving the selection onto it
-	/// while it still reads the same text and clearing it otherwise. `pass` is
-	/// the resumable pass that produced it, or `None` for a snapshot no pass
-	/// can extend.
-	fn accept(
-		&mut self,
-		next: LayoutSnapshot,
-		source: Arc<str>,
-		pass: Option<u64>,
-		pointer: &mut Pointer,
-	) {
-		let revision = self.revision.wrapping_add(1);
-		let previous = std::mem::replace(&mut self.snapshot, next);
-		let selection = pointer.selection().and_then(|selection| {
-			previous.rebase_selection(
-				&self.snapshot,
-				selection,
-				self.revision,
-				revision,
-			)
-		});
-		pointer.set_selection(selection);
-		pointer.rebase_drag(&previous, &self.snapshot, self.revision, revision);
-		self.revision = revision;
-		self.source = Some(source);
-		self.pass = pass;
-	}
-
-	/// Appends the blocks `prefix` added since the last publication, so a
-	/// budgeted step pays for the blocks it reached rather than for the whole
-	/// prefix again. Returns false when `prefix` does not continue what is
-	/// published, which leaves the caller to accept it whole.
-	fn extend(
-		&mut self,
-		prefix: &LayoutSnapshot,
-		pointer: &mut Pointer,
-	) -> bool {
-		let published = self.snapshot.blocks.len();
-		if prefix.blocks.len() < published {
-			return false;
-		}
-		self.snapshot
-			.blocks
-			.extend_from_slice(&prefix.blocks[published..]);
-		self.snapshot.height = prefix.height;
-		self.snapshot.document_box = prefix.document_box.clone();
-		self.snapshot.width = prefix.width;
-		self.snapshot.reused = prefix.reused;
-		self.snapshot.degraded = prefix.degraded;
-		self.snapshot.math_errors = prefix.math_errors;
-		self.snapshot.images = prefix.images.clone();
-		let revision = self.revision.wrapping_add(1);
-		// Only blocks were added, so every reading position still means what it
-		// meant and the gesture in flight keeps extending from the same base.
-		pointer.retag(self.revision, revision);
-		self.revision = revision;
-		true
-	}
-
-	/// Whether `pass` over `source` merely adds blocks to what is published.
-	fn continues(&self, source: &Arc<str>, pass: u64) -> bool {
-		self.pass == Some(pass)
-			&& self
-				.source
-				.as_ref()
-				.is_some_and(|published| Arc::ptr_eq(published, source))
-	}
 }
 
 /// The display handle wgpu wants before it accepts a canvas surface.

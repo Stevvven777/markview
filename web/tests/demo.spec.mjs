@@ -893,9 +893,12 @@ test("a scrolled replacement reports its own progress, not the old document's", 
   ).toBe(result.after.statsBlocks);
 });
 
-// --- 23. Stats count the selection without re-extracting it ------------------
+// --- 23. Stats report the selection length -----------------------------------
+// The cache's hit and invalidation behaviour is covered by native tests in
+// `crates/markview-web/src/state/tests.rs`; what a browser must prove here is
+// only that the exported numbers agree with the page's own view of them.
 
-test("the selection length is cached and still tracks the selection", async ({ page }) => {
+test("the selection length tracks the selection and clears with it", async ({ page }) => {
   const diag = await openDemo(page);
   await waitForReady(page, diag);
   await pollStats(page, "s.blocks > 0");
@@ -907,34 +910,17 @@ test("the selection length is cached and still tracks the selection", async ({ p
 
     window.mv.selectAll();
     const selected = window.mv.selectedText().length;
-    // The first read recomputes; the rest must come from the cache.
     const reported = window.mv.stats().selectionLength;
-
-    const time = (run) => {
-      const started = performance.now();
-      run();
-      return performance.now() - started;
-    };
-    // Warm both paths so neither pays a first-call cost inside the timing.
-    window.mv.stats();
-    window.mv.selectedText();
-    const statsMs = time(() => { for (let i = 0; i < 60; i += 1) window.mv.stats(); });
-    const textMs = time(() => { for (let i = 0; i < 60; i += 1) window.mv.selectedText(); });
 
     window.mv.clearSelection();
     const cleared = window.mv.stats().selectionLength;
-    return { selected, reported, statsMs, textMs, cleared };
+    return { selected, reported, cleared };
   });
 
   console.log(`[selection-length] ${JSON.stringify(result)}`);
   expect(result.selected, "the document must have selectable text").toBeGreaterThan(10_000);
-  expect(result.reported, "the cached count must match the selection").toBe(result.selected);
-  expect(result.cleared, "clearing the selection must invalidate the cache").toBe(0);
-  expect(
-    result.statsMs,
-    `stats() must not re-extract the selection per call `
-      + `(stats=${result.statsMs.toFixed(2)}ms, text=${result.textMs.toFixed(2)}ms)`,
-  ).toBeLessThan(result.textMs);
+  expect(result.reported, "the reported count must match the selection").toBe(result.selected);
+  expect(result.cleared, "clearing the selection must report zero").toBe(0);
 });
 
 // --- 24. Initial sizing and resize stay inside the device's limits -----------

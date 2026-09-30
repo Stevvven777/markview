@@ -56,6 +56,7 @@ at the same level, without `[brackets]`.
 - Draw open language menus once to preserve translucent backgrounds and avoid redundant shaping.
 - Fix image viewer activation without selectable text, capture covered controls' input, and cancel or latch drags correctly across focus loss and pointer movement.
 - Refresh open image viewers after decoding and keep very thin images within the window's fit bounds.
+- Cover the WebAssembly front end's publication bookkeeping and selection-length cache with native tests, replacing the Playwright wall-clock timing assertion that could flake on a loaded runner.
 - Keep the last completed pass's block geometry when a later pass is cancelled, so typing past a document no longer flushes the warm cache.
 - Keep a block's completed-pass membership separate from the pass that last used it, so a pass that resumes geometry and is then abandoned cannot cost the warm cache.
 - Let a selection stop between the letters of a ligature, so `ff` and `fi` can be picked apart instead of only taken whole, while a single grapheme is still never parted.

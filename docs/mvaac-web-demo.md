@@ -433,10 +433,10 @@ Run with `pnpm --dir web test` against `web/dist`. The harness must:
     replacement's one-block prefix, `step(0)` leaves `blocks` at zero while the
     previous snapshot's count is still published, and `finish()` then reports the
     whole document.
-23. Assert `Stats.selectionLength` tracks the selection without re-extracting it
-    per read: it matches `selectedText().length` after `selectAll()`, drops to
-    zero after `clearSelection()`, and reading stats repeatedly stays cheaper
-    than extracting the text repeatedly.
+23. Assert `Stats.selectionLength` tracks the selection: it matches
+    `selectedText().length` after `selectAll()` and drops to zero after
+    `clearSelection()`. The not-re-extracted-per-read guarantee is a native
+    test in `crates/markview-web`, so the browser asserts only the numbers.
 24. Assert a DPR-2 canvas wider than the device's texture edge still creates and
     resizes: the backing store never exceeds the edge, keeps the canvas's aspect
     ratio, and the reflow completes without page errors.
