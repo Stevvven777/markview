@@ -381,13 +381,22 @@ pub fn split_nul(data: &[u8]) -> (String, String) {
 	(head, tail)
 }
 
-/// Derive a deterministic u128 from a byte string for option generation.
-/// `DefaultHasher` is seeded per process, which is fine: all comparisons
-/// happen inside one process.
+/// Derive a deterministic full 128-bit value from a byte string for option
+/// generation. Two independent `DefaultHasher` instances cover the high and
+/// low halves, so bits 64..128 are meaningful too. `DefaultHasher` is seeded
+/// per process, which is fine: all comparisons happen inside one process.
+/// Callers that only look at low bits (`seed as u32`, `seed & 7`, ...) stay
+/// valid.
 pub fn derive(data: &[u8]) -> u128 {
-	let mut h = DefaultHasher::new();
-	data.hash(&mut h);
-	h.finish() as u128
+	// Two passes over distinct streams (the length prefix separates them);
+	// hashing the same bytes into two fresh `DefaultHasher`s would yield
+	// identical halves.
+	let mut h1 = DefaultHasher::new();
+	data.len().hash(&mut h1);
+	data.hash(&mut h1);
+	let mut h2 = DefaultHasher::new();
+	data.hash(&mut h2);
+	(h1.finish() as u128) | ((h2.finish() as u128) << 64)
 }
 /// The `Limits` shrunk toward their floors, derived from `seed`, so the
 /// degradation paths are reachable at small inputs.
@@ -411,4 +420,26 @@ pub fn shrunk_limits(seed: u128) -> markview_core::limits::Limits {
 /// sensible while still varying.
 pub fn f32_unit(v: u32) -> f32 {
 	1.0 + (v % 15_000) as f32 / 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Different seeds must produce at least one different `Limits` field,
+	/// so the degradation paths do not collapse onto one fixed point.
+	#[test]
+	fn shrunk_limits_vary_across_seeds() {
+		let a = shrunk_limits(derive(b"seed-a"));
+		let b = shrunk_limits(derive(b"seed-b"));
+		assert_ne!(a, b);
+	}
+
+	/// High seed bits feed the `Limits` picks, so a seed with every bit set
+	/// must lift the fields above their floors (the pre-fix `derive` left
+	/// bits 64..128 zero and pinned them there).
+	#[test]
+	fn shrunk_limits_uses_high_seed_bits() {
+		assert!(shrunk_limits(u128::MAX).inline_depth > 32);
+	}
 }

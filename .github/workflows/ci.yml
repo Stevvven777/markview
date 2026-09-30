@@ -6,6 +6,9 @@ jobs:
   check:
     uses: ./.github/workflows/checks.yml
 
+  fuzz:
+    uses: ./.github/workflows/fuzz.yml
+
   packaging:
     runs-on: ubuntu-latest
     steps:
@@ -26,7 +29,7 @@ jobs:
             https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color .github/workflows/ci.yml \
             .github/workflows/packages.yml .github/workflows/packaging.yml \
-            .github/workflows/checks.yml
+            .github/workflows/checks.yml .github/workflows/fuzz.yml
       - name: Generated release files match the configuration
         # `cargo install cargo-dist` installs the bare `dist` binary, which
         # cargo will not resolve as a subcommand.
@@ -90,7 +93,7 @@ jobs:
   # packaging input.
   ci:
     if: always()
-    needs: [check, packaging, web]
+    needs: [check, fuzz, packaging, web]
     runs-on: ubuntu-latest
     steps:
       - name: Fail unless every job succeeded

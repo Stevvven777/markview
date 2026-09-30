@@ -3,6 +3,7 @@
 //! helpers. The targets themselves live in `../fuzz_targets`.
 pub mod allocator;
 pub mod budget;
+pub mod edit;
 pub mod mutators;
 pub mod oracle;
 pub mod pipeline;

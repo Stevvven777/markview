@@ -15,7 +15,6 @@ use markview_core::{
 	document,
 	fonts::FontConfig,
 	layout::{LayoutEngine, LayoutOptions, LayoutSnapshot},
-	limits::Limits,
 	paginate::{PageGeometry, Pagination, paginate},
 	style::{CjkType, Stylesheet},
 };
@@ -121,25 +120,12 @@ pub fn export_pdf(
 		PageGeometry::from_style(sheet.page()).expect("print page is valid");
 	// The derived `Limits` keep the export's degradation paths reachable;
 	// the page geometry stays the stylesheet's, like the reader's export.
-	let seed = derive(md.as_bytes());
-	let pick = |shift: u32, n: u128| (seed >> shift) % n;
 	let options = LayoutOptions {
 		width: geometry.text_px().0,
 		codeblock_wrap: true,
 		force_open: true,
 		hide_front_matter: true,
-		limits: Limits {
-			inline_depth: 32 + pick(64, 512) as usize,
-			block_depth: 8 + pick(68, 260) as usize,
-			linebreak_evaluations: 1000 + pick(72, 3_000_000) as usize,
-			highlight_line_bytes: 64 + pick(76, 65_536) as usize,
-			highlight_bytes: 4096 + pick(80, 16 * 1024 * 1024) as usize,
-			math_formula_bytes: 64 + pick(84, 256 * 1024) as usize,
-			math_bytes: 1024 + pick(88, 8 * 1024 * 1024) as usize,
-			table_columns: 4 + pick(92, 512) as usize,
-			table_rows: 8 + pick(96, 16_384) as usize,
-			table_cells: 16 + pick(100, 131_072) as usize,
-		},
+		limits: crate::oracle::shrunk_limits(derive(md.as_bytes())),
 		stylesheet: sheet.clone(),
 		fonts: pinned_fonts(),
 		..Default::default()

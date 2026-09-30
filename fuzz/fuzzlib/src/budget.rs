@@ -1,9 +1,18 @@
 //! Per-input budgets (O2, O3, B1).
 //!
 //! Every target wraps one input in an [`InputGuard`]: no panic, abort, or
-//! integer overflow may occur, and neither the wall-clock time nor the peak
-//! live allocation may exceed the budget. `Err` returns and degraded output
-//! are legal (O4: the `Limits` degradation contract is not asserted here).
+//! integer overflow may occur, and neither the wall-clock time nor the
+//! input's peak live allocation may exceed the budget. `Err` returns and
+//! degraded output are legal (O4: the `Limits` degradation contract is not
+//! asserted here).
+//!
+//! The allocation figure is a *window* peak: opening the guard snapshots
+//! live bytes and resets the allocator's window peak, so each input is
+//! metered on its own transient high-water mark — never on the
+//! process-global peak, which earlier larger inputs would otherwise mask.
+//! The wall budget detects *slow* inputs, not hung ones; a post-hoc
+//! `finish` cannot observe a hang, so libFuzzer's `-timeout` is the hang
+//! backstop.
 //!
 //! The per-stage defaults come from the calibration record in
 //! `artifacts/budget-calibration.md` (method per B2: high percentile of
@@ -117,13 +126,48 @@ pub struct InputGuard {
 mod tests {
 	use super::*;
 
+	// The two allocation-gate tests share one process-global allocator, so
+	// they serialize to keep the window state deterministic. Lock poisoning
+	// is expected here (a panicking test holds the guard); exclusion, not
+	// the mutex state, is what matters.
+	static ALLOC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+	fn alloc_test_lock() -> std::sync::MutexGuard<'static, ()> {
+		ALLOC_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+	}
+
 	// The reverse test that pins the allocation gate: with a zero allowance
 	// a live allocation inside the guard must panic, or the gate is inert.
 	#[test]
 	#[should_panic(expected = "allocation budget")]
 	fn a_zero_alloc_allowance_is_enforced() {
+		let _lock = alloc_test_lock();
 		let guard = InputGuard::new();
 		let chunk = vec![0u8; 64 * 1024];
+		guard.finish(
+			&Budget {
+				time_ms: 60_000,
+				alloc_base: 0,
+				alloc_per_kib: 0,
+			},
+			chunk.len(),
+		);
+	}
+
+	// Regression pin for window metering: a large block allocated and
+	// dropped *outside* any guard raises the process-global peak; a later
+	// guard's window starts from the live baseline, so its own modest
+	// allocation — far below the historical peak but over a zero allowance
+	// — must still panic. Under the old global-peak delta this was silent
+	// (delta 0).
+	#[test]
+	#[should_panic(expected = "allocation budget")]
+	fn a_window_peak_below_the_global_peak_is_still_metered() {
+		let _lock = alloc_test_lock();
+		let _big = vec![0u8; 32 * 1024 * 1024];
+		drop(_big);
+		let guard = InputGuard::new();
+		let chunk = vec![0u8; 2 * 1024 * 1024];
 		guard.finish(
 			&Budget {
 				time_ms: 60_000,
@@ -137,11 +181,13 @@ mod tests {
 
 impl InputGuard {
 	pub fn new() -> Self {
-		// The live total is the baseline: what was already resident before
-		// this input is not its fault.
+		// Opening a window both snapshots the live baseline (what was
+		// already resident before this input is not its fault) and resets
+		// the window peak, so this input is metered on its own
+		// transient high-water mark, not the process-global one.
 		Self {
 			start: Instant::now(),
-			alloc_base: GLOBAL.peak(),
+			alloc_base: GLOBAL.open_window(),
 		}
 	}
 	pub fn finish(self, budget: &Budget, input_bytes: usize) {
@@ -151,13 +197,12 @@ impl InputGuard {
 				"wall budget: {elapsed:?} for a {input_bytes}-byte input exceeds {budget:?}"
 			);
 		}
-		let peak = GLOBAL.peak();
+		let spent = GLOBAL.window_peak().saturating_sub(self.alloc_base);
 		let limit = budget.alloc_limit(input_bytes);
-		if peak.saturating_sub(self.alloc_base) > limit {
+		if spent > limit {
 			panic!(
 				"allocation budget: one {input_bytes}-byte input grew live memory by \
-				 {} bytes, allowance {limit}",
-				peak.saturating_sub(self.alloc_base)
+				 {spent} bytes, allowance {limit}"
 			);
 		}
 	}

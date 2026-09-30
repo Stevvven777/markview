@@ -34,25 +34,13 @@ fn main() {
 	}
 
 	// The deterministic edit the `reparse` target applies.
-	let seed = mvfuzz::oracle::derive(&data);
-	let line = [
-		"an inserted line",
-		"## heading now",
-		"- a new item",
-		"more **emphasis**",
-		"$x^2$",
-		"| a | b |",
-		"```rust",
-	][seed as usize % 7];
-	let lines: Vec<&str> = md0.split_inclusive('\n').collect();
-	let at = (seed >> 8) as usize % (lines.len() + 1);
-	let before: String = lines.iter().take(at).copied().collect();
-	let after: String = lines.iter().skip(at).copied().collect();
-	let md1 = format!("{before}{line}\n{after}");
+	let edit = mvfuzz::edit::apply_deterministic_edit(&data);
+	let md1 = edit.md1;
 	let full = markview_core::document::parse(md1.clone());
 	let incr = markview_core::document::reparse(&doc0, Arc::from(md1.clone()));
 	eprintln!(
-		"edit (line {at} <- {line:?}): full={} incremental={} equal={}",
+		"edit ({}): full={} incremental={} equal={}",
+		edit.description,
 		full.blocks.len(),
 		incr.blocks.len(),
 		full.content_id == incr.content_id

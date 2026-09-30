@@ -378,9 +378,8 @@ pub fn mvss(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> usize {
 /// `[section]` header, to a structurally valid-looking alternative.
 fn rewrite_mvss_line(rng: &mut Rng, line: &mut Vec<u8>) {
 	let text = std::str::from_utf8(line).unwrap_or_default();
-	if let Some((key, rest)) = text.split_once('=')
+	if let Some((key, _)) = text.split_once('=')
 		&& !key.trim().is_empty()
-		&& rest.starts_with(|c: char| !c.is_whitespace() || true)
 	{
 		let value = match rng.range(5) {
 			0 => format!("\"{}\"", key.trim().chars().next().unwrap_or('x')),

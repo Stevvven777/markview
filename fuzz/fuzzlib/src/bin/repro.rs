@@ -9,22 +9,9 @@ fn main() {
 	let args: Vec<String> = std::env::args().collect();
 	let data = std::fs::read(&args[1]).unwrap();
 	let md0 = String::from_utf8_lossy(&data).into_owned();
-	let seed = mvfuzz::oracle::derive(&data);
-	let line = [
-		"an inserted line",
-		"## heading now",
-		"- a new item",
-		"more **emphasis**",
-		"$x^2$",
-		"| a | b |",
-		"```rust",
-	][seed as usize % 7];
-	let lines: Vec<&str> = md0.split_inclusive('\n').collect();
-	let at = (seed >> 8) as usize % (lines.len() + 1);
-	let before: String = lines.iter().take(at).copied().collect();
-	let after: String = lines.iter().skip(at).copied().collect();
-	let md1 = format!("{before}{line}\n{after}");
-	eprintln!("edit: line {at:?} <- {line:?}");
+	let edit = mvfuzz::edit::apply_deterministic_edit(&data);
+	let md1 = edit.md1;
+	eprintln!("edit: {}", edit.description);
 
 	let doc0 = markview_core::document::parse(md0);
 	let full = markview_core::document::parse(md1.clone());

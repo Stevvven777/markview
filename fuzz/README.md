@@ -29,12 +29,19 @@ Tiers follow the plan: T1 = ordinary build, T2 = ASAN (the default
 
 - `allocator.rs` — a counting global allocator. **Declared once, here**
   (`#[global_allocator] pub static GLOBAL`); the [`budget::InputGuard`]
-  reads the same instance, so the allocation gate is live. A zero
-  allowance must panic — that is pinned by a reverse unit test
-  (`cargo test -p mvfuzz`).
+  reads the same instance, so the allocation gate is live. The guard
+  meters a *per-input window peak*: `open_window` snapshots live bytes
+  and resets the window high-water mark, so each input is judged on its
+  own transient peak, never on the process-global peak (which an earlier
+  larger input would otherwise mask). A zero allowance must panic — that
+  is pinned by reverse unit tests (`cargo test -p mvfuzz`), including one
+  where the input's peak stays below the historical global peak.
 - `budget.rs` — per-input wall-clock and peak-allocation budgets. The
-  per-stage defaults (`Budget::parse/layout/pdf`) are the calibrated
-  numbers in [`artifacts/budget-calibration.md`](../artifacts/budget-calibration.md);
+  allocation figure is the *window* peak of live bytes since the guard
+  opened (see `allocator.rs`), so a budget-blowing input is caught even
+  after a larger earlier input raised the global peak. The per-stage
+  defaults (`Budget::parse/layout/pdf`) are the calibrated numbers in
+  [`artifacts/budget-calibration.md`](../artifacts/budget-calibration.md);
   re-run `cargo run -p mvfuzz --bin calibrate` after notable changes and
   update both files together. Campaigns override them via
   `MARKVIEW_FUZZ_TIME_MS`, `MARKVIEW_FUZZ_ALLOC_BASE_KB`,
@@ -42,7 +49,9 @@ Tiers follow the plan: T1 = ordinary build, T2 = ASAN (the default
   a factor of two over the calibrated maximum so a descheduled small
   input in a parallel campaign does not read as a runaway; the layout
   allocation figure carries 2.5, because the detached highlight worker's
-  tail can still allocate while the next input's guard is open.
+  tail can still allocate while the next input's guard is open. The wall
+  budget detects *slow* inputs; a hung one is libFuzzer's `-timeout`'s
+  job, since a post-hoc `finish` check cannot observe a hang.
 - `pipeline.rs` — shared parse/layout plumbing. `warmup()` runs once per
   process before any layout-family input's guard starts: a fenced code
   block pays fontconfig's cold caches and the syntax-set build, and

@@ -1,6 +1,7 @@
 name: Fuzz
 on:
   workflow_call:
+  workflow_dispatch:
 permissions:
   contents: read
 # F6: prove the harness compiles and the library's `fuzz` feature builds,

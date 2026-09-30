@@ -19,23 +19,9 @@ fuzz_target!(|data: &[u8]| {
 	if md0.len() > 256 * 1024 {
 		return;
 	}
-	// One deterministic edit: insert a line, so the changed window is small
-	// and the rest of the document exercises the reuse path.
-	let seed = oracle::derive(data);
-	let line = [
-		"an inserted line",
-		"## heading now",
-		"- a new item",
-		"more **emphasis**",
-		"$x^2$",
-		"| a | b |",
-		"```rust",
-	][seed as usize % 7];
-	let lines: Vec<&str> = md0.split_inclusive('\n').collect();
-	let at = (seed >> 8) as usize % (lines.len() + 1);
-	let before: String = lines.iter().take(at).copied().collect();
-	let after: String = lines.iter().skip(at).copied().collect();
-	let md1 = format!("{before}{line}\n{after}");
+	// One deterministic edit: insert/delete/replace/duplicate/truncate.
+	let edit = mvfuzz::edit::apply_deterministic_edit(data);
+	let md1 = edit.md1;
 
 	let guard = budget::InputGuard::new();
 	let doc0 = markview_core::document::parse(md0);
