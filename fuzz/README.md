@@ -128,3 +128,28 @@ coverage. Records are requirements, not optional:
 | `artifacts/fuzz-runs/layout-codeblock-cr-run-newline` | layout / highlight | a code line carried a `\r`, which the shaper classifies as a newline: inside a multi-glyph cluster `parley` asserts `!is_newline` | fixed: code and HTML-source lines split on the parser's `\n`/`\r\n`/`\r` structure before shaping and highlighting |
 | `artifacts/fuzz-runs/shaping-negative-size-inf-width` | shaping | a finite size near the `f32` limit overflows the per-character advance sum to `-inf` — `f32` semantics, not a bug | oracle relaxed: finiteness owed below the no-overflow line, `NaN` still a bug |
 | `artifacts/fuzz-runs/layout-newline-combining-mark-parley-debug-assert` | layout / shaping | `parley`'s `debug_assert!(!is_newline)` fires when a multi-component cluster starts on a line break (break + combining mark); release builds lay the same input out with finite geometry | upstream, seeded; no release impact |
+| `artifacts/fuzz-runs/math-crash-1c7f07` | math / layout / layout_diff / pdf | a `\char` literal wider than `i64::MAX` overflows the accumulator in `ratex-parser` 0.1.14 (`macro_expander.rs:823`, `number = number * (b as i64) + d`); only a build with overflow checks panics, and libFuzzer's abort-on-panic hook turns that caught panic into a campaign abort | upstream: `ratex-parser` 0.1.14, harness-visible only; an allowance restores the `catch_unwind` (`mvfuzz::ratex`) |
+
+### Upstream `\char` overflow (harness allowance)
+
+`ratex-parser` 0.1.14 accumulates the `\char` argument into an `i64`
+without a width check (`macro_expander.rs:823`). With overflow checks on
+— this profile, and `cargo-fuzz`'s default `-Cdebug-assertions` — a
+literal at or past `i64::MAX` panics; the reader's release profile has
+them off, where the multiply wraps into a negative `\@char` code point
+that fails to parse, so `MathEngine::layout` returns `Err` either way
+(pinned by `overlong_char_literal_is_an_error_not_a_crash`). It still
+aborts a campaign, because `libfuzzer-sys` installs a panic hook that
+calls `abort()` before unwinding, which the `catch_unwind` in
+`crates/markview-core/src/math.rs` cannot prevent.
+
+`mvfuzz::ratex::allow_char_overflow` swaps that hook for one that lets
+exactly this panic — this file, this message — unwind, so the existing
+`catch_unwind` absorbs it; every other panic still aborts, so the oracle
+stays strict. The four targets that reach ratex call it (`math` directly;
+`layout`, `layout_diff`, and `pdf` through a laid-out formula). A
+byte-level skip would be the smaller-looking concession, but the literal
+can be assembled from a macro or across a comment, so only the panic
+itself marks the class. Delete the module and its call sites once the
+dependency is fixed or bumped.
+

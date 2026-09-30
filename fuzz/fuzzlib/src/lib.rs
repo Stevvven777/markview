@@ -7,3 +7,4 @@ pub mod edit;
 pub mod mutators;
 pub mod oracle;
 pub mod pipeline;
+pub mod ratex;
