@@ -4,6 +4,11 @@ Markview aims to make opening an untrusted Markdown document safe. This page def
 
 [Security reference](security-reference.md) owns the threat catalog, implementation details, limits, and historical findings. [Security verification](security-verification.md) tracks evidence and outstanding verification work. [Architecture](architecture.md) explains pipeline ownership and resource boundaries.
 
+## Reporting a Vulnerability
+
+If you believe you have found a security vulnerability in Markview, please report it *privately*.
+The preferred method is to open a GitHub Security Advisory (Repository → Security → Advisories).
+
 ## Scope and assumptions
 
 The model covers a user on an unsandboxed desktop opening untrusted Markdown: downloads, mail attachments, extracted archives, generated text, shared folders, and documents reached through links. Parsing, layout, image loading, and watched revisions are in scope for both the reader and PDF export.
