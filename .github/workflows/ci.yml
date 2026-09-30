@@ -35,8 +35,54 @@ jobs:
           dist plan
       - name: Committed icons match the source SVG
         run: cargo run -p xtask -- icons --check
-      - name: Packaging scripts are sound
-        run: shellcheck scripts/package_*.sh scripts/verify_*.sh
+      - name: Shell scripts are sound
+        run: shellcheck scripts/build-web.sh scripts/package_*.sh scripts/verify_*.sh
+
+  # The browser front end shares the engine but not its build: a `wasm32`
+  # compile, the pinned `wasm-bindgen` CLI, the pnpm monorepo under `web/` and
+  # the Playwright suite that drives the built demo. Nothing here is filtered by
+  # path, because the engine, the stylesheets and the committed subset faces all
+  # feed it, and a skipped job would leave the required `ci` check green.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      # The CLI must equal the `wasm-bindgen` crate pinned in
+      # `crates/markview-web/Cargo.toml`, or it refuses the module's schema.
+      # `rust-cache` keeps `~/.cargo/bin`, so a restored binary skips the
+      # compile and only a cold cache pays for it.
+      - name: Install the wasm-bindgen CLI
+        run: |
+          if [[ "$(wasm-bindgen --version 2>/dev/null)" == "wasm-bindgen 0.2.129" ]]; then
+            exit 0
+          fi
+          cargo install wasm-bindgen-cli --version 0.2.129 --locked
+      - name: Install pnpm
+        run: npm install --global pnpm@11.26.0
+      - name: Install the web workspace
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      # The TypeScript sources import the generated wasm glue, so the front end
+      # is built before anything type-checks or bundles it.
+      - name: Build the WebAssembly front end
+        run: scripts/build-web.sh
+      - name: Type-check the TypeScript
+        working-directory: web
+        run: pnpm typecheck
+      - name: Build the package and the demo site
+        working-directory: web
+        run: pnpm build
+      - name: Install the browser the suite drives
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run the acceptance suite
+        working-directory: web
+        run: pnpm test
 
   # A single required status check for branch protection. Package builds live in
   # `packages.yml`, which is path-filtered: a skipped workflow reports no status
@@ -44,7 +90,7 @@ jobs:
   # packaging input.
   ci:
     if: always()
-    needs: [check, packaging]
+    needs: [check, packaging, web]
     runs-on: ubuntu-latest
     steps:
       - name: Fail unless every job succeeded
