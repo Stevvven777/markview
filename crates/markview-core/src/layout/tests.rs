@@ -1,6 +1,7 @@
 use super::*;
 use crate::document;
 use crate::document::{Inline, InlineKind, TextStyle};
+use crate::style::Condition;
 
 #[test]
 fn tables_are_truncated_to_the_configured_limits() {
@@ -74,6 +75,254 @@ fn progressive_prefixes_share_final_geometry_and_can_be_cancelled() {
 	assert_eq!(visited, 3);
 	assert!(engine.layout(&doc, &options).same_reading_text(&full));
 }
+
+/// A pass that stops between blocks must produce exactly what one call would,
+/// because a front end draws the prefixes it publishes on the way.
+#[test]
+fn a_suspended_pass_matches_an_uninterrupted_one() {
+	let doc = document::parse(
+		"A paragraph with **bold**, 中文 and $x^2$.\n\n".repeat(40),
+	);
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	let mut layout = engine.begin_layout(&doc, &options, &Default::default());
+	let mut prefixes = 0;
+	while !layout.is_complete() {
+		// Every prefix is drawable: its blocks are the ones laid out so far,
+		// its body box exists, and its height is real.
+		assert_eq!(layout.snapshot().blocks.len(), layout.blocks());
+		assert!(layout.snapshot().document_box.is_some());
+		assert!(layout.snapshot().height.is_finite());
+		engine.advance(&mut layout, &doc, std::time::Duration::ZERO);
+		prefixes += 1;
+	}
+	let suspended = layout.into_snapshot();
+	let full = LayoutEngine::new().layout(&doc, &options);
+	assert_eq!(prefixes, full.blocks.len());
+	assert_eq!(suspended.blocks.len(), full.blocks.len());
+	assert_eq!(suspended.height, full.height);
+	assert!(suspended.same_reading_text(&full));
+	for (a, b) in suspended.blocks.iter().zip(&full.blocks) {
+		assert_eq!((a.id, a.y, a.layout.height), (b.id, b.y, b.layout.height));
+	}
+}
+
+/// A pass visits each block once, so resuming never charges a step for the
+/// prefix it already laid out. A pass that restarted would touch the earlier
+/// blocks again and report more reuse than the document has blocks.
+#[test]
+fn a_resumed_pass_never_revisits_a_block() {
+	let doc = document::parse("A paragraph with **bold** text.\n\n".repeat(60));
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	// The first pass fills the cache with this document's geometry.
+	engine.layout(&doc, &options);
+	let mut layout = engine.begin_layout(&doc, &options, &Default::default());
+	let mut steps = 0;
+	while !layout.is_complete() {
+		engine.advance(&mut layout, &doc, std::time::Duration::ZERO);
+		steps += 1;
+	}
+	let snapshot = layout.into_snapshot();
+	assert_eq!(steps, snapshot.blocks.len());
+	assert_eq!(
+		snapshot.reused,
+		snapshot.blocks.len(),
+		"every block of a warm pass is a cache hit, once"
+	);
+}
+
+/// A zero budget still lays out one block, so a caller driving the pass from an
+/// animation frame can never spin without progress.
+#[test]
+fn a_zero_budget_still_advances_one_block() {
+	let doc = document::parse("One.\n\nTwo.\n\nThree.\n");
+	let total = doc.blocks.len();
+	assert!(total >= 2, "the test needs more than one block");
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	let mut layout = engine.begin_layout(&doc, &options, &Default::default());
+	assert_eq!(layout.blocks(), 0);
+	assert!(!layout.is_complete());
+	for expected in 1..total {
+		assert!(!engine.advance(&mut layout, &doc, std::time::Duration::ZERO));
+		assert_eq!(layout.blocks(), expected);
+	}
+	assert!(engine.advance(&mut layout, &doc, std::time::Duration::ZERO));
+	assert!(layout.is_complete());
+	assert_eq!(layout.blocks(), total);
+}
+
+/// A document with no blocks closes as soon as it opens, and its body box is
+/// the one an uninterrupted pass would have produced.
+#[test]
+fn a_pass_over_an_empty_document_closes_at_once() {
+	let doc = document::parse("");
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	let layout = engine.begin_layout(&doc, &options, &Default::default());
+	assert!(layout.is_complete());
+	assert_eq!(layout.blocks(), 0);
+	assert!(layout.snapshot().document_box.is_some());
+	let snapshot = layout.into_snapshot();
+	assert!(snapshot.blocks.is_empty());
+	assert!(snapshot.height.is_finite());
+	assert_eq!(snapshot.height, engine.layout(&doc, &options).height);
+}
+
+/// A pass is a position in one document's blocks, so advancing it with another
+/// must fail loudly rather than read past a shorter document or quietly lay out
+/// a mixture of the two.
+#[test]
+#[should_panic(
+	expected = "a pass must be advanced with the document it began on"
+)]
+fn a_pass_refuses_a_document_it_did_not_begin_on() {
+	let begun = document::parse("One.\n\nTwo.\n\nThree.\n");
+	let other = document::parse("Alpha.\n\nBeta.\n\nGamma.\n");
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	let mut layout = engine.begin_layout(&begun, &options, &Default::default());
+	engine.advance(&mut layout, &other, std::time::Duration::ZERO);
+}
+
+/// An abandoned pass never closes, so the geometry it filled must not be left
+/// to pile up with every document the reader types past.
+#[test]
+fn abandoned_passes_do_not_accumulate_geometry() {
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	for round in 0..20 {
+		// Every block of every round is distinct, so nothing is reused across
+		// rounds and the cache can only stay small if abandoned passes are
+		// dropped.
+		let text: String = (0..20)
+			.map(|block| {
+				format!("Round {round} block {block} with **bold** text.\n\n")
+			})
+			.collect();
+		let doc = document::parse(text);
+		let mut layout =
+			engine.begin_layout(&doc, &options, &Default::default());
+		for _ in 0..10 {
+			engine.advance(&mut layout, &doc, std::time::Duration::ZERO);
+		}
+		// Dropping `layout` here abandons the pass.
+	}
+	assert!(
+		engine.cached_blocks() <= 40,
+		"an abandoned pass accumulated geometry: {} entries",
+		engine.cached_blocks()
+	);
+}
+
+/// An abandoned pass touches few blocks, but dropping everything it did not
+/// touch must not reach past it into the newest completed pass. Cancelling
+/// before the first block touches nothing at all, so only keeping that
+/// completed pass leaves the next full layout warm.
+#[test]
+fn a_cancelled_pass_keeps_the_last_completed_geometry() {
+	let first: String = (0..12)
+		.map(|i| format!("Paragraph {i} with **bold** text.\n\n"))
+		.collect();
+	let first = document::parse(first);
+	let other: String = (0..12)
+		.map(|i| format!("Other {i} with _emphasis_ text.\n\n"))
+		.collect();
+	let other = document::parse(other);
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	assert_eq!(engine.layout(&first, &options).reused, 0);
+	// The first cancel stops before any block; the second lays out one block
+	// of the other document. Neither may evict the completed geometry.
+	for blocks in [0, 1] {
+		let mut layout =
+			engine.begin_layout(&other, &options, &Default::default());
+		for _ in 0..blocks {
+			engine.advance(&mut layout, &other, std::time::Duration::ZERO);
+		}
+		assert_eq!(
+			engine.layout(&first, &options).reused,
+			first.blocks.len(),
+			"cancelling after {blocks} blocks dropped completed geometry"
+		);
+	}
+}
+
+/// Reusing geometry must not erase the stamp that says it belongs to the last
+/// completed pass. A pass that reused part of a document and was then
+/// abandoned used to re-stamp those entries, so a further cancel evicted them
+/// and the next full layout lost half of the warm cache.
+#[test]
+fn an_abandoned_reuse_does_not_evict_completed_geometry() {
+	let source: String = (0..12)
+		.map(|i| format!("Paragraph {i} with **bold** text.\n\n"))
+		.collect();
+	let doc = document::parse(source);
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	assert_eq!(engine.layout(&doc, &options).reused, 0);
+	// The second pass reuses the first six blocks and is abandoned.
+	let mut resumed = engine.begin_layout(&doc, &options, &Default::default());
+	for _ in 0..6 {
+		engine.advance(&mut resumed, &doc, std::time::Duration::ZERO);
+	}
+	assert_eq!(resumed.snapshot().reused, 6);
+	drop(resumed);
+	// The third pass is cancelled before it touches a block.
+	let cancelled = engine.begin_layout(&doc, &options, &Default::default());
+	drop(cancelled);
+	assert_eq!(
+		engine.layout(&doc, &options).reused,
+		doc.blocks.len(),
+		"abandoned reuse erased completed geometry"
+	);
+}
+
+/// The body box is the document's background, so every prefix must carry one
+/// that reaches the last block it published. A box left at the height from
+/// before the newest block paints a prefix whose newest block has none.
+#[test]
+fn a_prefix_body_box_covers_the_blocks_it_published() {
+	let doc = document::parse("One.\n\nTwo.\n\nThree.\n");
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	let mut layout = engine.begin_layout(&doc, &options, &Default::default());
+	let mut prefixes = 0;
+	while !layout.is_complete() {
+		let snapshot = layout.snapshot();
+		let Some(Draw::Box { rect, .. }) = snapshot.document_box else {
+			panic!("a prefix always carries the body box");
+		};
+		assert_eq!(
+			rect.h,
+			snapshot.height,
+			"the box must cover the {} blocks published so far",
+			snapshot.blocks.len()
+		);
+		prefixes += 1;
+		engine.advance(&mut layout, &doc, std::time::Duration::ZERO);
+	}
+	assert_eq!(prefixes, doc.blocks.len());
+}
+
+/// A pass carries the stylesheet, fonts and math limits it began with and
+/// re-applies none of them per block, so resuming one after another pass
+/// replaced them would measure the rest of the document against the new
+/// configuration. That is refused rather than silently mixed.
+#[test]
+#[should_panic(expected = "a pass must be advanced before another pass begins")]
+fn a_pass_refuses_to_resume_after_another_pass_replaced_it() {
+	let doc = document::parse("One.\n\nTwo.\n\nThree.\n");
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	let mut first = engine.begin_layout(&doc, &options, &Default::default());
+	engine.advance(&mut first, &doc, std::time::Duration::ZERO);
+	// The second pass re-applies its own stylesheet and fonts to the shaper.
+	let _second = engine.begin_layout(&doc, &options, &Default::default());
+	engine.advance(&mut first, &doc, std::time::Duration::ZERO);
+}
+
 #[test]
 fn links_are_hit_testable_and_survive_reuse() {
 	let d = document::parse(

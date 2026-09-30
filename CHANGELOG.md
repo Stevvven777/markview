@@ -28,11 +28,13 @@ at the same level, without `[brackets]`.
 - Add `markview-selection`, the pointer-driven selection machine taken out of `InteractionState`, so a second front end can drive the same grains, click counting and drag rules.
 - Cover the selection paths that had no test: what a copy takes, the drag-past-edge auto-scroll tick, the deferred `Ctrl+A`, and carrying a selection across an update.
 - Let a host with no filesystem supply its own faces as bytes through `FontConfig::from_faces`, so the shaper can be driven from a front end that has no directory to scan.
+- Add `ProgressiveLayout`, a layout pass that suspends between blocks and resumes without re-measuring what it already laid out, so a front end can bound each step by a time budget.
 
 - Choose the family of each font role — serif, sans-serif, monospace and the same three for Han text — from a **Set fonts** step beside the Fonts page's catalogue filters, one chooser row per role: a pick reflows the document at once and persists as a per-role `fontdef` override, and the Han rows appear only for the `cjk-type` variant in force, offering only the families that cover Han text.
 
 ### Changed
 
+- Drive `layout_progressive` from the resumable pass, so the engine has one block loop instead of two and a cancelled prefix costs nothing to resume.
 - Split the font module into validation, directory scanning and diagram selection, so a front end reuses the parts it has and leaves the rest behind.
 - Put directory scanning behind a `font-directories` feature that is off by default, so a build for a host without a filesystem leaves every `std::fs` call out of the binary.
 - Focus security documentation on policy and the threat model, with implementation details and verification work in separate references.
@@ -45,6 +47,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep the last completed pass's block geometry when a later pass is cancelled, so typing past a document no longer flushes the warm cache.
+- Keep a block's completed-pass membership separate from the pass that last used it, so a pass that resumes geometry and is then abandoned cannot cost the warm cache.
 - Let a selection stop between the letters of a ligature, so `ff` and `fi` can be picked apart instead of only taken whole, while a single grapheme is still never parted.
 - Re-derive the selection when the view scrolls under a held press, so scrolling with the wheel extends what the pointer covers.
 - Take a formula or a drawn image whole, since its source text is not what is displayed, instead of selecting an arbitrary slice of it.

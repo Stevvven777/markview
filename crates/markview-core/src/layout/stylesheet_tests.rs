@@ -1,4 +1,5 @@
 use super::*;
+use crate::style::Condition;
 
 #[test]
 fn decorations_preserve_text_and_cascade_without_color_reflow() {

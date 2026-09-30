@@ -7,9 +7,11 @@ mod images;
 mod inline;
 mod mapping;
 mod paragraph;
+mod progressive;
 #[cfg(test)]
 mod stylesheet_tests;
 mod table;
+pub use progressive::ProgressiveLayout;
 pub(crate) use table::Table;
 #[cfg(test)]
 mod tests;
@@ -23,11 +25,10 @@ pub use crate::shaping::TextShaper;
 use crate::{
 	document::{Block, BlockKind, Document},
 	math::MathEngine,
-	style::Condition,
 };
 pub use anchor::anchored_scroll;
 use mapping::{Prepared, expand_tabs_mapped};
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{collections::HashMap, ops::Range, sync::Arc, time::Duration};
 
 /// The share of a viewport a document may lift its last line by, so the end of
 /// the text never sits flush against the bottom edge. Every limit on the scroll
@@ -275,6 +276,9 @@ pub struct LayoutEngine {
 	cache: HashMap<CacheKey, CacheEntry>,
 	/// Increases once per pass; an entry's stamp says which pass last used it.
 	pass: u64,
+	/// The newest pass that reached `close`. Its geometry stays reusable while
+	/// later passes are abandoned before touching every block.
+	completed: Option<u64>,
 	highlights: highlights::Highlights,
 }
 
@@ -282,7 +286,12 @@ pub struct LayoutEngine {
 /// published it, so retaining every entry costs one pointer, not a copy.
 struct CacheEntry {
 	layout: Arc<BlockLayout>,
+	/// The pass that last used the entry, whether it measured or reused it.
 	pass: u64,
+	/// The newest pass in which this entry was part of a completing layout.
+	/// A reuse must leave it alone, or an abandoned pass would erase the only
+	/// evidence that the geometry belongs to the last completed pass.
+	completed: Option<u64>,
 }
 
 #[derive(Hash, PartialEq, Eq)]
@@ -315,6 +324,7 @@ impl LayoutEngine {
 			math: MathEngine::default(),
 			cache: HashMap::new(),
 			pass: 0,
+			completed: None,
 			highlights: highlights::Highlights::new(),
 		}
 	}
@@ -326,6 +336,12 @@ impl LayoutEngine {
 	pub fn release_document(&mut self) {
 		self.cache.clear();
 		self.highlights.clear();
+	}
+	/// How many block geometries the cache holds, so a test can check that
+	/// abandoned passes cannot accumulate.
+	#[cfg(test)]
+	pub(crate) fn cached_blocks(&self) -> usize {
+		self.cache.len()
 	}
 	pub fn validate_stylesheet(
 		&mut self,
@@ -354,6 +370,10 @@ impl LayoutEngine {
 
 	/// Visits each completed prefix. Returning false cancels at a block boundary.
 	/// Prefixes share immutable block geometry with the final snapshot.
+	///
+	/// A front end that must return to its event loop between blocks calls
+	/// [`Self::begin_layout`] and [`Self::advance`] instead; this is those two
+	/// driven to completion, so there is one block loop, not two.
 	pub fn layout_progressive(
 		&mut self,
 		document: &Document,
@@ -361,173 +381,16 @@ impl LayoutEngine {
 		images: &crate::image::ImageSnapshot,
 		mut progress: impl FnMut(&LayoutSnapshot) -> bool,
 	) -> Option<LayoutSnapshot> {
-		self.shaper.set_stylesheet(options.stylesheet.clone());
-		self.shaper.set_fonts(&options.fonts);
-		self.math.set_limits(options.limits);
-		self.poll_highlights();
-		let mut result = LayoutSnapshot {
-			images: images.clone(),
-			width: options.width,
-			..Default::default()
-		};
-		let body = options.stylesheet.rule(Condition::Body);
-		let padding = body
-			.padding
-			.as_ref()
-			.map(|p| p.sides().map(|v| v * options.font_size))
-			.unwrap_or([0.; 4]);
-		let content_width = (options.width - padding[1] - padding[3]).max(1.);
-		crate::profile::span(crate::profile::Stage::Highlights, || {
-			self.highlights.prepare(&document.blocks, options)
-		});
-		let codeblock_theme =
-			options.codeblock_theme_override.clone().or_else(|| {
-				options.stylesheet.rule(Condition::CodeBlock).theme.clone()
-			});
-		let codeblock_theme_key =
-			crate::document::fingerprint(&codeblock_theme);
-		result.height =
-			padding[0] + body.space_before.unwrap_or(0.) * options.font_size;
-		// The stylesheet is immutable for this pass. Its identity belongs to
-		// the document request, not to each block's cache lookup. The fonts
-		// are part of it: geometry measured with other faces is stale.
-		let style_key = document
-			.blocks
-			.first()
-			.map(|_| {
-				crate::document::fingerprint(&(
-					options.stylesheet.layout_key(),
-					&options.fonts,
-				))
-			})
-			.unwrap_or_default();
-		self.pass = self.pass.wrapping_add(1);
-		let pass = self.pass;
-		result.document_box = Some(Draw::Box {
-			rect: Rect {
-				x: 0.,
-				y: 0.,
-				w: options.width,
-				h: result.height,
-			},
-			chain: Condition::Body.chain(),
-			condition: Condition::Body,
-			radius: body.radius.unwrap_or(0.),
-			border: body.border_width.unwrap_or(0.),
-			left_only: false,
-			decoration: crate::scene::BoxDecoration::from_rule(body, false),
-		});
-		let body_appearance = self.shaper.appearance.clone();
-		for (index, block) in document.blocks.iter().enumerate() {
-			if let Some(Draw::Box { rect, .. }) = &mut result.document_box {
-				rect.h = result.height;
-			}
-			if !progress(&result) {
+		let mut layout = self.begin_layout(document, options, images);
+		while !layout.is_complete() {
+			if !progress(layout.snapshot()) {
 				return None;
 			}
-			let key = CacheKey {
-				position: if options.stylesheet.has_child_rules() {
-					u8::from(index == 0)
-						| (u8::from(index + 1 == document.blocks.len()) << 1)
-				} else {
-					0
-				},
-				external: external_key(
-					block,
-					images,
-					&self.highlights,
-					codeblock_theme.as_deref(),
-					options,
-				),
-				content: block.content_key,
-				width: options.width.to_bits(),
-				size: options.font_size.to_bits(),
-				justify: options.justify,
-				hyphenate: options.hyphenate,
-				justification: options.justification.bits(),
-				paragraph_indent: options.paragraph_indent.to_bits(),
-				greedy: options.greedy,
-				codeblock_wrap: options.codeblock_wrap,
-				codeblock_theme: codeblock_theme_key,
-				style: style_key,
-			};
-			let cached = self.cache.get_mut(&key).map(|entry| {
-				entry.pass = pass;
-				entry.layout.clone()
-			});
-			let layout = if let Some(cached) = cached {
-				result.reused += 1;
-				cached
-			} else {
-				let layout = crate::profile::measure(
-					crate::profile::Stage::Blocks,
-					|| {
-						let mut out = BlockLayout::default();
-						self.shaper.appearance = options.stylesheet.child(
-							&body_appearance,
-							index,
-							document.blocks.len(),
-						);
-						BlockContext {
-							search_fields: crate::search::layout_fields(block),
-							shaper: &mut self.shaper,
-							math: &mut self.math,
-							images,
-							highlight_cache: self.highlights.results(),
-							marker_depth: 0,
-							enum_depth: 0,
-						}
-						.block(
-							block,
-							padding[3],
-							0.0,
-							content_width,
-							options,
-							&mut out,
-						);
-						Arc::new(out)
-					},
-				);
-				self.cache.insert(
-					key,
-					CacheEntry {
-						layout: layout.clone(),
-						pass,
-					},
-				);
-				layout
-			};
-			result.blocks.push(PlacedBlock {
-				id: block.id,
-				source: block.source.clone(),
-				y: result.height,
-				layout: layout.clone(),
-			});
-			result.height += layout.height;
-			result.degraded += layout.degraded;
-			result.math_errors += layout.math_errors;
+			// A zero budget lays out exactly one block, so the closure sees
+			// every prefix.
+			self.advance(&mut layout, document, Duration::ZERO);
 		}
-		// A complete pass visited every block, so an entry it did not touch
-		// belongs to a superseded document, option set, or highlight state.
-		// Dropping those keeps the cache at one document's worth of geometry.
-		self.cache.retain(|_, entry| entry.pass == pass);
-		result.height +=
-			padding[2] + body.space_after.unwrap_or(0.) * options.font_size;
-		result.document_box = Some(Draw::Box {
-			rect: Rect {
-				x: 0.,
-				y: 0.,
-				w: options.width,
-				h: result.height,
-			},
-			chain: Condition::Body.chain(),
-			condition: Condition::Body,
-			radius: body.radius.unwrap_or(0.),
-			border: body.border_width.unwrap_or(0.),
-			left_only: false,
-			decoration: crate::scene::BoxDecoration::from_rule(body, false),
-		});
-		Some(result)
+		Some(layout.into_snapshot())
 	}
 
 	/// Reports whether syntax colors arrived since the last pass. Arrived
