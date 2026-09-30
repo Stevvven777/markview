@@ -220,6 +220,7 @@ impl<P: super::SendEvent> App<P> {
 		buttons
 	}
 	pub(super) fn overlay(&mut self) -> Vec<Draw> {
+		self.refresh_viewer();
 		self.ensure_outline();
 		self.normalize_tab_scroll();
 		// The wheel, the scrollbar and the page all read one clamped offset.

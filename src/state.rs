@@ -151,6 +151,7 @@ impl InteractionState {
 		self.focus = None;
 		self.pressed = None;
 		self.pointer_down = None;
+		self.pressed_image = None;
 		self.drag_at = None;
 		self.scrollbar = None;
 		self.panel_grab = None;
@@ -244,16 +245,18 @@ pub(crate) struct Viewer {
 	pub(crate) src: String,
 	/// The raster's pixel size, which caps how far fitting may upscale.
 	pub(crate) pixels: (f32, f32),
-	/// The window scale at open time, which puts the pixels in logical units.
+	/// The window scale, which puts the pixels in logical units.
 	pub(crate) scale: f32,
 	/// Zoom over the fitted size, `1.0` showing the whole image.
 	pub(crate) zoom: f32,
 	/// The picture centre's offset from the window centre.
 	pub(crate) pan: (f32, f32),
-	/// Where the panning drag started, while the pointer pans.
+	/// The last pointer position while panning.
 	pub(crate) grab: Option<(f32, f32)>,
 	/// Where the press began, to tell a closing click from a pan.
 	pub(crate) pressed_at: Option<(f32, f32)>,
+	/// Whether this press has ever crossed the drag threshold.
+	pub(crate) dragged: bool,
 }
 
 /// The margin the fitted picture keeps to the window's edges.
@@ -266,9 +269,7 @@ impl Viewer {
 		// rasterizer produced, so the fitted size is never blurry.
 		let fit = ((window.0 - VIEWER_MARGIN) / self.pixels.0.max(1.))
 			.min((window.1 - VIEWER_MARGIN) / self.pixels.1.max(1.))
-			.min(1. / self.scale.max(1.))
-			.max(1. / self.pixels.0.max(1.))
-			.max(1. / self.pixels.1.max(1.));
+			.min(1. / self.scale.max(1.));
 		(
 			(self.pixels.0 * fit).max(1.) * self.zoom,
 			(self.pixels.1 * fit).max(1.) * self.zoom,
@@ -334,13 +335,36 @@ impl Viewer {
 		};
 	}
 
-	/// Whether the pointer has moved far enough from its press to count as
-	/// panning rather than clicking.
-	pub(crate) fn is_drag(&self) -> bool {
-		match (self.pressed_at, self.grab) {
-			(Some((px, py)), Some((cx, cy))) => (cx - px).hypot(cy - py) > 3.,
-			_ => false,
+	pub(crate) fn begin_press(&mut self, pointer: (f32, f32)) {
+		self.grab = Some(pointer);
+		self.pressed_at = Some(pointer);
+		self.dragged = false;
+	}
+
+	pub(crate) fn move_pointer(
+		&mut self,
+		pointer: (f32, f32),
+		window: (f32, f32),
+	) {
+		if let Some((gx, gy)) = self.grab {
+			let (px, py) = self.pressed_at.unwrap();
+			self.dragged |= (pointer.0 - px).hypot(pointer.1 - py) > 3.;
+			self.pan_by((pointer.0 - gx, pointer.1 - gy), window);
+			self.grab = Some(pointer);
 		}
+	}
+
+	pub(crate) fn cancel_press(&mut self) {
+		self.grab = None;
+		self.pressed_at = None;
+		self.dragged = false;
+	}
+
+	/// Returns whether a completed press was a closing click.
+	pub(crate) fn finish_press(&mut self) -> bool {
+		let clicked = self.pressed_at.is_some() && !self.dragged;
+		self.cancel_press();
+		clicked
 	}
 }
 
@@ -563,6 +587,8 @@ pub(crate) struct InteractionState {
 	pub(crate) styles_scroll: f32,
 	pub(crate) selection: Option<TextSelection>,
 	pub(crate) pointer_down: Option<Drag>,
+	/// An image press, independent of whether the page has selectable text.
+	pub(crate) pressed_image: Option<(String, (f32, f32))>,
 	pub(crate) dragged: bool,
 	pub(crate) drag_at: Option<Instant>,
 	pub(crate) modifiers: ModifiersState,
@@ -1463,6 +1489,7 @@ impl Host for InteractionState {
 		self.focus = None;
 	}
 	fn release_pointer(&mut self) {
+		self.pressed_image = None;
 		self.scrollbar = None;
 	}
 }

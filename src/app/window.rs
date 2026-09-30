@@ -33,6 +33,9 @@ impl<P: super::SendEvent> App<P> {
 		_: WindowId,
 		event: WindowEvent,
 	) {
+		if self.viewer_event(&event) {
+			return;
+		}
 		if self.interaction.modal.is_none()
 			&& let WindowEvent::KeyboardInput { event, .. } = &event
 			&& event.state == ElementState::Pressed
@@ -117,19 +120,13 @@ impl<P: super::SendEvent> App<P> {
 				let was_button = self.button_at_cursor();
 				self.interaction.cursor =
 					(position.x as f32 / scale, position.y as f32 / scale);
-				// A held pointer pans the viewer by the motion since the
-				// last event; nothing behind the scrim follows.
-				if self.interaction.viewer.is_some() {
-					let window = (self.dimensions().0, self.dimensions().1);
-					let cursor = self.interaction.cursor;
-					if let Some(viewer) = self.interaction.viewer.as_mut()
-						&& let Some((gx, gy)) = viewer.grab
-					{
-						viewer.pan_by((cursor.0 - gx, cursor.1 - gy), window);
-						viewer.grab = Some(cursor);
-						self.redraw();
-					}
-					return;
+				if let Some((_, (px, py))) =
+					self.interaction.pressed_image.as_ref()
+					&& (self.interaction.cursor.0 - px)
+						.hypot(self.interaction.cursor.1 - py)
+						> 3.
+				{
+					self.interaction.pressed_image = None;
 				}
 				self.hover_dropdown();
 				self.move_tab_drag();
@@ -159,6 +156,7 @@ impl<P: super::SendEvent> App<P> {
 				// thumb keeps following the pointer past the edges. The text
 				// selection gesture still ends here.
 				self.interaction.pointer_down = None;
+				self.interaction.pressed_image = None;
 				self.interaction.drag_at = None;
 				self.interaction.hover = None;
 				self.interaction.hover_overflow = None;
@@ -193,6 +191,7 @@ impl<P: super::SendEvent> App<P> {
 				self.tab_strip.cancel_drag();
 				self.interaction.focus_visible = false;
 				self.interaction.pressed = None;
+				self.interaction.pressed_image = None;
 				self.readers.session.select_all_pending = false;
 				// A new press always ends a drag left over from a release the
 				// platform swallowed outside the window.
@@ -209,18 +208,6 @@ impl<P: super::SendEvent> App<P> {
 					{
 						self.interaction.focus = Some(button.action);
 						self.interaction.pressed = Some(button.action);
-					}
-					self.redraw();
-					return;
-				}
-				// The image viewer owns input like a modal: a press starts a
-				// pan, and the release that follows either pans on or closes.
-				if self.interaction.viewer.is_some() {
-					self.interaction.reset_clicks();
-					let cursor = self.interaction.cursor;
-					if let Some(grab) = self.interaction.viewer.as_mut() {
-						grab.grab = Some(cursor);
-						grab.pressed_at = Some(cursor);
 					}
 					self.redraw();
 					return;
@@ -315,6 +302,10 @@ impl<P: super::SendEvent> App<P> {
 							self.interaction.cursor.0,
 							self.interaction.cursor.1,
 						);
+						self.interaction.pressed_image = self
+							.image_at_cursor()
+							.map(|(src, _)| (src, self.interaction.cursor));
+						self.interaction.dragged = false;
 						if let Some(position) = self.text_at_cursor() {
 							let click_count =
 								if self.interaction.modifiers.shift_key() {
@@ -371,25 +362,7 @@ impl<P: super::SendEvent> App<P> {
 				..
 			} => {
 				self.tab_strip.cancel_drag();
-				// The viewer's release pans or closes, and never reaches the
-				// buttons and links behind the scrim.
-				if self.interaction.viewer.is_some() {
-					let was_drag = self
-						.interaction
-						.viewer
-						.as_ref()
-						.is_some_and(|viewer| viewer.is_drag());
-					if let Some(viewer) = self.interaction.viewer.as_mut() {
-						viewer.grab = None;
-						viewer.pressed_at = None;
-					}
-					if !was_drag {
-						self.interaction.viewer = None;
-					}
-					self.refresh_hover();
-					self.redraw();
-					return;
-				}
+				let pressed_image = self.interaction.pressed_image.take();
 				let was_pressed = self.interaction.pressed.is_some();
 				let hovered = self
 					.buttons()
@@ -416,7 +389,6 @@ impl<P: super::SendEvent> App<P> {
 					self.redraw();
 					return;
 				}
-				let pressed = self.interaction.pointer_down.is_some();
 				let link = self.link_at(
 					self.interaction.cursor.0,
 					self.interaction.cursor.1,
@@ -425,7 +397,11 @@ impl<P: super::SendEvent> App<P> {
 					self.interaction.finish_selection(link.as_deref())
 				{
 					self.open_link(&link, false);
-				} else if pressed && !self.interaction.dragged {
+				} else if !self.interaction.dragged
+					&& pressed_image.is_some_and(|(src, _)| {
+						self.image_at_cursor()
+							.is_some_and(|(released, _)| released == src)
+					}) {
 					// A click that selected nothing and hit no link opens the
 					// viewer when it landed on an image.
 					self.open_viewer_at_cursor();
@@ -439,6 +415,7 @@ impl<P: super::SendEvent> App<P> {
 				self.tab_strip.cancel_drag();
 				self.interaction.pressed = None;
 				self.interaction.pointer_down = None;
+				self.interaction.pressed_image = None;
 				self.interaction.drag_at = None;
 				self.interaction.scrollbar = None;
 				self.interaction.panel_grab = None;
@@ -447,23 +424,6 @@ impl<P: super::SendEvent> App<P> {
 				self.redraw();
 			}
 			WindowEvent::MouseWheel { delta, phase, .. } => {
-				if self.interaction.viewer.is_some() {
-					// A wheel notch or a trackpad glide zooms about the
-					// pointer, so the spot under the hand stays there.
-					let factor = match delta {
-						MouseScrollDelta::LineDelta(_, y) => (0.2 * y).exp(),
-						MouseScrollDelta::PixelDelta(p) => {
-							(p.y as f32 / 240.).exp()
-						}
-					};
-					let window = (self.dimensions().0, self.dimensions().1);
-					let cursor = self.interaction.cursor;
-					if let Some(viewer) = self.interaction.viewer.as_mut() {
-						viewer.zoom_at(factor, cursor, window);
-					}
-					self.redraw();
-					return;
-				}
 				if self.readers.session.search.open
 					&& self.interaction.cursor.1
 						>= self.dimensions().1 - self.bottom()
@@ -571,13 +531,6 @@ impl<P: super::SendEvent> App<P> {
 						)) {
 					return;
 				}
-				// The viewer answers to Escape alone.
-				if self.interaction.viewer.is_some()
-					&& (command
-						|| event.logical_key != Key::Named(NamedKey::Escape))
-				{
-					return;
-				}
 				if command {
 					if let Key::Character(c) = &event.logical_key {
 						match c.to_lowercase().as_str() {
@@ -660,6 +613,76 @@ impl<P: super::SendEvent> App<P> {
 			event_loop.exit();
 		}
 	}
+	/// The topmost viewer captures input before search and page controls.
+	fn viewer_event(&mut self, event: &WindowEvent) -> bool {
+		if self.interaction.viewer.is_none() {
+			return false;
+		}
+		self.refresh_viewer();
+		let (width, height, scale) = self.dimensions();
+		let viewer = self.interaction.viewer.as_mut().unwrap();
+		match event {
+			WindowEvent::CursorMoved { position, .. } => {
+				self.interaction.cursor =
+					(position.x as f32 / scale, position.y as f32 / scale);
+				viewer.move_pointer(self.interaction.cursor, (width, height));
+			}
+			WindowEvent::CursorLeft { .. } => {
+				if viewer.grab.is_none() {
+					self.interaction.cursor =
+						(f32::NEG_INFINITY, f32::NEG_INFINITY);
+				}
+			}
+			WindowEvent::MouseInput {
+				button: MouseButton::Left,
+				state,
+				..
+			} => match state {
+				ElementState::Pressed => {
+					viewer.begin_press(self.interaction.cursor)
+				}
+				ElementState::Released => {
+					if viewer.finish_press() {
+						self.interaction.viewer = None;
+					}
+				}
+			},
+			WindowEvent::MouseWheel { delta, .. } => {
+				let factor = match delta {
+					MouseScrollDelta::LineDelta(_, y) => (0.2 * y).exp(),
+					MouseScrollDelta::PixelDelta(p) => {
+						(p.y as f32 / 240.).exp()
+					}
+				};
+				viewer.zoom_at(
+					factor,
+					self.interaction.cursor,
+					(width, height),
+				);
+			}
+			WindowEvent::KeyboardInput { event, .. } => {
+				if event.state == ElementState::Pressed {
+					self.key_pressed(&event.logical_key);
+				}
+			}
+			WindowEvent::MouseInput { .. }
+			| WindowEvent::Ime(_)
+			| WindowEvent::Touch(_)
+			| WindowEvent::PinchGesture { .. }
+			| WindowEvent::PanGesture { .. }
+			| WindowEvent::RotationGesture { .. }
+			| WindowEvent::DoubleTapGesture { .. } => return true,
+			WindowEvent::Focused(false) => {
+				viewer.cancel_press();
+				return false;
+			}
+			_ => return false,
+		}
+		self.refresh_hover();
+		self.redraw();
+		true
+	}
+
 	/// Routes one unmodified key press, with no window server involved,
 	/// reporting whether an owner took the key.
 	///
@@ -669,6 +692,14 @@ impl<P: super::SendEvent> App<P> {
 	/// that move it. A key no owner takes comes back as `false`, which is
 	/// what lets the caller answer it last.
 	pub(super) fn key_pressed(&mut self, key: &Key) -> bool {
+		if self.interaction.viewer.is_some() {
+			if key == &Key::Named(NamedKey::Escape) {
+				self.interaction.viewer = None;
+				self.refresh_hover();
+				self.redraw();
+			}
+			return true;
+		}
 		// An open option list owns the keys while it is up. A key it hands
 		// back still reaches the page behind it.
 		if self.interaction.dropdown.is_some() && self.dropdown_key(key) {
@@ -743,12 +774,6 @@ impl<P: super::SendEvent> App<P> {
 			}
 			Key::Named(NamedKey::Escape) => {
 				self.tab_strip.cancel_drag();
-				// The viewer is the topmost layer, so Escape closes it alone.
-				if self.interaction.viewer.take().is_some() {
-					self.refresh_hover();
-					self.redraw();
-					return false;
-				}
 				self.interaction.pressed = None;
 				self.interaction.focus = None;
 				self.interaction.modal = None;

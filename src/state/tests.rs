@@ -1725,12 +1725,23 @@ fn viewer_fits_without_upscaling_and_zoom_keeps_the_pointer_spot() {
 		pan: (0., 0.),
 		grab: None,
 		pressed_at: None,
+		dragged: false,
 	};
 	let rect = viewer.rect(window);
 	// The window fit (0.188) is below the native cap (0.5), so the picture
 	// fills the window's content height and stays sharp.
 	assert!((rect.h - 752.).abs() < 0.5, "{rect:?}");
 	assert_eq!(rect.w, rect.h / 4., "the aspect survives fitting");
+	for pixels in [(1., 1000.), (4000., 1.)] {
+		viewer.pixels = pixels;
+		let rect = viewer.rect(window);
+		assert!(
+			rect.w <= window.0 - VIEWER_MARGIN
+				&& rect.h <= window.1 - VIEWER_MARGIN,
+			"thin images fit too: {rect:?}"
+		);
+		assert!(rect.w >= 1. && rect.h >= 1.);
+	}
 	// A small picture stays at its native logical size rather than blurring.
 	viewer.pixels = (300., 200.);
 	let rect = viewer.rect(window);
@@ -1765,10 +1776,11 @@ fn viewer_fits_without_upscaling_and_zoom_keeps_the_pointer_spot() {
 	assert_eq!(viewer.pan, (0., 0.));
 
 	// A press that never moved is a click, not a pan.
-	assert!(!viewer.is_drag());
-	viewer.grab = Some((4., 4.));
-	viewer.pressed_at = Some((4., 4.));
-	assert!(!viewer.is_drag());
-	viewer.grab = Some((10., 4.));
-	assert!(viewer.is_drag());
+	assert!(!viewer.finish_press());
+	viewer.begin_press((4., 4.));
+	assert!(viewer.finish_press());
+	viewer.begin_press((4., 4.));
+	viewer.move_pointer((10., 4.), window);
+	viewer.move_pointer((4., 4.), window);
+	assert!(!viewer.finish_press());
 }

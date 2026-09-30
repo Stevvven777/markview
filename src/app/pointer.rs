@@ -1,3 +1,4 @@
+use crate::state::Selection;
 use crate::{link, state};
 use markview_core::document::footnote;
 use std::{
@@ -202,6 +203,19 @@ impl<P: super::SendEvent> App<P> {
 
 	/// Hover state follows scrolling and reflow, not only pointer motion.
 	pub(super) fn refresh_hover(&mut self) {
+		if let Some(viewer) = &self.interaction.viewer {
+			self.interaction.hover = None;
+			self.interaction.hover_image = None;
+			self.interaction.hover_overflow = None;
+			if let Some(w) = &self.window {
+				w.set_cursor(if viewer.grab.is_some() {
+					CursorIcon::Grabbing
+				} else {
+					CursorIcon::Default
+				});
+			}
+			return;
+		}
 		let holding = self.interaction.pointer_down.is_some()
 			|| self.interaction.scrollbar.is_some()
 			|| self.tab_strip.drag.is_some();
@@ -348,9 +362,34 @@ impl<P: super::SendEvent> App<P> {
 			pan: (0., 0.),
 			grab: None,
 			pressed_at: None,
+			dragged: false,
 		});
+		self.cancel_gestures();
+		self.interaction.reset_clicks();
+		self.sync_input();
 		self.refresh_hover();
 		self.redraw();
+	}
+
+	/// Decoded pixels can arrive while the viewer is already open.
+	pub(super) fn refresh_viewer(&mut self) {
+		let (width, height, scale) = self.dimensions();
+		let Some(viewer) = self.interaction.viewer.as_mut() else {
+			return;
+		};
+		if let Some(pixels) = self
+			.readers
+			.session
+			.snapshot
+			.images
+			.pixels
+			.decoded()
+			.get(&viewer.src)
+		{
+			viewer.pixels = (pixels.width as f32, pixels.height as f32);
+		}
+		viewer.scale = scale;
+		viewer.pan_by((0., 0.), (width, height));
 	}
 
 	pub(super) fn open_link(&mut self, url: &str, background: bool) {

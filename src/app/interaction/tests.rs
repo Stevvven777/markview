@@ -20,6 +20,8 @@ use winit::event::{DeviceId, ElementState, MouseButton, WindowEvent};
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
+mod viewer;
+
 const SOURCE: &str = "First paragraph.\n\nSecond paragraph.";
 
 #[derive(Clone)]

@@ -216,6 +216,7 @@ impl<P: SendEvent> App<P> {
 	pub(super) fn input_at_cursor(&mut self) -> Option<TextField> {
 		if self.interaction.modal.is_some()
 			|| self.interaction.dropdown.is_some()
+			|| self.interaction.viewer.is_some()
 		{
 			return None;
 		}
@@ -267,6 +268,7 @@ impl<P: SendEvent> App<P> {
 			&& !self.dialog_open
 			&& self.interaction.modal.is_none()
 			&& self.interaction.dropdown.is_none()
+			&& self.interaction.viewer.is_none()
 		{
 			match focus {
 				Some(Command::FocusInput(id))
