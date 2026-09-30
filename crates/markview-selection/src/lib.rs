@@ -221,26 +221,29 @@ pub trait Selection: Host {
 		self.blur();
 	}
 
+	/// Extends the selection toward `position`, reporting whether that moved
+	/// it. A pointer that is not dragging, or one that lands on the reading
+	/// position already selected, leaves the selection exactly as it was.
 	fn move_selection(
 		&mut self,
 		position: Option<TextPosition>,
 		snapshot: &LayoutSnapshot,
-	) {
+	) -> bool {
 		let Some(drag) = self.drag() else {
-			return;
+			return false;
 		};
 		let (start, grain, base) = (drag.start, drag.grain, drag.base);
 		let dragged =
 			self.dragged() || self.cursor().distance(start) >= DRAG_DISTANCE;
 		self.set_dragged(dragged);
 		if !dragged {
-			return;
+			return false;
 		}
 		let Some(position) = position else {
-			return;
+			return false;
 		};
 		let Some(selection) = self.selection() else {
-			return;
+			return false;
 		};
 		let moved = match (grain, base) {
 			(Grain::Char, _) | (_, None) => TextSelection {
@@ -260,7 +263,11 @@ pub trait Selection: Host {
 				}
 			}
 		};
+		if moved == selection {
+			return false;
+		}
 		self.set_selection(Some(moved));
+		true
 	}
 
 	/// Ends the press, returning the link to activate: the one it started on,

@@ -90,6 +90,27 @@ fn word_and_block_drag_extend_from_the_multi_click_base() {
 	);
 }
 #[test]
+fn move_selection_reports_whether_the_selection_moved() {
+	let snapshot = LayoutSnapshot::default();
+	let mut interaction = InteractionState {
+		cursor: (0.0, 0.0),
+		..Default::default()
+	};
+	// A hover with no press in flight has nothing to extend.
+	assert!(!interaction.move_selection(Some(position(4)), &snapshot));
+	interaction.begin_selection(position(0), None);
+	// Below the drag threshold the press is still a click, and the selection
+	// stays where it was.
+	interaction.cursor = (2.0, 0.0);
+	assert!(!interaction.move_selection(Some(position(4)), &snapshot));
+	// Past the threshold the focus follows the reading position...
+	interaction.cursor = (8.0, 0.0);
+	assert!(interaction.move_selection(Some(position(4)), &snapshot));
+	assert_eq!(interaction.selection.unwrap().focus, position(4));
+	// ...and landing on a position already selected is not a change either.
+	assert!(!interaction.move_selection(Some(position(4)), &snapshot));
+}
+#[test]
 fn shift_extends_original_anchor_and_reload_clears_gesture() {
 	let mut interaction = InteractionState::default();
 	interaction.begin_selection(position(2), None);
