@@ -181,7 +181,11 @@ fn prefix_blocks(source: &str, end: usize) -> Vec<Block> {
 pub(super) fn definitions(source: &str) -> String {
 	let mut out = String::new();
 	let mut fence = None;
-	for line in source.lines() {
+	// The parser's lines: a lone carriage return ends one too, so `lines()`
+	// would glue a definition onto the text before it and miss the marker.
+	let ranges = line_ranges(source);
+	for range in &ranges {
+		let line = &source[range.clone()];
 		let rest = line.trim_start_matches(' ');
 		let indent = line.len() - rest.len();
 		if indent <= 3 && (rest.starts_with("```") || rest.starts_with("~~~")) {

@@ -716,10 +716,16 @@ fn details_close<'a>(
 /// How many block quotes enclose the block that starts at `at`: the `>` markers
 /// Comrak removed from the block's first line.
 fn enclosing_quotes(source: &str, at: usize) -> usize {
-	let line = source[..at.min(source.len())]
-		.rfind('\n')
-		.map_or(0, |i| i + 1);
-	source[line..at.min(source.len())].matches('>').count()
+	let at = at.min(source.len());
+	// The line owning `at` starts at the last line start at or before it. A
+	// lone carriage return ends a line as well, so scanning for `\n` would
+	// walk back over several lines and count their markers too.
+	let line = line_starts(source)
+		.into_iter()
+		.take_while(|start| *start <= at)
+		.last()
+		.unwrap_or(0);
+	source[line..at].matches('>').count()
 }
 
 /// `text` with the markers of `depth` enclosing block quotes removed from every
@@ -729,12 +735,27 @@ fn strip_blockquotes(text: &str, depth: usize) -> String {
 		return text.to_string();
 	}
 	let mut out = String::with_capacity(text.len());
-	for (i, line) in text.split('\n').enumerate() {
-		if i > 0 {
-			out.push('\n');
+	let bytes = text.as_bytes();
+	let mut start = 0usize;
+	let mut i = 0usize;
+	while i < bytes.len() {
+		if !matches!(bytes[i], b'\n' | b'\r') {
+			i += 1;
+			continue;
 		}
-		out.push_str(without_quotes(line, depth));
+		out.push_str(without_quotes(&text[start..i], depth));
+		// The terminator is kept as it stands, so a lone `\r` still ends a
+		// line here exactly as it does for the parser.
+		if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
+			out.push_str("\r\n");
+			i += 2;
+		} else {
+			out.push(bytes[i] as char);
+			i += 1;
+		}
+		start = i;
 	}
+	out.push_str(without_quotes(&text[start..], depth));
 	out
 }
 

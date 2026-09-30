@@ -66,6 +66,7 @@ at the same level, without `[brackets]`.
 - The incremental parser falls back to a full parse when its change window starts on a mid-document byte-order mark, which the parser only strips at the start of a document.
 - Code blocks and HTML source split their lines on the parser's line structure (a lone carriage return ends a line), so a carriage return inside a code line can no longer reach the shaper inside a run.
 - Border fitting on a box with a non-positive extent no longer runs a `0 / denormal` scale that produced `NaN` border widths.
+- A quoted `<details>` body and the reference definitions a prefix parse appends now split their lines on the parser's line structure, so a lone carriage return no longer quotes a body line twice or hides a `[x]: ...` definition from the prefix.
 
 ## 0.1.9 - 2026-09-29
 

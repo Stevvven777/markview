@@ -479,6 +479,59 @@ fn a_lone_cr_in_a_code_block_cannot_break_the_shaper() {
 }
 
 #[test]
+fn a_quoted_details_body_survives_a_lone_carriage_return() {
+	// The `<details>` body is cut out of the raw source and its enclosing `>`
+	// markers stripped per line, so that helper must break lines where the
+	// parser does. A lone `\r` ends a line there too; missing it left the
+	// `>` of the next line in the body, which reparsed as a quote one level
+	// too deep.
+	let cr = String::from("> <details>\n>\n> a\r> b\n>\n> </details>\n");
+	let lf = cr.replace('\r', "\n");
+	let quotes = |doc: &Document| {
+		fn count(blocks: &[Block], n: &mut usize) {
+			for block in blocks {
+				match &block.kind {
+					BlockKind::Quote { blocks, .. } => {
+						*n += 1;
+						count(blocks, n);
+					}
+					BlockKind::Details { blocks, .. } => count(blocks, n),
+					_ => {}
+				}
+			}
+		}
+		let mut n = 0;
+		count(&doc.blocks, &mut n);
+		n
+	};
+	let from_cr = quotes(&parse(cr));
+	let from_lf = quotes(&parse(lf));
+	assert_eq!(
+		from_cr, from_lf,
+		"a lone \r must nest the details body like \n"
+	);
+}
+
+#[test]
+fn a_reference_behind_a_lone_carriage_return_still_resolves_in_a_prefix() {
+	// `definitions()` feeds a prefix parse the definitions that follow the
+	// cut. Walking `\n`-only lines glued `a\r[x]: /u` into one line, so the
+	// marker was never a column-zero `[`: the prefix kept a literal `[x]`
+	// while the full parse linked it.
+	let lf = String::from("see [x].\n\none\n\ntwo\n\n[x]: /u\n");
+	let cr = lf.replace("[x]: /u", "a\r[x]: /u");
+	for (tag, src) in [("lf", lf), ("cr", cr)] {
+		let source: Arc<str> = Arc::from(src);
+		let prefix = parse_prefix(&source, 10).expect("prefix");
+		let inline = format!("{:?}", prefix.blocks[0].kind);
+		assert!(
+			!inline.contains("\"[x]\""),
+			"{tag}: the prefix kept an unresolved reference: {inline}"
+		);
+	}
+}
+
+#[test]
 fn incremental_parse_keeps_heading_anchors_unique() {
 	let before = "# Same\n\nOne.\n\n# Same\n\nTwo.\n";
 	assert_incremental(before, "# Same\n\nOne.\n\n# Same\n\nTwo!\n");
