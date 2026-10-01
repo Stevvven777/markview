@@ -62,6 +62,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Prevent malicious HTTP dates and overflowing `max-age` values from panicking during downloads or redirect cache calculations.
 - Take multiline inline source positions from the block rather than the inline, so formulas and code spans keep the same range across differing indents, containers and line endings.
 - Keep the line ending that closes an incremental parse window, so a multiline formula or code span at the window's edge gets the same source range as in a full parse.
 - Prevent shaping from hanging when an extreme font size overflows Parley's line height, including sizes supplied by a valid MVSS rule.
