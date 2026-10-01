@@ -61,6 +61,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Prevent shaping from hanging when an extreme font size overflows Parley's line height, including sizes supplied by a valid MVSS rule.
 - Keep thematic-break source ranges on their marker line, so trailing blank lines no longer change block IDs or make incremental and full parses disagree.
 - A raw HTML attribute scan no longer splits a multi-byte space that stripping a leading `/` exposed (`<details /\u{a0}open>`), which panicked on an 18-byte document.
 - A merged inline's source range only ever grows, so the out-of-order positions comrak reports after a link reference definition can no longer invert a range.
