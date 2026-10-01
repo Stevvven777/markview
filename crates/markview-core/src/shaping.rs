@@ -19,6 +19,7 @@ use unicode_segmentation::UnicodeSegmentation;
 #[derive(Clone)]
 struct Face {
 	family: String,
+	source_id: parley::fontique::SourceId,
 	font: parley::FontData,
 	style: FontStyle,
 	weight: u16,
@@ -31,6 +32,8 @@ struct Face {
 #[derive(Default)]
 struct FontSet {
 	faces: Vec<Face>,
+	/// Scanned faces follow the configured stack and are selected per cluster.
+	configured_face_count: usize,
 	choices: HashMap<String, Option<usize>>,
 	diagnostic_key: u64,
 	diagnostic_fonts: Vec<Font>,
@@ -58,7 +61,7 @@ impl FontSet {
 	/// never costs a glyph.
 	fn select(&self, text: &str) -> Option<usize> {
 		let group = |emoji: bool| {
-			self.faces
+			self.faces[..self.configured_face_count]
 				.iter()
 				.position(|face| face.emoji == emoji && covers(face, text))
 		};
@@ -261,6 +264,7 @@ impl TextShaper {
 		let families: Vec<_> = self.font_sets[index]
 			.faces
 			.iter()
+			.take(self.font_sets[index].configured_face_count)
 			.map(|face| {
 				parley::FontFamilyName::Named(face.family.clone().into())
 			})
@@ -462,6 +466,7 @@ impl TextShaper {
 					{
 						faces.push(Face {
 							family: family.name().into(),
+							source_id: info.source().id(),
 							font: parley::FontData::new(data, info.index()),
 							style: if synthetic
 								|| (matches!(
@@ -482,6 +487,7 @@ impl TextShaper {
 			}
 			self.faces.insert(key.clone(), self.font_sets.len());
 			self.font_sets.push(FontSet {
+				configured_face_count: faces.len(),
 				diagnostic_key: crate::document::fingerprint(&key),
 				diagnostic_fonts: appearance.font.clone(),
 				diagnostic_weight: appearance.weight,
@@ -529,10 +535,22 @@ impl TextShaper {
 		};
 		let found = found?;
 		let set = &mut self.font_sets[set];
-		let index = set.faces.len();
-		set.faces.push(found);
-		// The miss is already cached as `None`; point the cluster at the face.
-		if set.choices.len() < 4096 {
+		let index = set.faces[set.configured_face_count..]
+			.iter()
+			.position(|face| {
+				face.source_id == found.source_id
+					&& face.font.index == found.font.index
+			})
+			.map(|i| set.configured_face_count + i)
+			.unwrap_or_else(|| {
+				let index = set.faces.len();
+				set.faces.push(found);
+				index
+			});
+		// Replace a cached miss even when the choice cache has reached its limit.
+		if text.len() <= 128
+			&& (set.choices.len() < 4096 || set.choices.contains_key(text))
+		{
 			set.choices.insert(text.to_owned(), Some(index));
 		}
 		Some(index)
@@ -599,6 +617,7 @@ impl TextShaper {
 						score,
 						Face {
 							family: family.name().into(),
+							source_id: info.source().id(),
 							font: parley::FontData::new(data, info.index()),
 							style,
 							weight: info.weight().value() as u16,
@@ -640,6 +659,7 @@ impl TextShaper {
 		let resolved = set
 			.faces
 			.iter()
+			.take(set.configured_face_count)
 			.map(|f| format!("{:?} (weight {})", f.family, f.weight))
 			.collect::<Vec<_>>()
 			.join(", ");

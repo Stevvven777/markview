@@ -735,3 +735,69 @@ fn a_cluster_the_collection_cannot_cover_still_warns_after_the_scan() {
 	let warning = shaper.fallback_warning(index, "\u{2A0E}").unwrap();
 	assert!(warning.contains("whole collection"), "{warning}");
 }
+
+#[test]
+fn scanned_weight_is_independent_of_previous_clusters() {
+	for text in ["⟺", "§⟺"] {
+		let mut shaper = shaper();
+		register_distant_face(
+			&mut shaper,
+			"DistantBold",
+			"KaTeX_Main-Bold.ttf",
+		);
+		register_distant_face(&mut shaper, "Distant", "KaTeX_Main-Regular.ttf");
+		let appearance = TextAppearance {
+			font: vec![Font {
+				family: "Missing".into(),
+				variant: Variant::Normal,
+				weight: None,
+				synthetic_italic: false,
+			}],
+			weight: 700,
+			..Default::default()
+		};
+		for cluster in text.graphemes(true) {
+			let face = shaper.choose_font(cluster, &appearance).unwrap();
+			// Only the regular face covers `§`; it must not capture `⟺`.
+			assert_eq!(face.weight, if cluster == "§" { 400 } else { 700 });
+		}
+	}
+}
+
+#[test]
+fn scanned_faces_are_reused_when_choice_cache_is_full() {
+	for count in [4095, 4096] {
+		let mut shaper = shaper();
+		register_distant_face(&mut shaper, "Distant", "KaTeX_Main-Regular.ttf");
+		let appearance = italic_appearance(&shaper);
+		let set = shaper.resolve_fonts(&appearance);
+		for i in 0..count {
+			shaper.font_sets[set]
+				.choices
+				.insert(format!("missing-{i}"), None);
+		}
+		shaper.choose_font("⟺", &appearance).unwrap();
+		let faces = shaper.font_sets[set].faces.len();
+		for _ in 0..10 {
+			shaper.choose_font("⟺", &appearance).unwrap();
+			shaper.choose_font("⟹", &appearance).unwrap();
+		}
+		assert_eq!(shaper.font_sets[set].faces.len(), faces);
+		assert_eq!(shaper.font_sets[set].choices.len(), 4096);
+		if count == 4095 {
+			assert!(shaper.font_sets[set].choices["⟺"].is_some());
+		}
+	}
+}
+
+#[test]
+fn scanned_choices_do_not_retain_long_text() {
+	let mut shaper = shaper();
+	register_distant_face(&mut shaper, "Distant", "KaTeX_Main-Regular.ttf");
+	let appearance = italic_appearance(&shaper);
+	let text = "⟺".repeat(43);
+	shaper.choose_font(&text, &appearance).unwrap();
+	let set = shaper.resolve_fonts(&appearance);
+	assert!(shaper.font_sets[set].choices.is_empty());
+	assert!(shaper.fallbacks.is_empty());
+}

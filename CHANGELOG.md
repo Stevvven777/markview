@@ -59,6 +59,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep scanned glyph fallback choices independent of preceding characters, reuse fallback faces when caches fill, and preserve the cached text length limit.
 - Honor a corrected MVaaC wasm URL on retry when an early font failure leaves the previous binary request pending and that request later fails.
 - Preserve the displayed Web scroll offset when changing motion mode or pressing the pointer during an animation over incomplete layout.
 - Toggle Web disclosures using the document behind the published prefix, and stop internal scroll animation when external input pans a wide block.
