@@ -61,6 +61,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep thematic-break source ranges on their marker line, so trailing blank lines no longer change block IDs or make incremental and full parses disagree.
 - Remove deprecated TypeScript `baseUrl` options and resolve web package aliases relative to each configuration file.
 - Apply horizontal overflow transforms and clipping to MVaaC image priorities, and infer SVG MIME types for byte decoding.
 - Keep scanned glyph fallback choices independent of preceding characters, reuse fallback faces when caches fill, and preserve the cached text length limit.

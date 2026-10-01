@@ -430,6 +430,58 @@ fn incremental_parse_matches_a_full_parse_for_plain_edits() {
 }
 
 #[test]
+fn thematic_break_ranges_exclude_trailing_blank_lines() {
+	for newline in ["\n", "\r\n", "\r"] {
+		for marker in ["----", "***", "___", "- - -", "  ---- "] {
+			let before = format!("a{newline}{newline}{marker}");
+			let expected = parse(before.as_str()).blocks.pop().unwrap();
+			assert!(matches!(expected.kind, BlockKind::Rule));
+			assert_eq!(
+				&before[expected.source.clone()],
+				marker.trim_start_matches(' ')
+			);
+			for blank in ["", " ", "  ", "\t", " \t", newline] {
+				let source = format!("{before}{newline}{blank}");
+				let full = parse(source.as_str());
+				assert_eq!(
+					full.blocks.last().unwrap(),
+					&expected,
+					"{source:?}"
+				);
+				let prefix =
+					parse_prefix(&Arc::from(source), before.len()).unwrap();
+				assert_eq!(prefix.blocks, full.blocks);
+			}
+		}
+	}
+}
+
+#[test]
+fn incremental_thematic_breaks_match_full_parses_with_trailing_blanks() {
+	// The minimized fuzz input duplicates the blank line before `----`.
+	assert_incremental("a\n\n\n----\n ", "a\n\n\n\n----\n ");
+	for newline in ["\n", "\r\n", "\r"] {
+		for marker in ["----", "***", "___"] {
+			for blank in ["", " ", "  ", newline] {
+				let before =
+					format!("a{newline}{newline}{marker}{newline}{blank}");
+				for after in [
+					before.replacen('a', "alpha", 1),
+					format!("a{newline}{before}"),
+					format!("{newline}{before}"),
+					format!("a{newline}{newline}____{newline}{blank}"),
+					format!("{before} {newline}"),
+					format!("{before}{newline}body"),
+				] {
+					assert_incremental(&before, &after);
+					assert_incremental(&after, &before);
+				}
+			}
+		}
+	}
+}
+
+#[test]
 fn a_bom_at_a_window_start_falls_back_to_a_full_parse() {
 	// A fuzz finding: the parser drops a BOM only at the very start of a
 	// document, and the incremental window is parsed as its own document.
