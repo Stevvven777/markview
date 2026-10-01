@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+## 0.1.10 - 2026-10-01
+
+This is a hardening release: hostile-input fuzzing removed panics in parsing, incremental reparse, download date/`max-age` handling and raw HTML scanning, and shaping no longer hangs on an extreme font size. Desktop readers also get a full-size image viewer, wheel-scrolled option lists and per-role font selection, while the WebAssembly front end stays in-progress groundwork.
+
 ### Added
 
 - Add host-managed asynchronous MVaaC image requests with viewport priorities, cancellable RGBA delivery, progressive reflow and opt-in browser URL/decode helpers.
