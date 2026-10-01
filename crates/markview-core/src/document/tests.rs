@@ -1621,3 +1621,27 @@ fn an_edit_inside_front_matter_keeps_it_metadata() {
 	assert_eq!(metadata(&updated), metadata(&full));
 	assert!(metadata(&updated).is_some_and(|yaml| yaml.contains("Bob")));
 }
+#[test]
+fn an_attribute_after_a_stray_slash_does_not_split_a_character() {
+	// A fuzz finding: `<details /\u{a0}open>` reaches `has_attribute` and
+	// `<p><img /\u{a0}src=x>` reaches `attribute`; both split the two-byte
+	// space the stripped `/` exposed.
+	assert!(parse("<details /\u{a0}open>\n").blocks.iter().all(|b| {
+		match &b.kind {
+			BlockKind::Paragraph(text) => text.iter().all(
+				|i| !matches!(&i.kind, InlineKind::Text(t) if t.contains('\u{a0}')),
+			),
+			_ => true,
+		}
+	}));
+	let doc = parse("<p><img /\u{a0}src=x>\n");
+	let mut images = Vec::new();
+	for block in &doc.blocks {
+		block.images(&mut images);
+	}
+	let [image] = images.as_slice() else {
+		panic!("expected the image the raw block declares")
+	};
+	assert_eq!(image.src, "x");
+}
+

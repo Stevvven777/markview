@@ -260,7 +260,9 @@ fn has_attribute(attrs: &str, name: &str) -> bool {
 			.find(|c: char| c.is_whitespace() || c == '=')
 			.unwrap_or(rest.len());
 		if end == 0 {
-			rest = &rest[1..];
+			// Stripping a leading `/` can expose whitespace (or an `=`), and
+			// that character may be multi-byte — a byte-wise skip splits it.
+			rest = &rest[rest.chars().next().map_or(0, char::len_utf8)..];
 			continue;
 		}
 		if rest[..end].eq_ignore_ascii_case(name) {
@@ -501,7 +503,9 @@ fn attribute(attrs: &str, name: &str) -> Option<String> {
 			.find(|c: char| c.is_whitespace() || c == '=')
 			.unwrap_or(rest.len());
 		if end == 0 {
-			rest = &rest[1..];
+			// Stripping a leading `/` can expose whitespace (or an `=`), and
+			// that character may be multi-byte — a byte-wise skip splits it.
+			rest = &rest[rest.chars().next().map_or(0, char::len_utf8)..];
 			continue;
 		}
 		let key = &rest[..end];
