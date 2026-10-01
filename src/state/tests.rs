@@ -1570,16 +1570,6 @@ fn every_panel_transition_clears_transient_input() {
 	}
 }
 
-/// Building the catalogue reads the whole system font collection, so the
-/// Generic page leaves it alone and a launch never pays for it.
-#[test]
-fn only_the_settings_pages_that_show_fonts_build_the_catalogue() {
-	assert!(!PanelTab::Generic.shows_font_catalog());
-	assert!(!PanelTab::About.shows_font_catalog());
-	assert!(PanelTab::Styles.shows_font_catalog());
-	assert!(PanelTab::Fonts.shows_font_catalog());
-}
-
 #[test]
 fn outline_collapse_is_per_session_and_resets_on_new_content() {
 	let mut session = ReaderSession {

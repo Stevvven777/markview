@@ -743,6 +743,7 @@ fn app_with_pinned_fonts() -> App<StubProxy> {
 	// The chooser rows sit behind the page's own Set step, not with the
 	// catalogue the page opens on.
 	app.action(Command::Fonts(crate::app::font_panel::Command::Choosers));
+	app.complete_choices_fixture();
 	app
 }
 

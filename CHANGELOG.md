@@ -23,6 +23,10 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Preserve symlinked settings resources and fade loading/error feedback when previewing the document.
+
+- Load settings styles and font catalogues in the background with immediate loading feedback, cached refreshes and retry controls.
+
 - Exclude automatic CJK/Latin spacing from the start and end of selection highlights.
 
 - Limit triple-click selection and dragging to the current paragraph or table cell inside lists, block quotes and other containers.
