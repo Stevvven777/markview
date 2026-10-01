@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Fixed
+
+- Preserve CJK bold in reader and PDF themes by treating the preferred Medium face as a minimum weight instead of an absolute override.
+
 ## 0.1.10 - 2026-10-01
 
 This is a hardening release: hostile-input fuzzing removed panics in parsing, incremental reparse, download date/`max-age` handling and raw HTML scanning, and shaping no longer hangs on an extreme font size. Desktop readers also get a full-size image viewer, wheel-scrolled option lists and per-role font selection, while the WebAssembly front end stays in-progress groundwork.

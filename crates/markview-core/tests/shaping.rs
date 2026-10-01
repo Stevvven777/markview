@@ -98,3 +98,55 @@ fn a_valid_extreme_stylesheet_does_not_stall_document_shaping() {
 		);
 	}
 }
+
+#[test]
+fn bundled_themes_shape_cjk_strong_with_a_real_bold_face() {
+	let config = FontConfig {
+		ignore_system_fonts: true,
+		directories: vec![
+			std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+				.join("tests/fonts"),
+		],
+		..Default::default()
+	};
+	let doc =
+		document::parse("中\n\n**中**\n\n***中***\n\n# **中**\n\n**`中`**");
+	for theme in Stylesheet::READER_THEMES
+		.iter()
+		.chain(Stylesheet::PDF_THEMES)
+	{
+		let mut sheet = (*Stylesheet::builtin()).clone();
+		if Stylesheet::PDF_THEMES.contains(theme) {
+			sheet.merge(&Stylesheet::named_rules("print").unwrap());
+		}
+		sheet.merge(&Stylesheet::named_rules(theme).unwrap());
+		sheet.set_cjk_type(markview_core::style::CjkType::Sc);
+		let options = LayoutOptions {
+			fonts: config.clone(),
+			stylesheet: Arc::new(sheet),
+			..Default::default()
+		};
+		let snapshot = LayoutEngine::new().layout(&doc, &options);
+		let weights: Vec<_> = snapshot
+			.blocks
+			.iter()
+			.flat_map(|block| &block.layout.draws)
+			.filter_map(|draw| match draw {
+				Draw::Glyph(glyph) => Some(
+					swash::FontRef::from_index(
+						glyph.font.data.data(),
+						glyph.font.index as usize,
+					)
+					.unwrap()
+					.attributes()
+					.weight()
+					.0,
+				),
+				_ => None,
+			})
+			.collect();
+		assert_eq!(weights.len(), 5, "{theme}: {weights:?}");
+		assert!(matches!(weights[0], 400 | 500), "{theme}: {weights:?}");
+		assert_eq!(&weights[1..], &[700; 4], "{theme}");
+	}
+}

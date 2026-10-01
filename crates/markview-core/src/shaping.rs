@@ -383,7 +383,7 @@ impl TextShaper {
 					Variant::Italic => FontStyle::Italic,
 					Variant::Oblique => FontStyle::Oblique(None),
 				};
-				let weight = candidate.weight.unwrap_or(appearance.weight);
+				let weight = candidate.resolved_weight(appearance.weight);
 				let def = self.stylesheet.fontdefs.get(&candidate.family);
 				let families: Vec<_> = if let Some(def) = def {
 					def.lookfor
@@ -671,7 +671,7 @@ impl TextShaper {
 					"{:?} ({:?}, weight {})",
 					f.family,
 					f.variant,
-					f.weight.unwrap_or(set.diagnostic_weight)
+					f.resolved_weight(set.diagnostic_weight)
 				)
 			})
 			.collect::<Vec<_>>()
