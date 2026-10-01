@@ -283,8 +283,8 @@ which no `LayoutUpdate` owns.
 
 ```ts
 import init, { Markview, CanvasReader } from "@markview/web";
-await init();                       // call once before anything else
-await init({ wasmUrl: "/assets/markview_web_bg.wasm" });
+await init({ fonts: ["/fonts/NotoSerif-Regular.otf"] });
+await init({ wasmUrl: "/assets/markview_web_bg.wasm", fonts });
 ```
 
 The binary ships as `markview_web_bg.wasm` beside the package's JavaScript, and
@@ -295,6 +295,17 @@ would make every downstream bundler emit JavaScript alone and leave the binary
 behind. A sibling reference survives bundling, and a deployment that moves the
 JavaScript away from the binary passes `wasmUrl` instead. The name carries no
 content hash, because the package has to be able to find it.
+
+Text fonts come from the host through `InitOptions.fonts`, a readonly array of
+`FontSource` (`string | URL | ArrayBuffer | Uint8Array`). URL sources are fetched
+in parallel with wasm initialization; byte sources are copied into wasm with
+their view bounds preserved. OpenType, TrueType and collections are accepted;
+WOFF/WOFF2 and CSS fonts are not. Only KaTeX's math fonts remain embedded.
+Missing or invalid font files reject initialization and allow a corrected retry.
+Repeated calls share the first successful initialization's options and fonts;
+omitting `fonts` leaves the text collection empty. Paragraph metrics, including
+math placement, still need a host text face. The demo imports its pinned
+faces through esbuild's `file` loaders, which emit hashed assets under `assets/`.
 
 ## Viewport (frozen)
 
@@ -479,7 +490,7 @@ Run with `pnpm --dir web test` against `web/dist`. The harness must:
 * The stdlib-only PNG decoder lives in `web/tests/png.mjs`.
 * The `wasm-bindgen` CLI 0.2.129 is vendored at
   `.tools/wasm-bindgen-0.2.129/wasm-bindgen`; the crate pins `=0.2.129`.
-* Only the 16 committed subset faces ship; `scripts/check_web_font_coverage.py`
+* The demo emits 16 committed subset faces as host assets; `scripts/check_web_font_coverage.py`
   guards the demo document against tofu. It unions every face, so a style gap
   can still slip through.
 

@@ -11,6 +11,7 @@ use crate::{
 };
 use markview_core::{
 	document::{Document, parse},
+	fonts::FontConfig,
 	image::ImageSnapshot,
 	layout::{LayoutEngine, LayoutOptions, ProgressiveLayout, Viewport},
 	style::Stylesheet,
@@ -47,6 +48,20 @@ const MAX_DPR: f32 = 8.0;
 /// The longest layout budget one `stepUpdate` call may be asked for.
 const MAX_STEP_MS: f64 = 60_000.0;
 
+/// Installs host font bytes for subsequently created readers.
+#[wasm_bindgen(js_name = configureFonts)]
+pub fn configure_fonts(faces: js_sys::Array) -> Result<(), JsValue> {
+	let faces = faces
+		.iter()
+		.map(|face| {
+			face.dyn_into::<js_sys::Uint8Array>()
+				.map(|data| data.to_vec())
+				.map_err(|_| fail("host fonts must be Uint8Array values"))
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+	fonts::install(faces).map_err(fail)
+}
+
 /// Builds a handle that draws into `canvas`, importing `config_json` when the
 /// page passes one.
 #[wasm_bindgen]
@@ -56,6 +71,7 @@ pub async fn create(
 ) -> Result<Markview, JsValue> {
 	console_error_panic_hook::set_once();
 	let config = Config::parse(config_json.as_deref())?;
+	let fonts = fonts::config();
 	let dpr = ratio(web_sys::window().map_or(1.0, |w| w.device_pixel_ratio()));
 	// The page may not have sized the canvas yet, so start from its CSS box
 	// when there is one and let `resize` keep it current afterwards.
@@ -81,7 +97,7 @@ pub async fn create(
 	let scale = effective_scale(logical, dpr, limit);
 	let (width, height) = size_canvas(&canvas, logical, scale, limit);
 	renderer.resize(width, height);
-	let mut options = config.options();
+	let mut options = config.options(fonts);
 	options.width = column_width(config.width, logical.0);
 	let document = Arc::new(parse(""));
 	Ok(Markview {
@@ -642,7 +658,7 @@ impl Markview {
 	) -> Result<(), JsValue> {
 		let config = Config::parse(config_json.as_deref())?;
 		let details_open = self.options.details_open.clone();
-		self.options = config.options();
+		self.options = config.options(self.options.fonts.clone());
 		self.options.details_open = details_open;
 		self.horizontal.clear();
 		self.overflow_drag = None;
@@ -1109,7 +1125,7 @@ impl Config {
 		}
 	}
 
-	fn options(&self) -> LayoutOptions {
+	fn options(&self, fonts: FontConfig) -> LayoutOptions {
 		LayoutOptions {
 			width: finite(self.width, 760.0).clamp(1.0, MAX_LOGICAL),
 			font_size: finite(self.font_size, 18.0).clamp(1.0, 200.0),
@@ -1120,7 +1136,7 @@ impl Config {
 			hide_front_matter: self.hide_front_matter,
 			front_matter_label: self.front_matter_label.clone(),
 			stylesheet: Stylesheet::bundled(self.theme == ThemeConfig::Dark),
-			fonts: fonts::config(),
+			fonts,
 			..LayoutOptions::default()
 		}
 	}

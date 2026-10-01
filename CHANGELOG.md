@@ -38,6 +38,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Load MVaaC text fonts from host URLs or bytes during initialization; the esbuild demo emits separate font assets, while KaTeX stays embedded in wasm.
 - Share document hover, cursor, scrolling and gesture inertia between desktop and Web; Web adds host activation callbacks, anchors, details and selectable scroll motion ownership, defaulting to internal wheel easing.
 - Route Windows fractional wheel events through ordinary wheel easing, removing the touchpad-specific packet momentum path pending a new adaptation.
 - Share one cancellable native download service and CPU budget across images and fonts, with owned progress events and transactional installation.
@@ -58,6 +59,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Honor a corrected MVaaC wasm URL on retry when an early font failure leaves the previous binary request pending and that request later fails.
 - Preserve the displayed Web scroll offset when changing motion mode or pressing the pointer during an animation over incomplete layout.
 - Toggle Web disclosures using the document behind the published prefix, and stop internal scroll animation when external input pans a wide block.
 - Apply external scroll travel from the displayed animation offset, preserve absolute requests through growing Web layouts, and defer End navigation until the final document height is known.
