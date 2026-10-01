@@ -40,6 +40,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Point the Comrak patch at upstream again, now carrying the fence-offset fix and the multiline inline source-position fix.
 - Align publishable web package versions with Markview and synchronize them during releases.
 - Load MVaaC text fonts from host URLs or bytes during initialization; the esbuild demo emits separate font assets, while KaTeX stays embedded in wasm.
 - Share document hover, cursor, scrolling and gesture inertia between desktop and Web; Web adds host activation callbacks, anchors, details and selectable scroll motion ownership, defaulting to internal wheel easing.
@@ -61,6 +62,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Take multiline inline source positions from the block rather than the inline, so formulas and code spans keep the same range across differing indents, containers and line endings.
 - Keep the line ending that closes an incremental parse window, so a multiline formula or code span at the window's edge gets the same source range as in a full parse.
 - Prevent shaping from hanging when an extreme font size overflows Parley's line height, including sizes supplied by a valid MVSS rule.
 - Keep thematic-break source ranges on their marker line, so trailing blank lines no longer change block IDs or make incremental and full parses disagree.

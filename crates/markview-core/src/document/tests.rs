@@ -406,6 +406,77 @@ fn reparse_reuses_the_fast_path_and_falls_back_to_a_full_parse() {
 }
 
 #[test]
+fn multiline_inline_ranges_use_their_closing_lines_indent() {
+	for newline in ["\n", "\r\n", "\r"] {
+		for (open, close) in [
+			("$a", "b$"),
+			("$$a", "b$$"),
+			("`a", "b`"),
+			("\\(a", "b\\)"),
+			("<img", "src='x'>"),
+		] {
+			for first_indent in 0..=3 {
+				for last_indent in 0..=3 {
+					for prefix in ["", "> ", "- "] {
+						let continuation =
+							if prefix == "- " { "  " } else { prefix };
+						let source = format!(
+							"{prefix}Lead{newline}{continuation}{}{open}{newline}{continuation}{}{close} suffix{newline}{newline}Tail{newline}",
+							" ".repeat(first_indent),
+							" ".repeat(last_indent),
+						);
+						let doc = parse(source.as_str());
+						let block = match &doc.blocks[0].kind {
+							BlockKind::Quote { blocks, .. } => &blocks[0],
+							BlockKind::List { items, .. } => {
+								&items[0].blocks[0]
+							}
+							_ => &doc.blocks[0],
+						};
+						let BlockKind::Paragraph(rich) = &block.kind else {
+							panic!("not a paragraph: {source:?}");
+						};
+						let start = source.find(open).unwrap();
+						let end = source.find(close).unwrap() + close.len();
+						let inline = rich
+							.iter()
+							.find(|i| i.source.start == start)
+							.unwrap();
+						assert_eq!(inline.source, start..end, "{source:?}");
+					}
+				}
+			}
+		}
+	}
+}
+
+#[test]
+fn incremental_multiline_inlines_match_full_parses() {
+	for newline in ["\n", "\r\n", "\r"] {
+		for (open, close) in [("$a", "b$"), ("`a", "b`"), ("\\(a", "b\\)")] {
+			for first_indent in 0..=3 {
+				for last_indent in 0..=3 {
+					for tail in ["", "Tail"] {
+						let before = format!(
+							"{}{open}{newline}{}{close}{newline}{newline}{tail}",
+							" ".repeat(first_indent),
+							" ".repeat(last_indent),
+						);
+						let after = format!("Lead{newline}{before}");
+						assert_incremental(&before, &after);
+						assert_incremental(&after, &before);
+						assert_incremental(
+							&before,
+							&format!("First{newline}{newline}{before}"),
+						);
+					}
+				}
+			}
+		}
+	}
+}
+
+#[test]
 fn incremental_inline_ranges_match_the_minimized_fuzz_input() {
 	let before = String::from_utf8_lossy(b"  $##o\r\x04\0\xd8$\n");
 	assert_incremental(&before, &format!("$x^2$\n{before}"));
