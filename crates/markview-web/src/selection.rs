@@ -9,8 +9,8 @@ use markview_core::{
 	scene::Viewport,
 	text::{TextPosition, TextSelection},
 };
+use markview_selection::{DocumentInteraction, Horizontal};
 use markview_selection::{Drag, Grain, Host, Modifiers, Point, Selection};
-use std::collections::HashMap;
 use web_time::Instant;
 
 /// A canvas point, and everything needed to read the text under it.
@@ -18,14 +18,21 @@ pub(crate) struct Reading<'a> {
 	pub(crate) snapshot: &'a LayoutSnapshot,
 	pub(crate) revision: u64,
 	pub(crate) viewport: Viewport,
+	pub(crate) horizontal: &'a Horizontal,
 }
 impl Reading<'_> {
+	pub(crate) fn context(&self) -> DocumentInteraction<'_> {
+		DocumentInteraction {
+			snapshot: self.snapshot,
+			viewport: self.viewport,
+			horizontal: self.horizontal,
+			revision: self.revision,
+		}
+	}
+
 	/// The reading position under a canvas-local point, if any text is near.
 	fn position(&self, x: f32, y: f32) -> Option<TextPosition> {
-		let (x, y) = self.viewport.document_point(x, y);
-		// Nothing pans a wide block sideways in this demo.
-		self.snapshot
-			.hit_test_text(x, y, &HashMap::new(), self.revision)
+		self.context().position(Point::new(x, y))
 	}
 }
 
@@ -50,7 +57,14 @@ impl Pointer {
 	/// repeated click, a plain one otherwise, nothing when no text is near.
 	pub(crate) fn press(&mut self, reading: &Reading<'_>, x: f32, y: f32) {
 		self.cursor = Point::new(x, y);
+		if !reading.context().contains(self.cursor) {
+			return;
+		}
+		let link = reading.context().link(self.cursor).map(str::to_owned);
 		let Some(position) = reading.position(x, y) else {
+			if let Some(link) = link {
+				self.begin_link_press(link);
+			}
 			return;
 		};
 		let count = if self.modifiers.shift_key() {
@@ -65,7 +79,7 @@ impl Pointer {
 					reading.snapshot.select_word_at(position),
 					Grain::Word,
 				) {
-					self.begin_selection(position, None);
+					self.begin_selection(position, link.clone());
 				}
 			}
 			3 => {
@@ -73,10 +87,10 @@ impl Pointer {
 					reading.snapshot.select_block_at(position),
 					Grain::Block,
 				) {
-					self.begin_selection(position, None);
+					self.begin_selection(position, link.clone());
 				}
 			}
-			_ => self.begin_selection(position, None),
+			_ => self.begin_selection(position, link.clone()),
 		}
 	}
 	/// Extends an in-flight press toward a canvas-local point, reporting
@@ -92,9 +106,14 @@ impl Pointer {
 		self.move_selection(position, reading.snapshot)
 	}
 	/// Ends the press at a canvas-local point.
-	pub(crate) fn release(&mut self, x: f32, y: f32) {
+	pub(crate) fn release(
+		&mut self,
+		x: f32,
+		y: f32,
+		link: Option<&str>,
+	) -> Option<String> {
 		self.cursor = Point::new(x, y);
-		let _ = self.finish_selection(None);
+		self.finish_selection(link)
 	}
 	/// Selects the whole snapshot.
 	pub(crate) fn select_all(

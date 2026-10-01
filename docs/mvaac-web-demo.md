@@ -193,7 +193,7 @@ export class Markview {
   contentHeight(): number;
   pointerDown(x: number, y: number, modifiers?: Partial<Modifiers>): void;
   pointerMove(x: number, y: number): void;
-  pointerUp(x: number, y: number): void;
+  pointerUp(x: number, y: number): PointerAction | null;
   selectAll(): void;
   clearSelection(): void;
   selectedText(): string;
@@ -490,3 +490,72 @@ Run with `pnpm --dir web test` against `web/dist`. The harness must:
 * `web/dist/`, `web/*/dist/`, `web/packages/markview/wasm/` and
   `web/node_modules/` are generated: never edit, never commit.
 * The native workspace must still build, test and lint.
+
+## Shared document interaction
+
+`markview-selection` owns document hit testing, hover/cursor decisions,
+scroll animation and deferred destinations, overflow scrollbar geometry,
+selection edge scrolling and gesture release inertia. Desktop chrome and
+browser event conversion remain in their hosts. Windows fractional line-wheel
+input uses the same eased path as whole detents; the previous packet momentum
+algorithm has been removed.
+
+The existing immediate `setScroll` / `scrollBy` API remains compatible.
+Direct relative input cancels internal animation before measuring travel from
+the displayed offset, while retaining deferred non-animated requests.
+An absolute request beyond a prefix remains held and is displayed clamped to
+each growing prefix. `scrollToEnd()` queues the final end while layout is
+pending; the reader's End key uses it. Subsequent deliberate scrolling or Home
+replaces that destination.
+The low-level wasm surface adds `scrollInput`, `setScrollMode`, `cursor`,
+`pointerLeave`, `cancelPointer` and `setImagesClickable`. `pointerUp` now returns
+a JSON activation or `"null"`; the TypeScript facade parses it:
+
+```ts
+export type ScrollMode = "external" | "internal";
+export type DocumentCursor = "default" | "text" | "pointer";
+export type PointerAction = { kind: "document"; reflowed: boolean }
+  | { kind: "link" | "image"; target: string; modifiers: Modifiers };
+
+// Additional Markview methods:
+scrollToEnd(): void;
+setScrollMode(mode: ScrollMode): void;
+scrollInput(dx: number, dy: number, kind: "external" | "step"): void;
+cursor(): DocumentCursor;
+pointerLeave(): void;
+cancelPointer(): void;
+setImagesClickable(clickable: boolean): void;
+pointerUp(x: number, y: number): PointerAction | null;
+
+// Additional CanvasReaderOptions:
+scrollMode?: ScrollMode;
+onLink?: (target: string, modifiers: Modifiers) => void;
+onImage?: (target: string, modifiers: Modifiers) => void;
+```
+
+`external` motion applies the host's travel directly and cancels internal
+animation. `internal` motion eases wheel input; gesture hosts can use the shared
+`Motion` machinery for release inertia. `scrollInput(..., "external")` always
+applies external motion; `"step"` follows the selected mode. Inputs are CSS
+pixels, positive right/down. The browser converts line and page wheel units
+before passing them in. `internal` is the default. Hosts can explicitly choose `external` when
+motion is already maintained outside Markview; the demo offers a live mode
+switch for comparison. No browser device detection is inferred from fractional deltas.
+
+Hover follows pointer motion, scrolling and layout publication. Pointer exit
+clears idle hover; cancellation ends a gesture without activation or erasing
+its selected text. Only a click released over the original target activates;
+dragging, Shift selection and cancellation suppress activation. Images become
+clickable only when the host enables them (`CanvasReader` does so when
+`onImage` exists). The reader restores the canvas's original inline cursor on
+teardown. The renderer receives hover and wide-block horizontal offsets.
+
+Details summaries toggle their layout state through progressive reflow and
+supersede existing `LayoutUpdate` handles. Resize and option changes preserve
+expansion; replacing Markdown resets it. Current-document fragment links,
+including percent-encoded anchors and footnotes, are handled internally.
+An anchor inside closed details expands its enclosing disclosures first.
+Unpublished targets wait for layout; deliberate scroll input cancels a waiting
+jump; completion without a target ends the wait. External and cross-document
+links are emitted through `onLink` with no default browser navigation. Images
+use `onImage`; no image viewer is included.

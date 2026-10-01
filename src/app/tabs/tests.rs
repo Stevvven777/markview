@@ -11,12 +11,12 @@ fn switching_restores_sessions_and_requests_remain_globally_ordered() {
 	let now = Instant::now();
 	tabs.open(PathBuf::from("a.md"), now);
 	let first = tabs.request(crate::test_support::options(), true).unwrap();
-	tabs.session.scroll = 123.0;
+	tabs.session.scrolling.offset = 123.0;
 	tabs.open(PathBuf::from("b.md"), now);
 	let second = tabs.request(crate::test_support::options(), false).unwrap();
 	assert!(second.version > first.version);
 	assert!(tabs.select(0, now));
-	assert_eq!(tabs.session.scroll, 123.0);
+	assert_eq!(tabs.session.scrolling.offset, 123.0);
 	assert!(tabs.session.follow_update);
 	let third = tabs.request(crate::test_support::options(), false).unwrap();
 	assert!(third.version > second.version);
@@ -95,14 +95,14 @@ fn closing_active_tab_restores_neighbor_and_invalid_indices_preserve_state() {
 	let now = Instant::now();
 	for (name, scroll) in [("a.md", 10.0), ("b.md", 20.0), ("c.md", 30.0)] {
 		tabs.open(PathBuf::from(name), now);
-		tabs.session.scroll = scroll;
+		tabs.session.scrolling.offset = scroll;
 	}
 	assert!(tabs.select(1, now));
 	assert!(matches!(tabs.close(1, now), super::Closed::Active));
 	assert_eq!(tabs.session.path, Some(PathBuf::from("c.md")));
-	assert_eq!(tabs.session.scroll, 30.0);
+	assert_eq!(tabs.session.scrolling.offset, 30.0);
 	assert!(tabs.select(0, now));
-	assert_eq!(tabs.session.scroll, 10.0);
+	assert_eq!(tabs.session.scrolling.offset, 10.0);
 	assert!(!tabs.select(9, now));
 	assert!(matches!(tabs.close(9, now), super::Closed::Missing));
 }
@@ -116,7 +116,7 @@ fn reordering_preserves_every_session_and_the_active_request() {
 				let now = Instant::now();
 				for i in 0..4 {
 					tabs.open(PathBuf::from(format!("{i}.md")), now);
-					tabs.session.scroll = 10.0 * i as f32;
+					tabs.session.scrolling.offset = 10.0 * i as f32;
 				}
 				tabs.select(active, now);
 				let request = tabs
@@ -140,7 +140,7 @@ fn reordering_preserves_every_session_and_the_active_request() {
 						tabs.session.path,
 						Some(PathBuf::from(format!("{id}.md")))
 					);
-					assert_eq!(tabs.session.scroll, id as f32 * 10.0);
+					assert_eq!(tabs.session.scrolling.offset, id as f32 * 10.0);
 				}
 			}
 		}
@@ -154,7 +154,7 @@ fn background_open_preserves_active_reading_and_deduplicates_tabs() {
 	tabs.open(PathBuf::from("a.md"), now);
 	tabs.session.document = Some(Arc::new(crate::document::parse("current")));
 	let document = tabs.session.document.clone().unwrap();
-	tabs.session.scroll = 123.0;
+	tabs.session.scrolling.offset = 123.0;
 	tabs.session.horizontal.insert((0, 0), 42.0);
 	let request = tabs.request(crate::test_support::options(), true).unwrap();
 	assert!(tabs.open_background(PathBuf::from("b.md"), Some("intro".into())));
@@ -165,7 +165,7 @@ fn background_open_preserves_active_reading_and_deduplicates_tabs() {
 	assert_eq!(tabs.active(), 0);
 	assert_eq!(tabs.session.path, Some(PathBuf::from("a.md")));
 	assert_eq!(tabs.session.version, request.version);
-	assert_eq!(tabs.session.scroll, 123.0);
+	assert_eq!(tabs.session.scrolling.offset, 123.0);
 	assert_eq!(tabs.session.horizontal[&(0, 0)], 42.0);
 	assert!(tabs.session.follow_update);
 	assert!(Arc::ptr_eq(
@@ -180,7 +180,7 @@ fn background_open_preserves_active_reading_and_deduplicates_tabs() {
 	assert_eq!(next.version, request.version + 1);
 	assert_eq!(next.path, PathBuf::from("b.md"));
 	assert!(tabs.select(0, now));
-	assert_eq!(tabs.session.scroll, 123.0);
+	assert_eq!(tabs.session.scrolling.offset, 123.0);
 }
 
 #[test]

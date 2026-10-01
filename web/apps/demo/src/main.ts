@@ -189,6 +189,8 @@ async function boot(): Promise<void> {
 		let ready = false;
 		const reader = await CanvasReader.attach(dom.canvas, {
 			markdown: dom.source.value,
+			onLink: (target) => notify(`Link: ${target}`),
+			onImage: (target) => notify(`Image: ${target}`),
 			markview: config,
 			onStats: (stats) => {
 				renderStats(stats);
@@ -211,6 +213,13 @@ async function boot(): Promise<void> {
 		window.mv = reader.markview;
 		window.mvStats = () => reader.markview.stats();
 		window.mvReader = reader;
+		document.querySelector("#scroll-mode")?.addEventListener("change", (event) => {
+			reader.markview.setScrollMode((event.target as HTMLSelectElement).value === "external" ? "external" : "internal");
+		});
+		document.querySelector("#interaction-sample")?.addEventListener("click", () => {
+			dom.source.value = "# Interaction sample\n\n[Jump to hidden heading](#hidden) · [External link](https://example.com)\n\n<details>\n<summary>Expandable section</summary>\n\n## Hidden\n\nThis heading is inside a disclosure.\n\n</details>\n\n```text\n" + "Wide block — ".repeat(30) + "\n```\n\n" + "A paragraph for wheel scrolling and selection.\n\n".repeat(80);
+			reader.setMarkdown(dom.source.value); updateSourceMeta();
+		});
 		// The counts and the update share the debounce: a big paste must not run
 		// a full-string scan once per inserted character.
 		let timer = 0;

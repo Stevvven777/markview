@@ -48,21 +48,6 @@ pub(super) fn wheel_pixels(
 	}
 }
 
-/// Whether a wheel event comes from a high-resolution device.
-///
-/// A mouse wheel names whole detents. A touchpad emulating one through Windows'
-/// high-resolution wheel support names the fractional counts it accumulated
-/// instead, and the same device hands its inertia over in a few large packets
-/// rather than as the stream a desktop's own smooth scrolling would give.
-pub(super) fn high_resolution(delta: MouseScrollDelta) -> bool {
-	match delta {
-		MouseScrollDelta::LineDelta(x, y) => {
-			x.fract() != 0.0 || y.fract() != 0.0
-		}
-		MouseScrollDelta::PixelDelta(_) => false,
-	}
-}
-
 /// Whether a `dy` of input has a finite distance to ease over.
 fn eases(dy: f32) -> bool {
 	dy.is_finite() && dy != 0.0
@@ -109,15 +94,6 @@ impl<P: super::SendEvent> App<P> {
 		}
 		self.after_scroll();
 	}
-	/// A wheel travel from a high-resolution device, which arrives in packets.
-	pub(super) fn scroll_wheel_packet(&mut self, dy: f32) {
-		if eases(dy) {
-			self.readers.session.coast_wheel_by(dy, Instant::now());
-		} else {
-			self.readers.session.scroll_by(dy, self.viewport());
-		}
-		self.after_scroll();
-	}
 	/// Home and End. The top is known before the geometry is, so it eases to
 	/// zero; the end is only a number once the snapshot is complete, and until
 	/// then the existing infinite target waits for the final height.
@@ -135,7 +111,7 @@ impl<P: super::SendEvent> App<P> {
 			Some(0.0)
 		};
 		if let Some(destination) = destination
-			&& (destination - self.readers.session.scroll).abs() > 0.5
+			&& (destination - self.readers.session.scrolling.offset).abs() > 0.5
 		{
 			self.readers
 				.session
@@ -182,16 +158,9 @@ impl<P: super::SendEvent> App<P> {
 	}
 	/// The link under a window point, using the same origin as the renderer.
 	pub(super) fn link_at(&self, px: f32, py: f32) -> Option<String> {
-		let geometry = self.view_geometry();
-		if !geometry.clip().contains(px, py) {
-			return None;
-		}
-		let (x, y) = geometry.document_point(px, py);
-		self.readers
-			.session
-			.snapshot
-			.link_at(x, y, &self.readers.session.horizontal)
-			.map(str::to_string)
+		self.document_interaction()
+			.link(markview_selection::Point::new(px, py))
+			.map(str::to_owned)
 	}
 	pub(super) fn button_at_cursor(&mut self) -> bool {
 		self.buttons().into_iter().any(|button| {
@@ -226,23 +195,24 @@ impl<P: super::SendEvent> App<P> {
 			&& self.interaction.modal.is_none()
 			&& !holding
 			&& !over_outline;
-		let hover = if idle {
-			self.link_at(self.interaction.cursor.0, self.interaction.cursor.1)
-		} else {
-			None
-		};
-		// Wide-block scrollbars live in the middle of the window, so pointer
-		// motion alone does not repaint them: their hover state is tracked
-		// here and drives the redraw.
-		let hover_overflow = if idle {
-			self.overflow_scrollbar_at(
-				self.interaction.cursor.0,
-				self.interaction.cursor.1,
+		let document_hover = if idle {
+			self.document_interaction().hover(
+				markview_selection::Point::new(
+					self.interaction.cursor.0,
+					self.interaction.cursor.1,
+				),
+				false,
+				true,
+				self.preferences
+					.values
+					.stylesheet
+					.overflow_scrollbar_metrics(),
 			)
-			.map(|(block, overflow, _)| (block, overflow))
 		} else {
-			None
+			markview_selection::Hover::default()
 		};
+		let hover = document_hover.link;
+		let hover_overflow = document_hover.overflow;
 		let cursor = if self.input_at_cursor().is_some() {
 			CursorIcon::Text
 		} else if self.tab_strip.drag.is_some_and(|d| d.moving) {
@@ -260,41 +230,31 @@ impl<P: super::SendEvent> App<P> {
 			|| hover.is_some()
 		{
 			CursorIcon::Pointer
-		} else if !self.interaction.panel_open()
-			&& !over_outline
-			&& self.interaction.viewer.is_none()
-			&& self.image_at_cursor().is_some()
-		{
-			// An image opens the viewer, so it points like the control it is.
-			CursorIcon::Pointer
-		} else if !self.interaction.panel_open()
-			&& !over_outline
-			&& self.text_under_cursor()
-		{
-			CursorIcon::Text
+		} else if !self.interaction.panel_open() && !over_outline {
+			let cursor = if idle {
+				document_hover.cursor
+			} else {
+				self.document_interaction().cursor(
+					markview_selection::Point::new(
+						self.interaction.cursor.0,
+						self.interaction.cursor.1,
+					),
+					false,
+					true,
+				)
+			};
+			match cursor {
+				markview_selection::Cursor::Default => CursorIcon::Default,
+				markview_selection::Cursor::Text => CursorIcon::Text,
+				markview_selection::Cursor::Pointer => CursorIcon::Pointer,
+			}
 		} else {
 			CursorIcon::Default
 		};
+
 		let hover_changed = hover != self.interaction.hover
 			|| hover_overflow != self.interaction.hover_overflow;
-		let geometry = self.view_geometry();
-		let (x, y) = geometry.document_point(
-			self.interaction.cursor.0,
-			self.interaction.cursor.1,
-		);
-		let hover_image = if idle
-			&& geometry
-				.clip()
-				.contains(self.interaction.cursor.0, self.interaction.cursor.1)
-		{
-			self.readers
-				.session
-				.snapshot
-				.image_title_at(x, y, &self.readers.session.horizontal)
-				.map(str::to_owned)
-		} else {
-			None
-		};
+		let hover_image = document_hover.image_title;
 		let hover_changed =
 			hover_changed || hover_image != self.interaction.hover_image;
 		self.interaction.hover_image = hover_image;
@@ -312,22 +272,12 @@ impl<P: super::SendEvent> App<P> {
 	pub(super) fn image_at_cursor(
 		&self,
 	) -> Option<(String, markview_core::scene::Rect)> {
-		let geometry = self.view_geometry();
-		if !geometry
-			.clip()
-			.contains(self.interaction.cursor.0, self.interaction.cursor.1)
-		{
-			return None;
-		}
-		let (x, y) = geometry.document_point(
-			self.interaction.cursor.0,
-			self.interaction.cursor.1,
-		);
-		self.readers
-			.session
-			.snapshot
-			.image_at(x, y, &self.readers.session.horizontal)
-			.map(|(src, _, rect, _)| (src.to_string(), rect))
+		self.document_interaction()
+			.image(markview_selection::Point::new(
+				self.interaction.cursor.0,
+				self.interaction.cursor.1,
+			))
+			.map(|(src, rect, _)| (src.to_owned(), rect))
 	}
 
 	/// Opens the full-size viewer over the image under the cursor, if any.
@@ -501,28 +451,21 @@ impl<P: super::SendEvent> App<P> {
 	/// Pans the wide block under the pointer. `false` means no block was
 	/// there, so the caller can scroll the page instead of dropping the event.
 	pub(super) fn horizontal_by(&mut self, dx: f32) -> bool {
-		let (cx, cy) = self.view_geometry().document_point(
-			self.interaction.cursor.0,
-			self.interaction.cursor.1,
+		let consumed = markview_selection::horizontal_by(
+			&self.readers.session.snapshot,
+			self.view_geometry(),
+			&mut self.readers.session.horizontal,
+			markview_selection::Point::new(
+				self.interaction.cursor.0,
+				self.interaction.cursor.1,
+			),
+			dx,
 		);
-		for (bi, b) in self.readers.session.snapshot.blocks.iter().enumerate() {
-			for (oi, o) in b.layout.overflow.iter().enumerate() {
-				if o.rect.contains(cx, cy - b.y) {
-					let offset = self
-						.readers
-						.session
-						.horizontal
-						.entry((bi, oi))
-						.or_default();
-					*offset = (*offset + dx)
-						.clamp(0.0, (o.content_width - o.rect.w).max(0.0));
-					self.refresh_hover();
-					self.redraw();
-					return true;
-				}
-			}
+		if consumed {
+			self.refresh_hover();
+			self.redraw();
 		}
-		false
+		consumed
 	}
 }
 

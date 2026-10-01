@@ -347,13 +347,13 @@ impl<P: SendEvent> App<P> {
 					search
 						.matches
 						.iter()
-						.rposition(|m| y(m) <= session.scroll)
+						.rposition(|m| y(m) <= session.scrolling.offset)
 						.unwrap_or(count - 1)
 				} else {
 					search
 						.matches
 						.iter()
-						.position(|m| y(m) >= session.scroll)
+						.position(|m| y(m) >= session.scrolling.offset)
 						.unwrap_or(0)
 				}
 			},
@@ -460,15 +460,15 @@ impl<P: SendEvent> App<P> {
 			}
 		}
 		let y = block.y + cluster.rect.y;
-		let to = if y < session.scroll
-			|| y + cluster.rect.h > session.scroll + viewport
+		let to = if y < session.scrolling.offset
+			|| y + cluster.rect.h > session.scrolling.offset + viewport
 		{
 			y - viewport * 0.25
 		} else {
-			session.scroll
+			session.scrolling.offset
 		};
 		session.cancel_scroll_animation();
-		session.scroll = to.clamp(
+		session.scrolling.offset = to.clamp(
 			0.0,
 			crate::state::scroll_limit(session.snapshot.height, viewport),
 		);
@@ -614,7 +614,8 @@ impl<P: SendEvent> App<P> {
 			return vec![];
 		}
 		let geometry = self.view_geometry();
-		let visible = session.scroll..session.scroll + self.viewport();
+		let visible = session.scrolling.offset
+			..session.scrolling.offset + self.viewport();
 		let mut out = Vec::new();
 		session.snapshot.visit_search_clusters(
 			&session.horizontal,

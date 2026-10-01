@@ -62,3 +62,9 @@ export interface Modifiers {
 	alt: boolean;
 	meta: boolean;
 }
+
+/** Who maintains the motion between scroll events. */
+export type ScrollMode = "external" | "internal";
+export type DocumentCursor = "default" | "text" | "pointer";
+/** An activation emitted on release, after a press that did not drag. */
+export type PointerAction = { kind: "document"; reflowed: boolean } | { kind: "link" | "image"; target: string; modifiers: Modifiers };

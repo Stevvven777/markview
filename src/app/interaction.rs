@@ -571,34 +571,19 @@ impl<P: super::SendEvent> App<P> {
 		}
 	}
 	pub(super) fn text_at_cursor(&self) -> Option<TextPosition> {
-		let (x, y) = self.view_geometry().document_point(
-			self.interaction.cursor.0,
-			self.interaction.cursor.1,
-		);
-		self.readers.session.snapshot.hit_test_text(
-			x,
-			y,
-			&self.readers.session.horizontal,
-			self.readers.session.accepted_revision,
-		)
+		self.document_interaction()
+			.position(markview_selection::Point::new(
+				self.interaction.cursor.0,
+				self.interaction.cursor.1,
+			))
 	}
 
 	pub(super) fn text_under_cursor(&self) -> bool {
-		let geometry = self.view_geometry();
-		if !geometry
-			.clip()
-			.contains(self.interaction.cursor.0, self.interaction.cursor.1)
-		{
-			return false;
-		}
-		let (x, y) = geometry.document_point(
-			self.interaction.cursor.0,
-			self.interaction.cursor.1,
-		);
-		self.readers.session.snapshot.contains_text(
-			x,
-			y,
-			&self.readers.session.horizontal,
+		self.document_interaction().contains_text(
+			markview_selection::Point::new(
+				self.interaction.cursor.0,
+				self.interaction.cursor.1,
+			),
 		)
 	}
 
@@ -664,7 +649,7 @@ impl<P: super::SendEvent> App<P> {
 				if let Some(bar) = self.document_scrollbar() {
 					// The thumb follows the pointer; nothing eases under a drag.
 					self.readers.session.cancel_scroll_animation();
-					self.readers.session.scroll =
+					self.readers.session.scrolling.offset =
 						bar.scroll_for(x, y, drag.grab);
 					self.redraw();
 				}
@@ -691,13 +676,14 @@ impl<P: super::SendEvent> App<P> {
 			.move_selection(position, &self.readers.session.snapshot);
 		if self.interaction.pointer_down.is_some() && self.interaction.dragged {
 			let (_, height, _) = self.dimensions();
-			let can_scroll = (self.interaction.cursor.1 < TOP + 24.0
-				&& self.readers.session.scroll > 0.0)
-				|| (self.interaction.cursor.1 > height - self.bottom() - 24.0
-					&& self.readers.session.scroll
-						< (self.readers.session.snapshot.height
-							- self.viewport())
-						.max(0.0));
+			let can_scroll = markview_selection::selection_scroll(
+				self.interaction.cursor.1,
+				TOP,
+				height - self.bottom(),
+				self.readers.session.scrolling.offset,
+				(self.readers.session.snapshot.height - self.viewport())
+					.max(0.0),
+			) != 0.0;
 			self.interaction.drag_at =
 				can_scroll.then(|| Instant::now() + Duration::from_millis(16));
 			self.redraw();

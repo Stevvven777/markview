@@ -261,7 +261,7 @@ impl<P: super::SendEvent> App<P> {
 					Some(Err(error)) => {
 						self.readers.session.layout_pending =
 							!self.readers.session.snapshot_complete;
-						self.readers.session.pending_scroll = None;
+						self.readers.session.scrolling.target = None;
 						self.readers.session.pending_anchor = None;
 						self.readers.session.select_all_pending = false;
 						self.readers.session.cancel_scroll_animation();
@@ -351,11 +351,14 @@ impl<P: super::SendEvent> App<P> {
 				// `scroll_by` re-derives the selection and re-arms this
 				// deadline through `after_scroll`, because the pointer stays
 				// where it is while the text moves under it.
-				self.scroll_by(if self.interaction.cursor.1 < TOP + 24.0 {
-					-14.0
-				} else {
-					14.0
-				});
+				self.scroll_by(markview_selection::selection_scroll(
+					self.interaction.cursor.1,
+					TOP,
+					self.dimensions().1 - self.bottom(),
+					self.readers.session.scrolling.offset,
+					(self.readers.session.snapshot.height - self.viewport())
+						.max(0.0),
+				));
 			}
 		}
 		if self.reflow_at.is_some_and(|d| d <= now) {

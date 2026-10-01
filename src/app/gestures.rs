@@ -371,7 +371,7 @@ impl<P: super::SendEvent> App<P> {
 	fn touch_offset(&mut self, surface: Surface) -> Point {
 		match surface {
 			Surface::None => (0.0, 0.0),
-			Surface::Document => (0.0, self.readers.session.scroll),
+			Surface::Document => (0.0, self.readers.session.scrolling.offset),
 			Surface::Overflow(bi, oi) => (
 				*self
 					.readers
@@ -379,7 +379,7 @@ impl<P: super::SendEvent> App<P> {
 					.horizontal
 					.get(&(bi, oi))
 					.unwrap_or(&0.0),
-				self.readers.session.scroll,
+				self.readers.session.scrolling.offset,
 			),
 			Surface::Tabs => (self.tab_strip.scroll, 0.0),
 			Surface::Outline => (0.0, self.interaction.outline_scroll),

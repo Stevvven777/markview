@@ -1,4 +1,9 @@
-//! Pointer-driven text selection, with no windowing toolkit in the way.
+//! Document interaction, with no windowing toolkit in the way.
+//!
+//! [`DocumentInteraction`] shares hit testing, hover and cursor decisions;
+//! [`ScrollState`] shares eased offsets and pending layout destinations;
+//! [`Motion`] shares gesture release inertia. Hosts own platform events,
+//! motion-source policy, repainting and document activation side effects.
 //!
 //! The machine is the one the reader has always run: a press names a reading
 //! position and may extend it by grapheme, word or block; a second press
@@ -291,3 +296,17 @@ pub trait Selection: Host {
 	}
 }
 impl<T: Host> Selection for T {}
+
+mod scroll;
+pub use scroll::{
+	SCROLL_MAX, SCROLL_MIN, ScrollAnimation, ScrollBounds, ScrollState,
+	ease_out_cubic, selection_scroll,
+};
+
+mod motion;
+pub use motion::Motion;
+
+mod document;
+pub use document::{
+	Cursor, DocumentInteraction, Horizontal, Hover, horizontal_by,
+};

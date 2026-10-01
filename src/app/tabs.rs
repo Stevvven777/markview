@@ -72,7 +72,7 @@ impl Tabs {
 		// A different document starts capped again.
 		self.session.load_all_images = false;
 		self.session.remote_notice_dismissed = false;
-		self.session.scroll = 0.0;
+		self.session.scrolling.offset = 0.0;
 		self.session.pending_anchor = None;
 		self.session.jump_origin = None;
 		self.session.horizontal.clear();

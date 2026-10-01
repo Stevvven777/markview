@@ -153,7 +153,7 @@ fn dragging_into_the_margin_asks_for_a_tick_and_a_tick_scrolls_one_step() {
 	let (mut app, _) = reader(&"Body line.\n\n".repeat(200), 760.0);
 	// Scrolled away from the top, so dragging above the text has somewhere to
 	// travel.
-	app.readers.session.scroll = 100.0;
+	app.readers.session.scrolling.offset = 100.0;
 	app.interaction.selection = Some(selection(position(0, 0), position(0, 4)));
 	app.interaction.pointer_down = Some(Drag {
 		start: Point::new(100.0, 100.0),
@@ -170,10 +170,10 @@ fn dragging_into_the_margin_asks_for_a_tick_and_a_tick_scrolls_one_step() {
 		"a drag inside the top margin must arm the auto-scroll tick"
 	);
 
-	let scroll = app.readers.session.scroll;
+	let scroll = app.readers.session.scrolling.offset;
 	app.tick(&StubLoop, Instant::now() + Duration::from_millis(32));
 	assert_eq!(
-		app.readers.session.scroll,
+		app.readers.session.scrolling.offset,
 		scroll - 14.0,
 		"one tick travels one step towards the pointer's edge"
 	);
@@ -403,4 +403,35 @@ fn a_deferred_select_all_resolves_once_the_layout_is_complete() {
 		Some(expected.as_str()),
 		"the completed layout selects the whole document"
 	);
+}
+
+#[test]
+fn fractional_and_whole_line_wheels_use_the_same_eased_path() {
+	let (mut app, _) = reader(&"A scrolling paragraph.\n\n".repeat(100), 760.0);
+	app.interaction.cursor = point_over(&app, 0);
+	let feed = |app: &mut App<StubProxy>, lines| {
+		app.handle_window_event(
+			&StubLoop,
+			WindowId::dummy(),
+			WindowEvent::MouseWheel {
+				device_id: DeviceId::dummy(),
+				delta: winit::event::MouseScrollDelta::LineDelta(0.0, lines),
+				phase: winit::event::TouchPhase::Moved,
+			},
+		);
+	};
+	feed(&mut app, -1.0);
+	let whole = app.readers.session.scrolling.target.unwrap();
+	assert!(app.readers.session.scrolling.animation.is_some());
+	app.readers.session.cancel_scroll_animation();
+	app.interaction.wheel = Default::default();
+	feed(&mut app, -0.5);
+	assert_eq!(app.readers.session.scrolling.target, Some(whole * 0.5));
+	assert!(app.readers.session.scrolling.animation.is_some());
+	app.readers.session.advance_scroll(
+		Instant::now() + Duration::from_secs(1),
+		app.viewport(),
+	);
+	assert_eq!(app.readers.session.scrolling.offset, whole * 0.5);
+	assert!(!app.readers.session.scroll_animating());
 }

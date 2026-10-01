@@ -5,10 +5,10 @@ import { LayoutUpdate } from "./layout-update.js";
 import { Markview } from "./markview.js";
 import { CanvasReader } from "./reader.js";
 import type { CanvasReaderOptions } from "./reader.js";
-import type { MarkviewOptions, MarkviewStats, Modifiers } from "./types.js";
+import type { MarkviewOptions, MarkviewStats, Modifiers, ScrollMode, DocumentCursor, PointerAction } from "./types.js";
 
 export { CanvasReader, LayoutUpdate, Markview };
-export type { CanvasReaderOptions, MarkviewOptions, MarkviewStats, Modifiers };
+export type { CanvasReaderOptions, MarkviewOptions, MarkviewStats, Modifiers, ScrollMode, DocumentCursor, PointerAction };
 
 /** How `init()` finds the binary. */
 export interface InitOptions {

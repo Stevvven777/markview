@@ -43,7 +43,7 @@ impl<P: super::SendEvent> App<P> {
 			width: size.width,
 			height: size.height,
 			scale,
-			scroll: self.readers.session.scroll,
+			scroll: self.readers.session.scrolling.offset,
 			left: ((width - self.readers.session.snapshot.width) / 2.0)
 				.max(20.0),
 			top: self.content_top() + 10.0,

@@ -170,9 +170,9 @@ fn viewer_captures_search_input_and_middle_clicks() {
 	button(&mut app, MouseButton::Middle, ElementState::Pressed);
 	assert_eq!(app.readers.entries().len(), 1);
 	assert!(app.interaction.viewer.is_some());
-	let scroll = app.readers.session.scroll;
+	let scroll = app.readers.session.scrolling.offset;
 	app.key_pressed(&Key::Named(NamedKey::PageDown));
-	assert_eq!(app.readers.session.scroll, scroll);
+	assert_eq!(app.readers.session.scrolling.offset, scroll);
 	assert!(!app.readers.session.scroll_animating());
 	app.interaction.modal = Some(crate::state::Modal::OpenLocal {
 		path: PathBuf::from("/tmp/viewer.bin"),

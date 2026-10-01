@@ -1027,7 +1027,8 @@ test("a wheel during a pending replacement keeps the requested scroll", async ({
       }
     }
 
-    // A wheel is what clamps the held request away in the broken path.
+    // External motion is immediate; its request must survive a shorter prefix.
+    window.mv.setScrollMode("external");
     document.querySelector("#view").dispatchEvent(
       new WheelEvent("wheel", { deltaY: 50, bubbles: true, cancelable: true }),
     );

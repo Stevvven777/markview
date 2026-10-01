@@ -5,7 +5,7 @@
 
 import { LayoutUpdate } from "./layout-update.js";
 import { Markview } from "./markview.js";
-import type { MarkviewOptions, MarkviewStats } from "./types.js";
+import type { MarkviewOptions, MarkviewStats, Modifiers, ScrollMode } from "./types.js";
 
 /** Options for `CanvasReader.attach`; every key is optional. */
 export interface CanvasReaderOptions {
@@ -19,6 +19,10 @@ export interface CanvasReaderOptions {
 	onStats?: (stats: MarkviewStats) => void;
 	/** Called once when the frame loop stops on an error. */
 	onError?: (error: unknown) => void;
+	/** Motion ownership; defaults to `internal`. */
+	scrollMode?: ScrollMode;
+	onLink?: (target: string, modifiers: Modifiers) => void;
+	onImage?: (target: string, modifiers: Modifiers) => void;
 }
 
 /**
@@ -32,6 +36,11 @@ export class CanvasReader {
 	readonly markview: Markview;
 
 	private canvas: HTMLCanvasElement;
+	private pointerId: number | null = null;
+	private originalCursor: string;
+	private originalCursorPriority: string;
+	private onLink: CanvasReaderOptions["onLink"];
+	private onImage: CanvasReaderOptions["onImage"];
 	private stepBudgetMs: number;
 	private onStats: ((stats: MarkviewStats) => void) | undefined;
 	private onError: ((error: unknown) => void) | undefined;
@@ -61,6 +70,12 @@ export class CanvasReader {
 	) {
 		this.markview = markview;
 		this.canvas = canvas;
+		this.originalCursor = canvas.style.getPropertyValue("cursor");
+		this.originalCursorPriority = canvas.style.getPropertyPriority("cursor");
+		this.onLink = options.onLink;
+		this.onImage = options.onImage;
+		markview.setScrollMode(options.scrollMode ?? "internal");
+		markview.setImagesClickable(!!options.onImage);
 		this.stepBudgetMs = options.stepBudgetMs ?? 8;
 		this.onStats = options.onStats;
 		this.onError = options.onError;
@@ -124,6 +139,8 @@ export class CanvasReader {
 			this.canvas.style.removeProperty("width");
 			this.canvas.style.removeProperty("height");
 		}
+		if (this.originalCursor) this.canvas.style.setProperty("cursor",this.originalCursor,this.originalCursorPriority);
+		else this.canvas.style.removeProperty("cursor");
 		this.markview.destroy();
 	}
 
@@ -145,6 +162,7 @@ export class CanvasReader {
 				this.markview.stepPending(this.stepBudgetMs);
 			}
 			const stats = this.markview.frame();
+			this.canvas.style.cursor = this.markview.cursor();
 			this.onStats?.(stats);
 		} catch (error) {
 			// A lost surface must stop the loop, not raise once per frame.
@@ -184,7 +202,8 @@ export class CanvasReader {
 		// One signal for the set, so `destroy()` detaches them together.
 		const signal = this.listeners.signal;
 		canvas.addEventListener("pointerdown", (event) => {
-			if (event.button !== 0) return;
+			if (event.button !== 0 || this.pointerId !== null) return;
+			this.pointerId = event.pointerId;
 			event.preventDefault();
 			canvas.focus({ preventScroll: true });
 			canvas.setPointerCapture(event.pointerId);
@@ -196,22 +215,51 @@ export class CanvasReader {
 			});
 		}, { signal });
 		canvas.addEventListener("pointermove", (event) => {
+			if (this.pointerId !== null && event.pointerId !== this.pointerId) return;
 			this.markview.pointerMove(event.offsetX, event.offsetY);
 		}, { signal });
 		canvas.addEventListener("pointerup", (event) => {
-			this.markview.pointerUp(event.offsetX, event.offsetY);
+			if (event.pointerId !== this.pointerId) return;
+			this.pointerId = null;
+			const action = this.markview.pointerUp(event.offsetX,event.offsetY);
+			if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+			if (action?.kind === "link") this.onLink?.(action.target,action.modifiers);
+			else if (action?.kind === "image") this.onImage?.(action.target,action.modifiers);
 		}, { signal });
 		canvas.addEventListener("pointercancel", (event) => {
-			this.markview.pointerUp(event.offsetX, event.offsetY);
+			if (event.pointerId !== this.pointerId) return;
+			this.pointerId = null;
+			this.markview.cancelPointer();
+			if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+		}, { signal });
+		canvas.addEventListener("pointerleave", () => this.markview.pointerLeave(), { signal });
+		canvas.addEventListener("lostpointercapture", (event) => {
+			if (event.pointerId === this.pointerId) { this.pointerId = null; this.markview.cancelPointer(); }
+		}, { signal });
+		canvas.addEventListener("blur", () => {
+			const id = this.pointerId;
+			this.pointerId = null;
+			this.markview.cancelPointer();
+			if (id !== null && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
 		}, { signal });
 		canvas.addEventListener("wheel", (event) => {
 			event.preventDefault();
-			// Firefox reports line deltas; the engine scrolls in CSS pixels.
-			const dy = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
-			this.markview.scrollBy(dy);
+			const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.getBoundingClientRect().height : 1;
+			const dx = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
+			this.markview.scrollInput(dx * factor,event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY * factor,"step");
 		}, { passive: false, signal });
 		canvas.addEventListener("keydown", (event) => {
-			if (!(event.ctrlKey || event.metaKey)) return;
+			if (!(event.ctrlKey || event.metaKey)) {
+				const page = canvas.getBoundingClientRect().height * 0.9;
+				const delta = event.key === "ArrowDown" ? 42 : event.key === "ArrowUp" ? -42 : event.key === "PageDown" || event.key === " " ? page : event.key === "PageUp" ? -page : null;
+				if (delta !== null) { event.preventDefault(); this.markview.scrollInput(0,delta,"step"); }
+				else if (event.key === "Home" || event.key === "End") {
+					event.preventDefault();
+					if (event.key === "Home") this.markview.setScroll(0);
+					else this.markview.scrollToEnd();
+				}
+				return;
+			}
 			const key = event.key.toLowerCase();
 			if (key === "c") {
 				event.preventDefault();

@@ -1,5 +1,8 @@
 use super::*;
 use markview_core::text::{Affinity, TextPosition};
+use markview_selection::{
+	SCROLL_MAX, SCROLL_MIN, ScrollAnimation, ease_out_cubic,
+};
 use winit::event::TouchPhase;
 fn position(offset: usize) -> TextPosition {
 	TextPosition {
@@ -210,30 +213,30 @@ fn pending_pages_accumulate_reverse_and_resolve_without_blank_frames() {
 	for _ in 0..3 {
 		session.scroll_by(540., 600.);
 	}
-	assert_eq!(session.scroll, 0.);
-	assert_eq!(session.pending_scroll, Some(1620.));
+	assert_eq!(session.scrolling.offset, 0.);
+	assert_eq!(session.scrolling.target, Some(1620.));
 	session.snapshot.height = 1500.;
 	session.resolve_scroll(600.);
-	assert_eq!(session.scroll, 0.);
+	assert_eq!(session.scrolling.offset, 0.);
 	session.snapshot.height = 2300.;
 	session.resolve_scroll(600.);
-	assert_eq!(session.scroll, 1620.);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, 1620.);
+	assert_eq!(session.scrolling.target, None);
 	session.scroll_by(f32::INFINITY, 600.);
-	assert_eq!(session.scroll, 1620.);
+	assert_eq!(session.scrolling.offset, 1620.);
 	session.scroll_by(-540., 600.);
-	assert_eq!(session.scroll, 1080.);
+	assert_eq!(session.scrolling.offset, 1080.);
 	session.scroll_by(5400., 600.);
 	session.scroll_by(f32::NEG_INFINITY, 600.);
-	assert_eq!(session.scroll, 0.);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, 0.);
+	assert_eq!(session.scrolling.target, None);
 	session.scroll_by(f32::INFINITY, 600.);
 	session.scroll_by(0., 600.);
-	assert_eq!(session.pending_scroll, Some(f32::INFINITY));
+	assert_eq!(session.scrolling.target, Some(f32::INFINITY));
 	session.layout_pending = false;
 	session.resolve_scroll(600.);
 	// The document ends two thirds of a page above the viewport bottom.
-	assert_eq!(session.scroll, 2300. - 200.);
+	assert_eq!(session.scrolling.offset, 2300. - 200.);
 }
 
 #[test]
@@ -242,19 +245,19 @@ fn scrolling_past_the_end_keeps_two_thirds_of_a_page_blank() {
 	let mut session = ReaderSession::default();
 	session.snapshot.height = 2000.;
 	session.scroll_by(f32::INFINITY, page);
-	assert_eq!(session.scroll, 2000. - page / 3.);
+	assert_eq!(session.scrolling.offset, 2000. - page / 3.);
 	// Scrolling further only repeats the limit.
 	session.scroll_by(400., page);
-	assert_eq!(session.scroll, 1800.);
+	assert_eq!(session.scrolling.offset, 1800.);
 	// A document shorter than the page still lifts its end off the bottom.
 	session.snapshot.height = 500.;
 	session.scroll_by(f32::INFINITY, page);
-	assert_eq!(session.scroll, 500. - page / 3.);
+	assert_eq!(session.scrolling.offset, 500. - page / 3.);
 	// An end already inside the top third has nowhere to go.
 	session.snapshot.height = 150.;
 	session.scroll_by(f32::INFINITY, page);
-	assert_eq!(session.scroll, 0.);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, 0.);
+	assert_eq!(session.scrolling.target, None);
 }
 
 #[test]
@@ -283,7 +286,7 @@ fn heading_anchors_queue_until_their_heading_is_laid_out() {
 	assert_eq!(session.resolve_anchor(300.), Some(Ok(())));
 	assert_eq!(session.pending_anchor, None);
 	let max = scroll_limit(layout.height, 300.);
-	assert_eq!(session.scroll, details.clamp(0., max));
+	assert_eq!(session.scrolling.offset, details.clamp(0., max));
 	// A heading the finished document lacks is reported once.
 	session.pending_anchor = Some("missing".into());
 	assert_eq!(session.resolve_anchor(300.), Some(Err("missing".into())));
@@ -362,7 +365,7 @@ fn a_jump_into_a_collapsed_body_expands_its_containers_first() {
 	session.pending_anchor = Some("hidden".into());
 	assert_eq!(session.resolve_anchor(300.), Some(Ok(())));
 	assert_eq!(
-		session.scroll,
+		session.scrolling.offset,
 		at.clamp(0.0, scroll_limit(session.snapshot.height, 300.0))
 	);
 	// An anchor outside every disclosure needs no reflow, and a second jump
@@ -391,7 +394,7 @@ fn partial_reload_waits_for_anchor_and_keeps_the_old_snapshot() {
 		600.,
 		None,
 	);
-	session.scroll = 1800.;
+	session.scrolling.offset = 1800.;
 	let mut partial = full.clone();
 	partial.blocks.truncate(5);
 	partial.height = full.blocks[5].y;
@@ -405,7 +408,7 @@ fn partial_reload_waits_for_anchor_and_keeps_the_old_snapshot() {
 	};
 	assert!(!session.can_display(&reader, 600.));
 	assert_eq!(session.snapshot.blocks.len(), 100);
-	assert_eq!(session.scroll, 1800.);
+	assert_eq!(session.scrolling.offset, 1800.);
 }
 
 #[test]
@@ -461,7 +464,7 @@ fn completing_a_prefix_preserves_scroll_and_selection_and_finishes_counts() {
 	let counts = TextCounts::of(&reader.layout.extract_text(full, 1));
 	session.accept(reader, 100., Some(counts));
 	assert_eq!(session.counts, counts);
-	assert_eq!(session.scroll, 100.);
+	assert_eq!(session.scrolling.offset, 100.);
 	assert!(session.snapshot_complete);
 	assert!(!session.layout_pending);
 	assert!(session.counts.chars > text.len());
@@ -568,9 +571,9 @@ fn the_outline_caches_per_document_and_its_entries_queue_heading_anchors() {
 	assert_eq!(session.outline_anchor(1), Some("two"));
 	let two = layout.anchor_y("two").unwrap();
 	// The reading position selects the last heading at or above the viewport.
-	session.scroll = 0.0;
+	session.scrolling.offset = 0.0;
 	assert_eq!(session.current_outline(), Some(0));
-	session.scroll = two + 1.0;
+	session.scrolling.offset = two + 1.0;
 	assert_eq!(session.current_outline(), Some(1));
 	// An entry feeds the very anchor path a `#fragment` link uses.
 	let third = session.outline_anchor(2).map(str::to_owned);
@@ -578,7 +581,7 @@ fn the_outline_caches_per_document_and_its_entries_queue_heading_anchors() {
 	assert_eq!(session.resolve_anchor(300.0), Some(Ok(())));
 	let three = layout.anchor_y("three").unwrap();
 	assert_eq!(
-		session.scroll,
+		session.scrolling.offset,
 		three.clamp(0.0, scroll_limit(layout.height, 300.0))
 	);
 }
@@ -626,7 +629,7 @@ fn an_outline_jump_into_the_reserved_blank_lifts_the_heading() {
 	assert_eq!(session.resolve_anchor(viewport), Some(Ok(())));
 	// The heading lands at the top, using the blank every other scroll path
 	// already reaches.
-	assert_eq!(session.scroll, y);
+	assert_eq!(session.scrolling.offset, y);
 }
 
 #[test]
@@ -653,7 +656,7 @@ fn a_footnote_reference_between_headings_keeps_the_later_heading_current() {
 	assert_eq!(session.outline_entries().len(), 2);
 	// The reference registers `fnref:1` between the two heading anchors; the
 	// scan must not mistake it for an outline entry and stop there.
-	session.scroll = layout.anchor_y("two").unwrap();
+	session.scrolling.offset = layout.anchor_y("two").unwrap();
 	assert_eq!(session.current_outline(), Some(1));
 }
 
@@ -853,12 +856,12 @@ fn a_long_outline_resolves_the_reading_position_in_one_pass() {
 	session.ensure_outline();
 	assert_eq!(session.outline_entries().len(), 1000);
 	// Above the first heading the first section is the reading position.
-	session.scroll = 0.0;
+	session.scrolling.offset = 0.0;
 	assert_eq!(session.current_outline(), Some(0));
 	// In the middle of a section its own heading holds the position.
 	for index in [1_usize, 250, 500, 999] {
 		let anchor = format!("heading-{index}");
-		session.scroll = layout.anchor_y(&anchor).unwrap();
+		session.scrolling.offset = layout.anchor_y(&anchor).unwrap();
 		assert_eq!(session.current_outline(), Some(index));
 	}
 }
@@ -1199,9 +1202,9 @@ fn an_animation_stops_at_the_clamped_document_end() {
 	assert!(session.scroll_animating());
 	// One frame past the deadline settles on the clamped limit, not the target.
 	session.advance_scroll(start + Duration::from_secs(1), 600.0);
-	assert_eq!(session.scroll, 800.0);
+	assert_eq!(session.scrolling.offset, 800.0);
 	assert!(!session.scroll_animating());
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.target, None);
 }
 
 #[test]
@@ -1214,13 +1217,13 @@ fn a_retarget_continues_from_the_displayed_offset() {
 	let start = Instant::now();
 	session.animate_scroll_to(2000.0, start);
 	session.advance_scroll(start + Duration::from_millis(80), 600.0);
-	let mid = session.scroll;
+	let mid = session.scrolling.offset;
 	assert!(mid > 0.0 && mid < 2000.0, "{mid}");
 	// A second request retargets from where the page is, not from zero.
 	session.animate_scroll_by(400.0, start + Duration::from_millis(80));
-	assert_eq!(session.pending_scroll, Some(2400.0));
+	assert_eq!(session.scrolling.target, Some(2400.0));
 	session.advance_scroll(start + Duration::from_millis(80), 600.0);
-	assert!((session.scroll - mid).abs() < 0.5);
+	assert!((session.scrolling.offset - mid).abs() < 0.5);
 }
 
 #[test]
@@ -1234,11 +1237,11 @@ fn a_page_pressed_during_an_animation_still_adds_a_full_page() {
 	let start = Instant::now();
 	session.animate_scroll_by(page, start);
 	session.advance_scroll(start + Duration::from_millis(40), 600.0);
-	assert!(session.scroll > 0.0 && session.scroll < page);
+	assert!(session.scrolling.offset > 0.0 && session.scrolling.offset < page);
 	session.animate_scroll_by(page, start + Duration::from_millis(40));
-	assert_eq!(session.pending_scroll, Some(page * 2.0));
+	assert_eq!(session.scrolling.target, Some(page * 2.0));
 	session.advance_scroll(start + Duration::from_secs(1), 600.0);
-	assert_eq!(session.scroll, page * 2.0);
+	assert_eq!(session.scrolling.offset, page * 2.0);
 	assert!(!session.scroll_animating());
 }
 
@@ -1254,18 +1257,18 @@ fn an_animation_chases_a_destination_beyond_the_geometry() {
 		session.animate_scroll_by(540.0, start);
 	}
 	// The presses accumulate on the destination, and the worker can see it.
-	assert_eq!(session.pending_scroll, Some(1620.0));
+	assert_eq!(session.scrolling.target, Some(1620.0));
 	assert!(session.coverage(600.0) > 1620.0);
 	// The displayed offset never leaves the geometry that exists.
 	session.advance_scroll(start + Duration::from_secs(1), 600.0);
-	assert_eq!(session.scroll, 100.0);
-	assert_eq!(session.pending_scroll, Some(1620.0));
+	assert_eq!(session.scrolling.offset, 100.0);
+	assert_eq!(session.scrolling.target, Some(1620.0));
 	// Once the layout covers the target, it resolves as it always has.
 	session.snapshot.height = 2300.0;
 	session.layout_pending = false;
 	session.resolve_scroll(600.0);
-	assert_eq!(session.scroll, 1620.0);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, 1620.0);
+	assert_eq!(session.scrolling.target, None);
 }
 
 #[test]
@@ -1278,15 +1281,15 @@ fn a_direct_scroll_cancels_a_running_animation() {
 	let start = Instant::now();
 	session.animate_scroll_to(2000.0, start);
 	session.advance_scroll(start + Duration::from_millis(80), 600.0);
-	let displayed = session.scroll;
+	let displayed = session.scrolling.offset;
 	assert!(displayed > 0.0 && displayed < 2000.0, "{displayed}");
 	assert!(session.scroll_animating());
 	// The immediate path takes over from what the reader sees, not from the
 	// destination the animation was still heading for.
 	session.scroll_by(60.0, 600.0);
 	assert!(!session.scroll_animating());
-	assert_eq!(session.scroll, displayed + 60.0);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, displayed + 60.0);
+	assert_eq!(session.scrolling.target, None);
 }
 
 #[test]
@@ -1299,12 +1302,12 @@ fn an_immediate_reversal_never_continues_downward() {
 	let start = Instant::now();
 	session.animate_scroll_to(2000.0, start);
 	session.advance_scroll(start + Duration::from_millis(80), 600.0);
-	let displayed = session.scroll;
+	let displayed = session.scrolling.offset;
 	assert!(displayed > 60.0 && displayed < 2000.0, "{displayed}");
 	session.scroll_by(-60.0, 600.0);
-	assert_eq!(session.scroll, displayed - 60.0);
-	assert!(session.scroll < displayed);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, displayed - 60.0);
+	assert!(session.scrolling.offset < displayed);
+	assert_eq!(session.scrolling.target, None);
 }
 
 #[test]
@@ -1318,117 +1321,21 @@ fn a_wheel_notch_eases_and_continues_from_the_destination() {
 	// The first notch starts an animation from the offset on screen instead
 	// of moving it at once.
 	session.animate_wheel_by(42.0, start);
-	assert_eq!(session.scroll, 0.0);
+	assert_eq!(session.scrolling.offset, 0.0);
 	assert!(session.scroll_animating());
 	session.advance_scroll(start + Duration::from_millis(40), 600.0);
-	let displayed = session.scroll;
+	let displayed = session.scrolling.offset;
 	assert!(displayed > 0.0 && displayed < 42.0, "{displayed}");
 	// A second notch in the same direction adds to the destination the first
 	// one named, so a spin still travels its whole distance.
 	session.animate_wheel_by(42.0, start + Duration::from_millis(40));
-	assert_eq!(session.pending_scroll, Some(84.0));
+	assert_eq!(session.scrolling.target, Some(84.0));
 	session.advance_scroll(start + Duration::from_secs(1), 600.0);
-	assert_eq!(session.scroll, 84.0);
+	assert_eq!(session.scrolling.offset, 84.0);
 	assert!(!session.scroll_animating());
 }
 
 /// Drives `packets` — milliseconds and logical pixels — through the reader at
-/// `frame` ms a frame and returns the offset after every frame.
-fn drive_packets(
-	packets: &[(f64, f32)],
-	end: Duration,
-	frame: Duration,
-) -> (ReaderSession, Vec<f32>) {
-	let mut session = ReaderSession {
-		snapshot_complete: true,
-		..Default::default()
-	};
-	session.snapshot.height = 100_000.0;
-	let start = Instant::now();
-	let mut offsets = Vec::new();
-	let mut next = 0;
-	let mut at = Duration::ZERO;
-	while at <= end {
-		while next < packets.len()
-			&& Duration::from_secs_f64(packets[next].0 / 1000.0) <= at
-		{
-			let when =
-				start + Duration::from_secs_f64(packets[next].0 / 1000.0);
-			session.coast_wheel_by(packets[next].1, when);
-			next += 1;
-		}
-		session.advance_scroll(start + at, 700.0);
-		offsets.push(session.scroll);
-		at += frame;
-	}
-	(session, offsets)
-}
-
-/// The Windows trace from issue #3: a flick's packets, then the inertia
-/// arriving as one 1673-pixel packet 268 ms after the hand stopped.
-const WINDOWS_FLICK: [(f64, f32); 7] = [
-	(0.0, 225.0),
-	(31.2, 240.0),
-	(58.3, 233.0),
-	(66.1, 476.0),
-	(82.7, 123.0),
-	(87.5, 60.0),
-	(355.4, 1673.0),
-];
-
-#[test]
-fn a_high_resolution_packet_stream_carries_its_momentum_across_a_gap() {
-	let (session, offsets) = drive_packets(
-		&WINDOWS_FLICK,
-		Duration::from_millis(3000),
-		Duration::from_millis(16),
-	);
-	let steps: Vec<f32> =
-		offsets.windows(2).map(|pair| pair[1] - pair[0]).collect();
-	// The page never reverses, and it never stands still between the last
-	// packet of the hand and the inertia packet that follows it: that stall is
-	// what the reader used to answer with a lurch.
-	assert!(
-		steps.iter().all(|step| *step >= -0.01),
-		"the page moved backwards: {steps:?}"
-	);
-	let hand = (87.5 / 16.0) as usize;
-	let inertia = (355.4 / 16.0) as usize;
-	let gap = &steps[hand + 1..inertia];
-	assert!(
-		gap.iter().all(|step| *step > 0.0),
-		"the page stood still before the inertia packet: {gap:?}"
-	);
-	// The momentum may lead the packets, but only by the distance its own
-	// speed predicts, so the flick cannot run away.
-	let total: f32 = WINDOWS_FLICK.iter().map(|(_, dy)| dy).sum();
-	assert!(
-		(total..total * 1.25).contains(&session.scroll),
-		"{} is not near {total}",
-		session.scroll
-	);
-	assert!(!session.scroll_animating());
-}
-
-#[test]
-fn a_lone_high_resolution_packet_still_arrives_and_stops_there() {
-	// One small packet after a long pause has no hand behind it: the page takes
-	// it as a distance to travel, not as a speed to keep.
-	let (session, offsets) = drive_packets(
-		&[(500.0, 42.0)],
-		Duration::from_millis(2000),
-		Duration::from_millis(16),
-	);
-	let steps: Vec<f32> =
-		offsets.windows(2).map(|pair| pair[1] - pair[0]).collect();
-	assert!(steps.iter().all(|step| *step >= -0.01), "{steps:?}");
-	assert!(
-		(42.0..44.0).contains(&session.scroll),
-		"a lone packet travelled to {}",
-		session.scroll
-	);
-}
-
 #[test]
 fn an_eased_wheel_reversal_takes_over_from_the_screen() {
 	let mut session = ReaderSession {
@@ -1439,16 +1346,16 @@ fn an_eased_wheel_reversal_takes_over_from_the_screen() {
 	let start = Instant::now();
 	session.animate_scroll_to(2000.0, start);
 	session.advance_scroll(start + Duration::from_millis(80), 600.0);
-	let displayed = session.scroll;
+	let displayed = session.scrolling.offset;
 	assert!(displayed > 60.0 && displayed < 2000.0, "{displayed}");
 	// An upward wheel drops the destination the animation was heading for,
 	// so the page never keeps moving down after the hand has reversed.
 	session.animate_wheel_by(-60.0, start + Duration::from_millis(80));
-	assert_eq!(session.pending_scroll, Some(displayed - 60.0));
+	assert_eq!(session.scrolling.target, Some(displayed - 60.0));
 	session.advance_scroll(start + Duration::from_millis(80), 600.0);
-	assert_eq!(session.scroll, displayed);
+	assert_eq!(session.scrolling.offset, displayed);
 	session.advance_scroll(start + Duration::from_secs(1), 600.0);
-	assert_eq!(session.scroll, displayed - 60.0);
+	assert_eq!(session.scrolling.offset, displayed - 60.0);
 }
 
 #[test]
@@ -1461,14 +1368,14 @@ fn repeated_direct_scrolling_with_incomplete_geometry_accumulates() {
 	// Neither request fits the geometry at hand, so both stay pending.
 	session.scroll_by(540.0, 600.0);
 	session.scroll_by(540.0, 600.0);
-	assert_eq!(session.scroll, 0.0);
-	assert_eq!(session.pending_scroll, Some(1080.0));
+	assert_eq!(session.scrolling.offset, 0.0);
+	assert_eq!(session.scrolling.target, Some(1080.0));
 	// Once the layout covers the sum, the page lands on it and forgets it.
 	session.snapshot.height = 2300.0;
 	session.layout_pending = false;
 	session.resolve_scroll(600.0);
-	assert_eq!(session.scroll, 1080.0);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, 1080.0);
+	assert_eq!(session.scrolling.target, None);
 }
 
 #[test]
@@ -1481,18 +1388,18 @@ fn cancelling_an_animation_forgets_its_destination() {
 	let start = Instant::now();
 	session.animate_scroll_to(2000.0, start);
 	session.advance_scroll(start + Duration::from_millis(80), 600.0);
-	let displayed = session.scroll;
+	let displayed = session.scrolling.offset;
 	assert!(displayed > 0.0 && displayed < 2000.0, "{displayed}");
 	// A thumb drag cancels first, then moves the offset directly.
 	session.cancel_scroll_animation();
 	assert!(!session.scroll_animating());
-	assert_eq!(session.scroll, displayed);
-	assert_eq!(session.pending_scroll, None);
-	session.scroll = 900.0;
+	assert_eq!(session.scrolling.offset, displayed);
+	assert_eq!(session.scrolling.target, None);
+	session.scrolling.offset = 900.0;
 	// The next step starts from the dragged position, not from the
 	// destination the cancelled animation named.
 	session.scroll_by(60.0, 600.0);
-	assert_eq!(session.scroll, 960.0);
+	assert_eq!(session.scrolling.offset, 960.0);
 }
 
 #[test]
@@ -1505,14 +1412,14 @@ fn a_cancelled_destination_does_not_come_back_with_the_layout() {
 	let start = Instant::now();
 	session.animate_scroll_by(540.0, start);
 	session.advance_scroll(start + Duration::from_millis(40), 600.0);
-	assert_eq!(session.scroll, 100.0);
+	assert_eq!(session.scrolling.offset, 100.0);
 	session.cancel_scroll_animation();
 	// The geometry grows past both the displayed offset and the destination.
 	session.snapshot.height = 2300.0;
 	session.layout_pending = false;
 	session.resolve_scroll(600.0);
-	assert_eq!(session.scroll, 100.0);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, 100.0);
+	assert_eq!(session.scrolling.target, None);
 }
 
 #[test]
@@ -1520,8 +1427,8 @@ fn the_immediate_scroll_path_never_starts_an_animation() {
 	let mut session = ReaderSession::default();
 	session.snapshot.height = 2000.0;
 	session.scroll_by(540.0, 600.0);
-	assert_eq!(session.scroll, 540.0);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, 540.0);
+	assert_eq!(session.scrolling.target, None);
 	assert!(!session.scroll_animating());
 	assert_eq!(session.scroll_animation_deadline(Instant::now()), None);
 }
@@ -1547,15 +1454,15 @@ fn a_page_toward_a_settled_end_stops_at_once() {
 		..Default::default()
 	};
 	session.snapshot.height = 1000.0;
-	session.scroll = 800.0;
+	session.scrolling.offset = 800.0;
 	let start = Instant::now();
 	session.animate_scroll_by(540.0, start);
 	assert!(session.scroll_animating());
 	// The first frame already sits on the clamp, so nothing waits out the clock.
 	assert!(!session.advance_scroll(start, 600.0));
 	assert!(!session.scroll_animating());
-	assert_eq!(session.scroll, 800.0);
-	assert_eq!(session.pending_scroll, None);
+	assert_eq!(session.scrolling.offset, 800.0);
+	assert_eq!(session.scrolling.target, None);
 }
 
 #[test]
@@ -1565,7 +1472,7 @@ fn a_page_away_from_the_settled_end_still_animates() {
 		..Default::default()
 	};
 	session.snapshot.height = 1000.0;
-	session.scroll = 800.0;
+	session.scrolling.offset = 800.0;
 	let start = Instant::now();
 	session.animate_scroll_by(-540.0, start);
 	assert!(session.advance_scroll(start, 600.0));

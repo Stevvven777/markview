@@ -9,12 +9,12 @@ impl<P: super::SendEvent> App<P> {
 		if let Some(mut request) = self.readers.request(self.options(), follow)
 		{
 			request.coverage = if follow
-				&& self.readers.session.scroll
+				&& self.readers.session.scrolling.offset
 					>= (self.readers.session.snapshot.height
 						- self.viewport() - 3.)
 						.max(0.)
 			{
-				self.readers.session.pending_scroll = Some(f32::INFINITY);
+				self.readers.session.scrolling.target = Some(f32::INFINITY);
 				f32::INFINITY
 			} else {
 				self.readers.session.coverage(self.viewport())

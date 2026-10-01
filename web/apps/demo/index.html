@@ -75,7 +75,9 @@ pub fn layout(&mut self, doc: &Document) -> Snapshot {
 				<div class="tools">
 					<button id="copy" type="button" title="Copy the canvas selection">Copy</button>
 					<button id="select-all" type="button">Select all</button>
-					<button id="theme" type="button" aria-pressed="false" title="Toggle dark paper">Dark paper</button>
+					<label>Scroll <select id="scroll-mode"><option value="internal">Internal</option><option value="external">External</option></select></label>
+                    <button id="interaction-sample" type="button">Interaction sample</button>
+                    <button id="theme" type="button" aria-pressed="false" title="Toggle dark paper">Dark paper</button>
 				</div>
 			</div>
 

@@ -16,9 +16,12 @@ use markview_core::{
 	style::Stylesheet,
 };
 use markview_render::{FrameStatus, Renderer, SurfaceSource, Theme, View};
-use markview_selection::{Host, Modifiers};
+use markview_selection::{
+	DocumentInteraction, Horizontal, Host, Hover, Modifiers, Point,
+	ScrollBounds, ScrollState, Selection,
+};
 use serde::Deserialize;
-use std::{collections::HashMap, sync::OnceLock, time::Duration};
+use std::{sync::Arc, time::Duration};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use web_time::Instant;
@@ -80,6 +83,7 @@ pub async fn create(
 	renderer.resize(width, height);
 	let mut options = config.options();
 	options.width = column_width(config.width, logical.0);
+	let document = Arc::new(parse(""));
 	Ok(Markview {
 		canvas,
 		renderer,
@@ -88,13 +92,21 @@ pub async fn create(
 		config,
 		published: Published::default(),
 		pointer: Pointer::default(),
-		document: parse(""),
+		published_document: document.clone(),
+		document,
 		pending: None,
 		cursor: None,
 		logical,
 		dpr,
 		scale,
-		scroll: 0.0,
+		scrolling: ScrollState::default(),
+		horizontal: Horizontal::default(),
+		internal_scroll: true,
+		images_clickable: false,
+		pressed_image: None,
+		overflow_drag: None,
+		pending_anchor: None,
+		jump_origin: None,
 		parse_ms: 0.0,
 		layout_ms: 0.0,
 		frame_ms: 0.0,
@@ -114,7 +126,9 @@ pub struct Markview {
 	options: LayoutOptions,
 	published: Published,
 	pointer: Pointer,
-	document: Document,
+	document: Arc<Document>,
+	/// The document backing the snapshot currently on screen.
+	published_document: Arc<Document>,
 	/// The document `begin_update` parsed, until its layout completes.
 	pending: Option<Pending>,
 	/// The last canvas-local point the page reported, in CSS pixels.
@@ -127,7 +141,14 @@ pub struct Markview {
 	/// lowered until both logical edges fit the device limit. Sharing it with
 	/// the drawn view keeps rendering and hit testing on one viewport.
 	scale: f32,
-	scroll: f32,
+	scrolling: ScrollState,
+	horizontal: Horizontal,
+	internal_scroll: bool,
+	images_clickable: bool,
+	pressed_image: Option<(String, Point)>,
+	overflow_drag: Option<(usize, usize, f32)>,
+	pending_anchor: Option<String>,
+	jump_origin: Option<(String, f32)>,
 	parse_ms: f64,
 	layout_ms: f64,
 	frame_ms: f64,
@@ -143,7 +164,8 @@ impl Markview {
 	#[wasm_bindgen(js_name = setMarkdown)]
 	pub fn set_markdown(&mut self, text: String) -> String {
 		let started = Instant::now();
-		self.document = parse(text);
+		self.reset_document_interaction();
+		self.document = Arc::new(parse(text));
 		self.pending = None;
 		self.parse_ms = started.elapsed().as_secs_f64() * 1000.0;
 		let laid = Instant::now();
@@ -157,7 +179,8 @@ impl Markview {
 	#[wasm_bindgen(js_name = beginUpdate)]
 	pub fn begin_update(&mut self, text: String) -> String {
 		let started = Instant::now();
-		let document = parse(text);
+		self.reset_document_interaction();
+		let document = Arc::new(parse(text));
 		self.parse_ms = started.elapsed().as_secs_f64() * 1000.0;
 		self.layout_ms = 0.0;
 		let images = ImageSnapshot::default();
@@ -202,6 +225,7 @@ impl Markview {
 		self.layout_ms += laid.elapsed().as_secs_f64() * 1000.0;
 		let source = document.source.clone();
 		let pass = pending.layout.pass_id();
+		self.published_document = document.clone();
 		self.published.accept(
 			pending.layout.into_snapshot(),
 			source,
@@ -222,6 +246,8 @@ impl Markview {
 			return Ok(self.stats_json());
 		}
 		let started = Instant::now();
+		self.advance_interaction(started);
+		let hover = self.hover();
 		let view = View {
 			selection: self.pointer.selection(),
 			revision: self.published.revision,
@@ -234,10 +260,10 @@ impl Markview {
 			top: INSET,
 			bottom: INSET,
 			theme: self.theme(),
-			horizontal: no_horizontal(),
-			hovered_link: None,
-			hovered_overflow: None,
-			held_overflow: None,
+			horizontal: &self.horizontal,
+			hovered_link: hover.link.as_deref(),
+			hovered_overflow: hover.overflow,
+			held_overflow: self.overflow_drag.map(|(b, o, _)| (b, o)),
 		};
 		self.renderer.set_pointer(self.cursor);
 		let status = self
@@ -296,6 +322,8 @@ impl Markview {
 	/// It runs as a resumable pass, so dragging a window edge never blocks a
 	/// frame: each animation frame advances it and presents what is ready.
 	fn reflow(&mut self) {
+		self.horizontal.clear();
+		self.overflow_drag = None;
 		if let Some(pending) = self.pending.take()
 			&& let Some(parsed) = pending.parsed
 		{
@@ -318,38 +346,39 @@ impl Markview {
 	pub fn set_scroll(&mut self, y: f64) {
 		if y.is_finite() {
 			let before = self.visible_scroll();
-			self.hold_scroll(y as f32);
+			self.pending_anchor = None;
+			self.hold_scroll(y.min(f64::from(f32::MAX)) as f32);
 			// A request the clamp absorbs, or one that a pending pass holds
 			// above its temporary height, leaves the offset on screen alone,
 			// and with it every reading position under the pointer.
 			if self.visible_scroll() == before {
 				return;
 			}
-			// Only a press in flight has a focus to move, and only a known
-			// cursor says where to move it.
-			if self.pointer.drag().is_none() {
-				return;
-			}
-			let Some((x, y)) = self.cursor else {
-				return;
-			};
-			let reading = Reading {
-				snapshot: &self.published.snapshot,
-				revision: self.published.revision,
-				viewport: self.viewport(),
-			};
-			// Re-hit-testing can land on the position already selected, and
-			// then the cached count still describes the text on screen.
-			if self.pointer.drag_to(&reading, x, y) {
-				self.selection_chars.forget();
-			}
+			self.follow_pointer();
 		}
 	}
 
 	#[wasm_bindgen(js_name = scrollBy)]
 	pub fn scroll_by(&mut self, dy: f64) {
-		// The request accumulates, not what a still-growing prefix could show.
-		self.set_scroll(f64::from(self.scroll) + dy);
+		if !dy.is_finite() {
+			return;
+		}
+		self.cancel_scroll_animation();
+		let base = self
+			.scrolling
+			.target
+			.filter(|target| target.is_finite())
+			.unwrap_or(self.scrolling.offset);
+		self.set_scroll(f64::from(base) + dy);
+	}
+
+	/// Queues the final document end while layout is incomplete.
+	#[wasm_bindgen(js_name = scrollToEnd)]
+	pub fn scroll_to_end(&mut self) {
+		self.pending_anchor = None;
+		self.scrolling.offset = self.visible_scroll();
+		self.scrolling.by(f32::INFINITY, self.scroll_bounds());
+		self.follow_pointer();
 	}
 
 	/// The offset on screen, logical px.
@@ -386,10 +415,38 @@ impl Markview {
 			alt,
 			meta,
 		});
+		self.cancel_scroll_animation();
+		self.pending_anchor = None;
+		self.pointer.set_drag(None);
+		self.pointer.set_dragged(false);
+		self.pointer.set_auto_scroll_at(None);
+		self.pressed_image = None;
+		let point = Point::new(x as f32, y as f32);
+		if let Some((b, o, bar)) = self.context().overflow_bar_at(
+			point,
+			self.options.stylesheet.overflow_scrollbar_metrics(),
+		) {
+			let grab = if bar.on_thumb(point.x, point.y) {
+				bar.grab(point.x, point.y)
+			} else {
+				self.horizontal
+					.insert((b, o), bar.scroll_for(point.x, point.y, 0.0));
+				0.0
+			};
+			self.overflow_drag = Some((b, o, grab));
+			return;
+		}
+		if self.images_clickable && self.context().link(point).is_none() {
+			self.pressed_image = self
+				.context()
+				.image(point)
+				.map(|(src, _, _)| (src.to_owned(), point));
+		}
 		let reading = Reading {
 			snapshot: &self.published.snapshot,
 			revision: self.published.revision,
 			viewport: self.viewport(),
+			horizontal: &self.horizontal,
 		};
 		self.pointer.press(&reading, x as f32, y as f32);
 		self.selection_chars.forget();
@@ -401,10 +458,27 @@ impl Markview {
 	#[wasm_bindgen(js_name = pointerMove)]
 	pub fn pointer_move(&mut self, x: f64, y: f64) {
 		self.cursor = Some((x as f32, y as f32));
+		if let Some((b, o, grab)) = self.overflow_drag {
+			if let Some(bar) = self.context().overflow_bar(
+				b,
+				o,
+				self.options.stylesheet.overflow_scrollbar_metrics(),
+			) {
+				self.horizontal
+					.insert((b, o), bar.scroll_for(x as f32, y as f32, grab));
+			}
+			return;
+		}
+		if self.pressed_image.as_ref().is_some_and(|(_, start)| {
+			(start.x - x as f32).hypot(start.y - y as f32) >= 4.0
+		}) {
+			self.pressed_image = None;
+		}
 		let reading = Reading {
 			snapshot: &self.published.snapshot,
 			revision: self.published.revision,
 			viewport: self.viewport(),
+			horizontal: &self.horizontal,
 		};
 		if self.pointer.drag_to(&reading, x as f32, y as f32) {
 			self.selection_chars.forget();
@@ -413,9 +487,121 @@ impl Markview {
 
 	/// Ends the press in flight.
 	#[wasm_bindgen(js_name = pointerUp)]
-	pub fn pointer_up(&mut self, x: f64, y: f64) {
-		self.pointer.release(x as f32, y as f32);
+	pub fn pointer_up(&mut self, x: f64, y: f64) -> String {
+		self.cursor = Some((x as f32, y as f32));
+		if self.overflow_drag.take().is_some() {
+			return "null".into();
+		}
+		self.pointer_move(x, y);
+		let point = Point::new(x as f32, y as f32);
+		let link = self.context().link(point).map(str::to_owned);
+		let activated = self.pointer.release(point.x, point.y, link.as_deref());
 		self.selection_chars.forget();
+		if let Some(link) = activated {
+			self.pressed_image = None;
+			let previous_pass =
+				self.pending.as_ref().map(|p| p.layout.pass_id());
+			if self.activate_document_link(&link) {
+				return serde_json::json!({"kind":"document", "reflowed":previous_pass != self.pending.as_ref().map(|p| p.layout.pass_id())}).to_string();
+			}
+			return self.action_json("link", &link);
+		}
+		if let Some((src, _)) = self.pressed_image.take()
+			&& !self.pointer.dragged()
+			&& self
+				.context()
+				.image(point)
+				.is_some_and(|(release, _, _)| release == src)
+		{
+			return self.action_json("image", &src);
+		}
+
+		"null".into()
+	}
+
+	#[wasm_bindgen(js_name = pointerLeave)]
+	pub fn pointer_leave(&mut self) {
+		if self.pointer.drag().is_none() && self.overflow_drag.is_none() {
+			self.cursor = None;
+		}
+	}
+	#[wasm_bindgen(js_name = cancelPointer)]
+	pub fn cancel_pointer(&mut self) {
+		self.pointer.reset_clicks();
+		self.pointer.set_drag(None);
+		self.pointer.set_auto_scroll_at(None);
+		self.overflow_drag = None;
+		self.pressed_image = None;
+		self.cursor = None;
+	}
+	pub fn cursor(&self) -> String {
+		let Some((x, y)) = self.cursor else {
+			return "default".into();
+		};
+		if self.overflow_drag.is_some() {
+			return "default".into();
+		}
+		let idle = self.pointer.drag().is_none();
+		self.context()
+			.cursor(Point::new(x, y), idle, idle && self.images_clickable)
+			.css()
+			.into()
+	}
+	#[wasm_bindgen(js_name = setImagesClickable)]
+	pub fn set_images_clickable(&mut self, clickable: bool) {
+		self.images_clickable = clickable;
+	}
+	#[wasm_bindgen(js_name = setScrollMode)]
+	pub fn set_scroll_mode(&mut self, mode: &str) -> Result<(), JsValue> {
+		match mode {
+			"external" => self.internal_scroll = false,
+			"internal" => self.internal_scroll = true,
+			_ => return Err(fail("invalid scroll mode")),
+		}
+		self.cancel_scroll_animation();
+		Ok(())
+	}
+	#[wasm_bindgen(js_name = scrollInput)]
+	pub fn scroll_input(
+		&mut self,
+		dx: f64,
+		dy: f64,
+		kind: &str,
+	) -> Result<(), JsValue> {
+		if !matches!(kind, "external" | "step") {
+			return Err(fail("invalid scroll input kind"));
+		}
+		if !dx.is_finite() || !dy.is_finite() {
+			return Ok(());
+		}
+		self.pending_anchor = None;
+		let external = kind == "external" || !self.internal_scroll;
+		if external {
+			self.cancel_scroll_animation();
+		}
+		let consumed = self.cursor.is_some_and(|(x, y)| {
+			markview_selection::horizontal_by(
+				&self.published.snapshot,
+				self.viewport(),
+				&mut self.horizontal,
+				Point::new(x, y),
+				dx.clamp(-f64::from(f32::MAX), f64::from(f32::MAX)) as f32,
+			)
+		});
+		let delta = if consumed && dx.abs() >= dy.abs() {
+			0.0
+		} else {
+			dy.clamp(-f64::from(f32::MAX), f64::from(f32::MAX)) as f32
+		};
+		if delta != 0.0 {
+			if external {
+				self.scroll_by(f64::from(delta));
+			} else {
+				self.scrolling.wheel_by(delta, Instant::now());
+			}
+		}
+		self.follow_pointer();
+		Ok(())
 	}
 
 	#[wasm_bindgen(js_name = selectAll)]
@@ -455,7 +641,11 @@ impl Markview {
 		config_json: Option<String>,
 	) -> Result<(), JsValue> {
 		let config = Config::parse(config_json.as_deref())?;
+		let details_open = self.options.details_open.clone();
 		self.options = config.options();
+		self.options.details_open = details_open;
+		self.horizontal.clear();
+		self.overflow_drag = None;
 		self.config = config;
 		self.apply_column();
 		if let Some(pending) = self.pending.take()
@@ -472,6 +662,167 @@ impl Markview {
 }
 
 impl Markview {
+	fn context(&self) -> DocumentInteraction<'_> {
+		DocumentInteraction {
+			snapshot: &self.published.snapshot,
+			viewport: self.viewport(),
+			horizontal: &self.horizontal,
+			revision: self.published.revision,
+		}
+	}
+	fn hover(&self) -> Hover {
+		if self.overflow_drag.is_some() {
+			return Hover::default();
+		}
+		let Some((x, y)) = self.cursor else {
+			return Hover::default();
+		};
+		self.context().hover(
+			Point::new(x, y),
+			self.pointer.drag().is_some() || self.overflow_drag.is_some(),
+			self.images_clickable,
+			self.options.stylesheet.overflow_scrollbar_metrics(),
+		)
+	}
+	fn follow_pointer(&mut self) {
+		if self.pointer.drag().is_none() {
+			return;
+		}
+		if let Some((x, y)) = self.cursor {
+			let reading = Reading {
+				snapshot: &self.published.snapshot,
+				revision: self.published.revision,
+				viewport: self.viewport(),
+				horizontal: &self.horizontal,
+			};
+			if self.pointer.drag_to(&reading, x, y) {
+				self.selection_chars.forget();
+			}
+		}
+	}
+	fn advance_interaction(&mut self, now: Instant) {
+		self.scrolling.advance(now, self.scroll_bounds());
+		if self.pointer.drag().is_some()
+			&& self.pointer.dragged()
+			&& let Some((_, y)) = self.cursor
+		{
+			let delta = markview_selection::selection_scroll(
+				y,
+				INSET,
+				self.logical.1 - INSET,
+				self.visible_scroll(),
+				self.scroll_range(),
+			);
+			if delta != 0.0
+				&& self.pointer.auto_scroll_at().is_none_or(|at| at <= now)
+			{
+				self.scrolling.by(delta, self.scroll_bounds());
+				self.pointer
+					.set_auto_scroll_at(Some(now + Duration::from_millis(16)));
+			}
+		}
+		self.follow_pointer();
+	}
+	fn reset_document_interaction(&mut self) {
+		self.scrolling.cancel();
+		self.horizontal.clear();
+		self.overflow_drag = None;
+		self.pressed_image = None;
+		self.pointer.reset_clicks();
+		self.pending_anchor = None;
+		self.jump_origin = None;
+		self.options.details_open = Arc::default();
+	}
+	fn action_json(&self, kind: &str, target: &str) -> String {
+		let m = self.pointer.modifiers();
+		serde_json::json!({"kind":kind,"target":target,"modifiers":{"shift":m.shift,"control":m.control,"alt":m.alt,"meta":m.meta}}).to_string()
+	}
+	fn activate_document_link(&mut self, link: &str) -> bool {
+		self.scrolling.cancel();
+		if let Some(id) = markview_core::document::details_id(link) {
+			let expanded =
+				self.options.details_open.get(&id).copied().unwrap_or_else(
+					|| {
+						self.published_document
+							.details_declared(id)
+							.unwrap_or(false)
+					},
+				);
+			Arc::make_mut(&mut self.options.details_open).insert(id, !expanded);
+			self.horizontal.clear();
+			self.reflow();
+			return true;
+		}
+		let Some(fragment) = link.strip_prefix('#') else {
+			return false;
+		};
+		let fragment = percent_encoding::percent_decode_str(fragment)
+			.decode_utf8_lossy()
+			.into_owned();
+		if fragment.is_empty() {
+			self.set_scroll(0.0);
+			return true;
+		}
+		if let Some(label) =
+			markview_core::document::footnote::back_label(&fragment)
+		{
+			if let Some((origin, offset)) = &self.jump_origin
+				&& markview_core::document::footnote::label(origin)
+					== Some(label)
+			{
+				let offset = *offset;
+				self.set_scroll(f64::from(offset));
+				return true;
+			}
+			self.pending_anchor =
+				Some(markview_core::document::footnote::reference(label));
+		} else {
+			self.jump_origin = Some((fragment.clone(), self.visible_scroll()));
+			self.pending_anchor = Some(fragment);
+		}
+		// A pending source must become the document before its anchors are inspected.
+		if self.pending.as_ref().is_some_and(|p| p.parsed.is_some()) {
+			self.reflow();
+		}
+		let mut expanded = false;
+		for id in self
+			.document
+			.details_enclosing(self.pending_anchor.as_deref().unwrap())
+		{
+			if !self.options.details_open.get(&id).copied().unwrap_or_else(
+				|| self.document.details_declared(id).unwrap_or(false),
+			) {
+				Arc::make_mut(&mut self.options.details_open).insert(id, true);
+				expanded = true;
+			}
+		}
+		if expanded {
+			self.horizontal.clear();
+			self.reflow();
+		}
+		self.apply_anchor();
+		true
+	}
+	fn apply_anchor(&mut self) {
+		let Some(anchor) = self.pending_anchor.as_deref() else {
+			return;
+		};
+		// Old geometry cannot resolve a target while its replacement is publishing.
+		if self.pending.is_some()
+			&& !self.published.continues(
+				&self.document.source,
+				self.pending.as_ref().unwrap().layout.pass_id(),
+			) {
+			return;
+		}
+		if let Some(y) = self.published.snapshot.anchor_y(anchor) {
+			self.scrolling.set(y, self.scroll_bounds());
+			self.pending_anchor = None;
+		} else if self.pending.is_none() {
+			self.pending_anchor = None;
+		}
+	}
+
 	/// The canvas backing store in physical pixels.
 	fn physical(&self) -> (u32, u32) {
 		(self.canvas.width(), self.canvas.height())
@@ -510,7 +861,13 @@ impl Markview {
 	/// a temporary height, so the requested offset is held above it rather than
 	/// clamped away: later prefixes put the reader back where they were.
 	fn visible_scroll(&self) -> f32 {
-		self.scroll.min(self.scroll_range())
+		self.scrolling.visible(self.scroll_bounds())
+	}
+	fn scroll_bounds(&self) -> ScrollBounds {
+		ScrollBounds {
+			max: self.scroll_range(),
+			complete: self.pending.is_none(),
+		}
 	}
 
 	fn theme(&self) -> Theme {
@@ -529,25 +886,19 @@ impl Markview {
 	}
 
 	fn clamp_scroll(&mut self) {
-		// A pass that is still publishing reports a height that is about to
-		// grow, so clamping against it would throw away where the reader was.
-		if self.pending.is_some() {
-			return;
-		}
-		self.scroll = self.scroll.clamp(0.0, self.scroll_range());
+		self.scrolling.resolve(self.scroll_bounds());
+		self.apply_anchor();
+		self.follow_pointer();
 	}
-
-	/// Records a scroll request without discarding it, and clamps it right
-	/// away unless a pass is pending: a pending pass reports a temporary
-	/// height, so the request is only held above zero there, and
-	/// `clamp_scroll` clamps it once the pass completes. `visible_scroll`
-	/// still reports it clamped to what exists.
 	fn hold_scroll(&mut self, y: f32) {
-		self.scroll = if self.pending.is_some() {
-			y.max(0.0)
-		} else {
-			y.clamp(0.0, self.scroll_range())
-		};
+		self.scrolling.set(y, self.scroll_bounds());
+	}
+	fn cancel_scroll_animation(&mut self) {
+		// Animated travel hands off its displayed offset; held requests survive.
+		if self.scrolling.animation.is_some() {
+			self.scrolling.offset = self.visible_scroll();
+		}
+		self.scrolling.cancel();
 	}
 
 	/// Lays the accepted document out in one uninterrupted pass.
@@ -561,9 +912,11 @@ impl Markview {
 			published,
 			pointer,
 			document,
+			published_document,
 			..
 		} = self;
 		let snapshot = engine.layout(document, options);
+		*published_document = document.clone();
 		// A full layout is not a prefix of anything, so no pass may extend it.
 		published.accept(snapshot, document.source.clone(), None, pointer);
 	}
@@ -587,6 +940,7 @@ impl Markview {
 		if completed {
 			let source = document.source.clone();
 			let pass = pending.layout.pass_id();
+			self.published_document = document.clone();
 			self.published.accept(
 				pending.layout.into_snapshot(),
 				source,
@@ -606,7 +960,7 @@ impl Markview {
 				self.published.extend(prefix, &mut self.pointer);
 				// `extend` only re-stamps the selection, which reads the same
 				// text, so the cached character count still holds here.
-			} else if prefix.height >= self.scroll {
+			} else if prefix.height >= self.scrolling.offset {
 				// A different document, or the same one laid out for another
 				// column, replaces what is on screen. Until its prefix has
 				// grown back past the top of the current view, replacing would
@@ -618,6 +972,7 @@ impl Markview {
 					Some(pass),
 					&mut self.pointer,
 				);
+				self.published_document = document.clone();
 				self.selection_chars.forget();
 			}
 			self.pending = Some(pending);
@@ -660,7 +1015,7 @@ struct Pending {
 	/// The document `begin_update` parsed, when the pass is over text newer
 	/// than [`Markview::document`] holds. A reflow re-uses the accepted
 	/// document instead, which is why this is optional.
-	parsed: Option<Document>,
+	parsed: Option<Arc<Document>>,
 	/// The suspended pass. It holds everything the layout needs between calls,
 	/// so a step never re-measures a block an earlier step already laid out.
 	layout: ProgressiveLayout,
@@ -853,12 +1208,6 @@ fn device_pixels(logical: f32, scale: f32, limit: u32) -> u32 {
 	} else {
 		0
 	}
-}
-
-/// The demo never pans a wide block sideways, so every lookup misses.
-fn no_horizontal() -> &'static HashMap<(usize, usize), f32> {
-	static EMPTY: OnceLock<HashMap<(usize, usize), f32>> = OnceLock::new();
-	EMPTY.get_or_init(HashMap::new)
 }
 
 /// Reports an error to JavaScript as a string.

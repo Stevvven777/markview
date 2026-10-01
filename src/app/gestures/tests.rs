@@ -159,25 +159,25 @@ fn native_touch_and_trackpad_route_through_reader_and_chrome() {
 	};
 	app.handle_touch(touch(1, TouchPhase::Started, 600.0, 400.0));
 	app.handle_touch(touch(1, TouchPhase::Moved, 600.0, 300.0));
-	assert_eq!(app.readers.session.scroll, 100.0);
+	assert_eq!(app.readers.session.scrolling.offset, 100.0);
 	assert!(app.interaction.selection.is_none());
 	app.handle_touch(touch(1, TouchPhase::Ended, 600.0, 300.0));
 	app.cancel_gestures();
 	app.interaction.cursor = (600.0, 300.0);
 	app.trackpad_scroll(0.0, -50.0, TouchPhase::Started);
-	assert_eq!(app.readers.session.scroll, 150.0);
+	assert_eq!(app.readers.session.scrolling.offset, 150.0);
 	app.gestures.motion.as_mut().unwrap().1 =
 		Motion::new(Instant::now() - Duration::from_millis(20));
 	app.interaction.cursor = (10.0, 10.0);
 	app.trackpad_scroll(0.0, -30.0, TouchPhase::Moved);
 	assert_eq!(
-		app.readers.session.scroll, 180.0,
+		app.readers.session.scrolling.offset, 180.0,
 		"the initial surface owns the whole trackpad gesture"
 	);
 	app.trackpad_scroll(0.0, 0.0, TouchPhase::Ended);
 	assert!(app.gestures.coasting);
 	app.advance_gestures(Instant::now() + Duration::from_millis(16));
-	assert!(app.readers.session.scroll > 180.0);
+	assert!(app.readers.session.scrolling.offset > 180.0);
 	app.trackpad_scroll(0.0, 0.0, TouchPhase::Cancelled);
 	assert!(!app.gestures.coasting);
 	let size = app.preferences.values.font_size;
@@ -204,12 +204,12 @@ fn native_touch_and_trackpad_route_through_reader_and_chrome() {
 	app.handle_touch(touch(2, TouchPhase::Started, x, y));
 	app.handle_touch(touch(2, TouchPhase::Ended, x, y));
 	assert!(app.interaction.panel_open());
-	let scroll = app.readers.session.scroll;
+	let scroll = app.readers.session.scrolling.offset;
 	app.handle_touch(touch(3, TouchPhase::Started, 600.0, 400.0));
 	app.handle_touch(touch(3, TouchPhase::Moved, 600.0, 200.0));
 	app.handle_touch(touch(3, TouchPhase::Ended, 600.0, 200.0));
 	assert_eq!(
-		app.readers.session.scroll, scroll,
+		app.readers.session.scrolling.offset, scroll,
 		"panel scrolling must not move the document"
 	);
 	app.cancel_gestures();

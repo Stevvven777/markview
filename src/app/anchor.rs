@@ -46,7 +46,7 @@ impl<P: super::SendEvent> App<P> {
 		self.readers.session.cancel_scroll_animation();
 		// Remember where the reader was, so a footnote's number can return.
 		self.readers.session.jump_origin =
-			Some((anchor.clone(), self.readers.session.scroll));
+			Some((anchor.clone(), self.readers.session.scrolling.offset));
 		self.readers.session.pending_anchor = Some(anchor);
 		self.apply_anchor();
 	}
@@ -56,7 +56,7 @@ impl<P: super::SendEvent> App<P> {
 	pub(super) fn return_from_footnote(&mut self, label: &str) {
 		if let Some(scroll) = self.readers.session.footnote_return(label) {
 			self.readers.session.pending_anchor = None;
-			self.readers.session.pending_scroll = None;
+			self.readers.session.scrolling.target = None;
 			self.readers.session.follow_update = false;
 			let to = scroll.clamp(
 				0.0,
@@ -65,10 +65,10 @@ impl<P: super::SendEvent> App<P> {
 					self.viewport(),
 				),
 			);
-			if (to - self.readers.session.scroll).abs() > 0.5 {
+			if (to - self.readers.session.scrolling.offset).abs() > 0.5 {
 				self.readers.session.animate_scroll_to(to, Instant::now());
 			} else {
-				self.readers.session.scroll = to;
+				self.readers.session.scrolling.offset = to;
 			}
 			self.error = false;
 			self.status.clear();
@@ -93,7 +93,7 @@ impl<P: super::SendEvent> App<P> {
 			self.request(false);
 			return;
 		}
-		let before = self.readers.session.scroll;
+		let before = self.readers.session.scrolling.offset;
 		let Some(result) = self.readers.session.resolve_anchor(self.viewport())
 		else {
 			return;
@@ -102,9 +102,9 @@ impl<P: super::SendEvent> App<P> {
 			Ok(()) => {
 				// A resolved anchor lands where it was queued; ease there from
 				// where the reader was rather than snapping.
-				let to = self.readers.session.scroll;
+				let to = self.readers.session.scrolling.offset;
 				if (to - before).abs() > 0.5 {
-					self.readers.session.scroll = before;
+					self.readers.session.scrolling.offset = before;
 					self.readers.session.animate_scroll_to(to, Instant::now());
 				}
 				self.error = false;

@@ -196,14 +196,14 @@ fn live_query_preserves_scroll_selection_and_disclosures() {
 		"needle and **needle**.\n\n".repeat(80)
 	);
 	let mut h = Harness::new(&source);
-	h.app.readers.session.scroll = 800.0;
+	h.app.readers.session.scrolling.offset = 800.0;
 	let selection = h.app.readers.session.snapshot.select_all(1).unwrap();
 	h.app.interaction.selection = Some(selection);
 	let copied = h.app.readers.session.snapshot.extract_text(selection, 1);
 	h.query("needle");
 	assert_eq!(h.app.readers.session.search.matches.len(), 161);
 	assert_eq!(h.app.readers.session.search.current, None);
-	assert_eq!(h.app.readers.session.scroll, 800.0);
+	assert_eq!(h.app.readers.session.scrolling.offset, 800.0);
 	assert!(h.app.readers.session.details_open.is_empty());
 	assert_eq!(h.app.interaction.selection, Some(selection));
 	assert_eq!(
@@ -217,7 +217,7 @@ fn live_query_preserves_scroll_selection_and_disclosures() {
 	h.app.close_search();
 	assert!(h.app.draw_search_highlights().is_empty());
 	assert_eq!(h.app.bottom(), 28.0);
-	assert_eq!(h.app.readers.session.scroll, 800.0);
+	assert_eq!(h.app.readers.session.scrolling.offset, 800.0);
 	assert_eq!(h.app.readers.session.search.input.text(), "needle");
 }
 #[test]
@@ -227,7 +227,7 @@ fn navigation_starts_near_viewport_wraps_and_opens_only_ancestors() {
 		"needle.\n\n".repeat(40)
 	);
 	let mut h = Harness::new(&source);
-	h.app.readers.session.scroll = 600.0;
+	h.app.readers.session.scrolling.offset = 600.0;
 	h.query("needle");
 	h.app.navigate_search(false);
 	let first = h.app.readers.session.search.current.unwrap();
@@ -529,7 +529,7 @@ fn search_bar_and_highlight_gpu_frames() -> anyhow::Result<()> {
 			width: (1200.0 * scale) as u32,
 			height: (800.0 * scale) as u32,
 			scale,
-			scroll: session.scroll,
+			scroll: session.scrolling.offset,
 			left: h.app.view_geometry().left,
 			top: h.app.content_top() + 10.0,
 			bottom: HEIGHT + 10.0,

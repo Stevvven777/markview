@@ -444,17 +444,10 @@ pub(crate) struct ReaderSession {
 	/// Reader-chosen `<details>` collapse state, keyed by block id, overriding
 	/// what the source declared. It is layout input, and a reload drops it.
 	pub(crate) details_open: Arc<BTreeMap<u64, bool>>,
-	pub(crate) scroll: f32,
+	pub(crate) scrolling: markview_selection::ScrollState,
 	pub(crate) horizontal: HashMap<(usize, usize), f32>,
 	pub(crate) follow_update: bool,
 	pub(crate) layout_pending: bool,
-	pub(crate) pending_scroll: Option<f32>,
-	/// An eased scroll in flight. Its destination is `pending_scroll`, so the
-	/// worker still prioritizes what the animation is heading for.
-	pub(crate) scroll_animation: Option<ScrollAnimation>,
-	/// The momentum of a high-resolution wheel stream, which owns the displayed
-	/// offset while it lasts and may carry it past `pending_scroll`.
-	pub(crate) momentum: Option<Momentum>,
 	/// A heading anchor waiting for its heading to be laid out.
 	pub(crate) pending_anchor: Option<String>,
 	/// The internal fragment the reader last jumped to, with the scroll offset
@@ -548,7 +541,7 @@ impl ReaderSession {
 					index += 1;
 				}
 				if index >= outline.len()
-					|| block.y + anchor.y > self.scroll + 0.5
+					|| block.y + anchor.y > self.scrolling.offset + 0.5
 				{
 					break 'blocks;
 				}
@@ -895,101 +888,6 @@ impl InteractionState {
 
 /// The shortest and longest a discrete scroll may take, and the distance at
 /// which it reaches the longest.
-const SCROLL_MIN: Duration = Duration::from_millis(120);
-const SCROLL_MAX: Duration = Duration::from_millis(400);
-const SCROLL_FULL: f32 = 2400.0;
-/// How often a running animation asks the event loop for a frame.
-const SCROLL_FRAME: Duration = Duration::from_millis(8);
-
-/// How long a high-resolution wheel stream's momentum takes to die away, in
-/// seconds. It is also how far ahead of the packets that momentum may carry the
-/// page, because at a fixed speed distance and time say the same thing.
-const COAST: f32 = 0.25;
-/// The shortest gap a packet's own speed is read over, so a timer that never
-/// advanced cannot claim an unbounded rate.
-const PACKET_MIN: f32 = 0.008;
-/// A pause this long ends the run of packets whose spacing sets the speed: a
-/// packet after it belongs to a new gesture and says nothing about the hand.
-const PACKET_GAP: f32 = 0.15;
-/// How much of a packet's own speed one reading takes in.
-const PACKET_BLEND: f32 = 0.05;
-
-/// Ease-out cubic: fast away from the start and settling into the target.
-/// Both ends are exact and the curve is strictly increasing between them.
-pub(crate) fn ease_out_cubic(t: f32) -> f32 {
-	let remaining = 1.0 - t.clamp(0.0, 1.0);
-	1.0 - remaining * remaining * remaining
-}
-
-/// A time-driven scroll from one offset to another.
-///
-/// The offset depends only on elapsed time, so the motion is identical at any
-/// frame rate; the duration grows with the distance between a floor and a
-/// ceiling, which keeps a one-line step responsive and a whole-page jump calm.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ScrollAnimation {
-	from: f32,
-	to: f32,
-	started: Instant,
-	duration: Duration,
-}
-
-impl ScrollAnimation {
-	/// Starts a move to `to`, scaling the duration from `from`.
-	pub(crate) fn new(from: f32, to: f32, now: Instant) -> Self {
-		let ratio = ((to - from).abs() / SCROLL_FULL).clamp(0.0, 1.0);
-		// Integer nanoseconds keep both bounds exact at the ends.
-		let span = (SCROLL_MAX - SCROLL_MIN).as_nanos() as f64;
-		let nanos = SCROLL_MIN.as_nanos() as f64 + span * f64::from(ratio);
-		Self {
-			from,
-			to,
-			started: now,
-			duration: Duration::from_nanos(nanos as u64),
-		}
-	}
-
-	/// The eased offset at `now`, clamped to the two ends.
-	pub(crate) fn offset_at(&self, now: Instant) -> f32 {
-		let elapsed = now.saturating_duration_since(self.started).as_secs_f32();
-		let progress = (elapsed / self.duration.as_secs_f32()).clamp(0.0, 1.0);
-		self.from + (self.to - self.from) * ease_out_cubic(progress)
-	}
-
-	/// When the last frame is due.
-	pub(crate) fn end(&self) -> Instant {
-		self.started + self.duration
-	}
-
-	pub(crate) fn finished(&self, now: Instant) -> bool {
-		now >= self.end()
-	}
-}
-
-/// The momentum of a high-resolution wheel stream, in logical pixels and
-/// seconds.
-///
-/// A touchpad on Windows hands its motion to a reader that has not opted into
-/// Direct Manipulation as a few large wheel packets, each landing a quarter of
-/// a second after the motion it describes: `LineDelta(0.0, -13.275)` arrives
-/// after 268 ms of silence, having carried the inertia of the flick inside it.
-/// Easing every packet from a standstill is what makes a fast two-finger scroll
-/// crawl and then lurch, so the stream keeps a speed of its own instead. The
-/// page rides that speed across the gaps between packets, and a packet settles
-/// the distance the page has already run ahead by.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Momentum {
-	/// Logical pixels per second, signed like the scroll offset.
-	velocity: f32,
-	/// The frame the offset was last advanced to.
-	at: Instant,
-	/// When the last packet arrived, so a pause can stop reading speeds.
-	packet: Instant,
-	/// Whether the last frame moved the page. A stream the packets have caught
-	/// up with keeps its speed but asks for no frames until the next one.
-	moving: bool,
-}
-
 impl ReaderSession {
 	pub(crate) fn extends_prefix(
 		&self,
@@ -1014,12 +912,12 @@ impl ReaderSession {
 			return true;
 		}
 		if self.snapshot.blocks.is_empty() {
-			return reader.layout.height >= self.scroll + viewport;
+			return reader.layout.height >= self.scrolling.offset + viewport;
 		}
 		let index = self
 			.snapshot
 			.blocks
-			.partition_point(|b| b.y <= self.scroll)
+			.partition_point(|b| b.y <= self.scrolling.offset)
 			.saturating_sub(1);
 		let anchor = &self.snapshot.blocks[index];
 		let occurrence = self.snapshot.blocks[..index]
@@ -1033,272 +931,72 @@ impl ReaderSession {
 			.filter(|b| b.id == anchor.id)
 			.nth(occurrence)
 			.is_some_and(|b| {
-				b.y + (self.scroll - anchor.y).min(b.layout.height) + viewport
-					<= reader.layout.height
+				b.y + (self.scrolling.offset - anchor.y).min(b.layout.height)
+					+ viewport <= reader.layout.height
 			})
 	}
+	fn scroll_bounds(&self, viewport: f32) -> markview_selection::ScrollBounds {
+		markview_selection::ScrollBounds {
+			max: if self.layout_pending {
+				(self.snapshot.height - viewport).max(0.0)
+			} else {
+				scroll_limit(self.snapshot.height, viewport)
+			},
+			complete: !self.layout_pending,
+		}
+	}
 	pub(crate) fn scroll_by(&mut self, dy: f32, viewport: f32) {
-		// Direct input takes over from the offset on screen, so the running
-		// animation and the destination it owns must go before the target is
-		// measured. A destination a previous direct request left accumulating
-		// is not the animation's, and [`Self::cancel_scroll_animation`] keeps
-		// it, so progressive layout still adds those requests up.
-		self.cancel_scroll_animation();
-		if dy == 0. {
-			self.pending_scroll.get_or_insert(self.scroll);
-			self.resolve_scroll(viewport);
-			return;
+		if dy != 0.0 {
+			self.pending_anchor = None;
+			self.follow_update = false;
 		}
-		// A deliberate scroll abandons an anchor that was still waiting for
-		// its heading to be laid out.
-		self.pending_anchor = None;
-		self.follow_update = false;
-		let base = self
-			.pending_scroll
-			.filter(|v| v.is_finite())
-			.unwrap_or(self.scroll);
-		let target = (base + dy).max(0.0);
-		self.pending_scroll = Some(target);
-		self.resolve_scroll(viewport);
+		self.scrolling.by(dy, self.scroll_bounds(viewport));
 	}
-
-	/// A discrete scroll request, eased from the offset on screen.
-	///
-	/// It accumulates from the pending destination exactly as [`Self::scroll_by`]
-	/// does, so repeated PageDown presses add up even while the geometry they
-	/// name is still being laid out.
 	pub(crate) fn animate_scroll_by(&mut self, dy: f32, now: Instant) {
-		if dy == 0.0 {
-			return;
+		if dy != 0.0 {
+			self.pending_anchor = None;
+			self.follow_update = false;
 		}
-		let base = self
-			.pending_scroll
-			.filter(|v| v.is_finite())
-			.unwrap_or(self.scroll);
-		self.animate_scroll_to((base + dy).max(0.0), now);
+		self.scrolling.animate_by(dy, now);
 	}
-
-	/// A wheel travel, eased like a discrete step.
-	///
-	/// A gesture that continues the motion still pending accumulates on its
-	/// destination exactly as [`Self::animate_scroll_by`] does. One that runs
-	/// against it instead takes over from the offset on screen, so reversing
-	/// the wheel answers the hand at once rather than finishing the old
-	/// destination first.
 	pub(crate) fn animate_wheel_by(&mut self, dy: f32, now: Instant) {
-		if dy == 0.0 {
-			return;
+		if dy != 0.0 {
+			self.pending_anchor = None;
+			self.follow_update = false;
 		}
-		let destination = self
-			.pending_scroll
-			.filter(|v| v.is_finite())
-			.unwrap_or(self.scroll);
-		if (destination - self.scroll) * dy < 0.0 {
-			self.pending_scroll = None;
-		}
-		self.animate_scroll_by(dy, now);
+		self.scrolling.wheel_by(dy, now);
 	}
-
-	/// A wheel travel from a high-resolution device, which Windows delivers in
-	/// large packets rather than as a stream.
-	///
-	/// The packet is distance the hand has already travelled, so the page takes
-	/// its speed from how long the packet took to arrive and keeps it for the
-	/// packets still to come. Nothing here changes a wheel that reports whole
-	/// detents: those keep the eased step above.
-	pub(crate) fn coast_wheel_by(&mut self, dy: f32, now: Instant) {
-		if dy == 0.0 {
-			return;
-		}
-		// The stream owns the displayed offset; an eased step in flight is
-		// distance the packets have already accounted for.
-		self.scroll_animation = None;
-		self.pending_anchor = None;
-		self.follow_update = false;
-		let base = self.pending_scroll.unwrap_or(self.scroll);
-		self.pending_scroll = Some((base + dy).max(0.0));
-		let gap = self.momentum.as_ref().map(|momentum| {
-			now.saturating_duration_since(momentum.packet).as_secs_f32()
-		});
-		let momentum = self.momentum.get_or_insert(Momentum {
-			velocity: 0.0,
-			at: now,
-			packet: now,
-			moving: false,
-		});
-		// Only a packet that follows another packet says how fast the hand is
-		// moving; the first of a gesture, and the first after a pause, are
-		// distances to travel rather than speeds to keep.
-		if let Some(gap) = gap.filter(|gap| *gap <= PACKET_GAP) {
-			let rate = dy / gap.max(PACKET_MIN);
-			let weight = 1.0 - (-gap / PACKET_BLEND).exp();
-			momentum.velocity += (rate - momentum.velocity) * weight;
-		}
-		momentum.packet = now;
-	}
-
-	/// Advances a high-resolution stream's momentum.
-	///
-	/// The page runs at the stream's speed until the packets have paid for it,
-	/// and may lead them by the distance that speed predicts; a packet whose
-	/// distance the page has already covered is simply spent as it arrives.
-	/// Returns whether another frame is due.
-	fn advance_momentum(&mut self, now: Instant, viewport: f32) -> bool {
-		let Some(momentum) = self.momentum.as_mut() else {
-			return false;
-		};
-		let dt = now.saturating_duration_since(momentum.at).as_secs_f32();
-		momentum.at = now;
-		let ceiling = if self.layout_pending {
-			(self.snapshot.height - viewport).max(0.0)
-		} else {
-			scroll_limit(self.snapshot.height, viewport)
-		};
-		let received = self.pending_scroll.unwrap_or(self.scroll);
-		let owed = received - self.scroll;
-		let forward = momentum.velocity >= 0.0;
-		// Only a debt still to pay sets a speed; distance the page has already
-		// run past is settled by the packets arriving, never by reversing.
-		let debt = if forward {
-			owed.max(0.0)
-		} else {
-			owed.min(0.0)
-		};
-		let chase = debt / COAST;
-		let used = if forward {
-			momentum.velocity.max(chase)
-		} else {
-			momentum.velocity.min(chase)
-		};
-		let limit = received + momentum.velocity * COAST;
-		let (low, high) = if forward {
-			(self.scroll, limit.max(self.scroll))
-		} else {
-			(limit.min(self.scroll), self.scroll)
-		};
-		let before = self.scroll;
-		self.scroll = (self.scroll + used * dt)
-			.clamp(low, high)
-			.clamp(0.0, ceiling);
-		let moved = (self.scroll - before).abs() > 0.05;
-		momentum.velocity *= (-dt / COAST).exp();
-		// A page the packets have caught up with stops asking for frames while
-		// it waits for the next one, but keeps the speed it was carrying.
-		momentum.moving = moved;
-		if momentum.velocity.abs() > 4.0 {
-			return moved;
-		}
-		// Spent: the page sits where the offset reached, which a packet that
-		// arrived late may already have paid for.
-		self.scroll = if forward {
-			self.scroll.max(received)
-		} else {
-			self.scroll.min(received)
-		}
-		.clamp(0.0, ceiling);
-		self.pending_scroll = None;
-		self.momentum = None;
-		false
-	}
-
-	/// Eases the displayed offset to an absolute `target`, retargeting a
-	/// running animation from where it currently is rather than snapping.
 	pub(crate) fn animate_scroll_to(&mut self, target: f32, now: Instant) {
 		self.pending_anchor = None;
 		self.follow_update = false;
-		self.momentum = None;
-		self.pending_scroll = Some(target);
-		self.scroll_animation =
-			Some(ScrollAnimation::new(self.scroll, target, now));
+		self.scrolling.animate_to(target, now);
 	}
-
-	/// Advances a running animation. The displayed offset is clamped to the
-	/// geometry at hand, so a destination the layout has not reached yet never
-	/// shows blank space; the pending target then resolves as it arrives.
-	/// Returns whether another frame is due.
 	pub(crate) fn advance_scroll(
 		&mut self,
 		now: Instant,
 		viewport: f32,
 	) -> bool {
-		if self.momentum.is_some() {
-			return self.advance_momentum(now, viewport);
-		}
-		let Some(animation) = self.scroll_animation else {
-			return false;
-		};
-		let ceiling = if self.layout_pending {
-			(self.snapshot.height - viewport).max(0.0)
-		} else {
-			scroll_limit(self.snapshot.height, viewport)
-		};
-		self.scroll = animation.offset_at(now).clamp(0.0, ceiling);
-		// A settled document has nowhere further to go once the clamp is
-		// reached, so an animation heading past it ends there instead of
-		// waiting out its duration.
-		let beyond = animation.to >= ceiling - 0.5;
-		let at_end =
-			!self.layout_pending && beyond && self.scroll >= ceiling - 0.5;
-		if !animation.finished(now) && !at_end {
-			return true;
-		}
-		// A destination the geometry could not reach stays pending, so the
-		// existing resolve applies it once the layout grows.
-		self.scroll_animation = None;
-		self.resolve_scroll(viewport);
-		false
+		self.scrolling.advance(now, self.scroll_bounds(viewport))
 	}
-
-	/// Ends a running animation where the reader sees it, without moving.
-	///
-	/// The animation mirrors its destination into `pending_scroll` so the
-	/// worker and progressive layout keep chasing it. Dropping the animation
-	/// must drop exactly that mirror, or the cancelled movement would resume
-	/// on the next input or layout; a target a direct input set on top of it
-	/// differs from the destination and is left alone.
 	pub(crate) fn cancel_scroll_animation(&mut self) {
-		self.momentum = None;
-		let Some(animation) = self.scroll_animation.take() else {
-			return;
-		};
-		if self.pending_scroll == Some(animation.to) {
-			self.pending_scroll = None;
-		}
+		self.scrolling.cancel();
 	}
-
 	pub(crate) fn scroll_animating(&self) -> bool {
-		self.scroll_animation.is_some() || self.momentum.is_some()
+		self.scrolling.animation.is_some()
 	}
-
-	/// When the next animation frame is due, or `None` when nothing is
-	/// running, so the event loop can go back to waiting.
 	pub(crate) fn scroll_animation_deadline(
 		&self,
 		now: Instant,
 	) -> Option<Instant> {
-		if let Some(animation) = &self.scroll_animation {
-			return Some((now + SCROLL_FRAME).min(animation.end()));
-		}
-		self.momentum.is_some().then_some(now + SCROLL_FRAME)
+		self.scrolling.deadline(now)
 	}
-
 	pub(crate) fn resolve_scroll(&mut self, viewport: f32) {
-		// While an animation or a stream's momentum is in flight it owns the
-		// displayed offset.
-		if self.scroll_animating() {
-			return;
-		}
-		if let Some(target) = self.pending_scroll {
-			let max = (self.snapshot.height - viewport).max(0.0);
-			if !self.layout_pending || target <= max {
-				self.scroll =
-					target.min(scroll_limit(self.snapshot.height, viewport));
-				self.pending_scroll = None;
-			}
-		}
+		self.scrolling.resolve(self.scroll_bounds(viewport));
 	}
 	pub(crate) fn coverage(&self, viewport: f32) -> f32 {
-		self.scroll.max(self.pending_scroll.unwrap_or(self.scroll))
+		self.scrolling
+			.offset
+			.max(self.scrolling.target.unwrap_or(self.scrolling.offset))
 			+ viewport * 1.5
 	}
 	pub(crate) fn release_heavy(&mut self) {
@@ -1313,8 +1011,7 @@ impl ReaderSession {
 		self.requested_options = None;
 		self.pending_anchor = None;
 		self.jump_origin = None;
-		self.scroll_animation = None;
-		self.momentum = None;
+		self.scrolling.animation = None;
 	}
 
 	/// Expands the `<details>` elements enclosing `anchor` and reports whether
@@ -1357,9 +1054,9 @@ impl ReaderSession {
 		let anchor = self.pending_anchor.clone()?;
 		if let Some(y) = self.snapshot.anchor_y(&anchor) {
 			self.pending_anchor = None;
-			self.pending_scroll = None;
+			self.scrolling.target = None;
 			self.follow_update = false;
-			self.scroll =
+			self.scrolling.offset =
 				y.clamp(0.0, scroll_limit(self.snapshot.height, viewport));
 			return Some(Ok(()));
 		}
@@ -1384,8 +1081,8 @@ impl ReaderSession {
 			self.counts = counts;
 		}
 		let extending = self.extends_prefix(&reader);
-		self.scroll = if extending {
-			self.scroll
+		self.scrolling.offset = if extending {
+			self.scrolling.offset
 		} else if self.snapshot.blocks.is_empty() {
 			// A released tab has no old layout to anchor against, but its
 			// scroll position is still user state and should survive reloading.
@@ -1396,12 +1093,12 @@ impl ReaderSession {
 			} else {
 				(reader.layout.height - viewport).max(0.0)
 			};
-			self.scroll.clamp(0.0, limit)
+			self.scrolling.offset.clamp(0.0, limit)
 		} else {
 			crate::layout::anchored_scroll(
 				&self.snapshot,
 				&reader.layout,
-				self.scroll,
+				self.scrolling.offset,
 				viewport,
 				self.follow_update,
 			)

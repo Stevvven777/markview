@@ -22,6 +22,7 @@ log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 web-time.workspace = true
+percent-encoding = "2"
 # `FontConfig::from_faces` takes `parley::fontique::Blob`, which has to be
 # named to hand a browser its faces as bytes.
 parley.workspace = true

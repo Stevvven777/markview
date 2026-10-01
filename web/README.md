@@ -43,7 +43,7 @@ files the `application/wasm` MIME type the WebAssembly fetch requires.
 
 ## Test
 
-The Playwright acceptance suite (30 checks) drives engine startup, rendering,
+The Playwright acceptance suite (40 checks) drives engine startup, rendering,
 selection, copy, incremental re-layout, the resumable layout API, the reader's
 lifecycle, reflow on a narrower canvas and the scroll range against the built
 demo in `web/dist/`:
@@ -132,3 +132,17 @@ window.MV_CONFIG = { fontSize: 20, theme: "dark" };
   That check unions every bundled face, so a character only one face carries is
   still reported as covered when the family a body run reaches cannot fall back
   to it: keep an eye on the canvas for a style gap as well.
+
+## Interaction testing
+
+The demo's **Scroll** selector switches between `internal` easing and
+`external` direct motion without rebuilding. **Interaction sample** loads
+links, a hidden heading in details, a wide code block and a long document for
+wheel and selection testing. `internal` is the default; hosts can explicitly choose `external` for
+input whose motion is already maintained outside Markview. Link and image callbacks display their targets in the
+demo's notice area; the component does not navigate external links by itself.
+
+Hosts can pass `scrollMode`, `onLink` and `onImage` to `CanvasReader.attach`.
+Direct integrations can use `scrollInput`, `cursor`, `pointerLeave`,
+`cancelPointer` and the activation returned by `pointerUp`; see the contract
+for the types and motion ownership semantics.

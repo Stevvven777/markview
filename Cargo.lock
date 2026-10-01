@@ -2547,6 +2547,7 @@ dependencies = [
  "markview-render",
  "markview-selection",
  "parley",
+ "percent-encoding",
  "serde",
  "serde_json",
  "wasm-bindgen",

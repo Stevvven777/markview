@@ -38,6 +38,8 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Share document hover, cursor, scrolling and gesture inertia between desktop and Web; Web adds host activation callbacks, anchors, details and selectable scroll motion ownership, defaulting to internal wheel easing.
+- Route Windows fractional wheel events through ordinary wheel easing, removing the touchpad-specific packet momentum path pending a new adaptation.
 - Share one cancellable native download service and CPU budget across images and fonts, with owned progress events and transactional installation.
 - Version pixel lookups and frame demand, move eviction outside cache locks, and wake layout through a shared latest-request mailbox.
 - Bound background CPU work by queue size and retained inputs; cancel obsolete highlight epochs and wake owners after completion.
@@ -56,6 +58,9 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Preserve the displayed Web scroll offset when changing motion mode or pressing the pointer during an animation over incomplete layout.
+- Toggle Web disclosures using the document behind the published prefix, and stop internal scroll animation when external input pans a wide block.
+- Apply external scroll travel from the displayed animation offset, preserve absolute requests through growing Web layouts, and defer End navigation until the final document height is known.
 - Move image cache writes and eviction off the shared I/O runtime so disk work does not stall transfers or cancellation.
 - Cancel pending save selections during shutdown, keep highlight preparation linear, and finish queued file creation before cancellation cleanup.
 

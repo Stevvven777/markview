@@ -2,6 +2,17 @@ use super::App;
 use crate::layout::{Rect, Scrollbar};
 use crate::state::scroll_limit;
 impl<P: super::SendEvent> App<P> {
+	pub(super) fn document_interaction(
+		&self,
+	) -> markview_selection::DocumentInteraction<'_> {
+		markview_selection::DocumentInteraction {
+			snapshot: &self.readers.session.snapshot,
+			viewport: self.view_geometry(),
+			horizontal: &self.readers.session.horizontal,
+			revision: self.readers.session.accepted_revision,
+		}
+	}
+
 	/// The document scrollbar while it is visible. Drawing and pointer
 	/// handling share this geometry, so the thumb always agrees with what a
 	/// press grabs.
@@ -30,7 +41,7 @@ impl<P: super::SendEvent> App<P> {
 				+ viewport;
 		Scrollbar::vertical(
 			track,
-			self.readers.session.scroll,
+			self.readers.session.scrolling.offset,
 			content,
 			viewport,
 			metrics,
@@ -45,31 +56,13 @@ impl<P: super::SendEvent> App<P> {
 		block: usize,
 		overflow: usize,
 	) -> Option<Scrollbar> {
-		let geometry = self.view_geometry();
-		let placed = self.readers.session.snapshot.blocks.get(block)?;
-		let o = placed.layout.overflow.get(overflow)?;
-		let metrics = self
-			.preferences
-			.values
-			.stylesheet
-			.overflow_scrollbar_metrics();
-		let track = Rect {
-			x: geometry.left + o.rect.x,
-			y: geometry.top - geometry.scroll + placed.y + o.rect.y + o.rect.h,
-			w: o.rect.w,
-			h: metrics.overflow_band(o.gutter),
-		};
-		Scrollbar::horizontal(
-			track,
-			self.readers
-				.session
-				.horizontal
-				.get(&(block, overflow))
-				.copied()
-				.unwrap_or(0.0),
-			o.content_width,
-			o.rect.w,
-			metrics,
+		self.document_interaction().overflow_bar(
+			block,
+			overflow,
+			self.preferences
+				.values
+				.stylesheet
+				.overflow_scrollbar_metrics(),
 		)
 	}
 
@@ -80,26 +73,12 @@ impl<P: super::SendEvent> App<P> {
 		x: f32,
 		y: f32,
 	) -> Option<(usize, usize, Scrollbar)> {
-		let geometry = self.view_geometry();
-		if !geometry.clip().contains(x, y) {
-			return None;
-		}
-		let (_, dy) = geometry.document_point(x, y);
-		for (block, placed) in
-			self.readers.session.snapshot.blocks.iter().enumerate()
-		{
-			let local = dy - placed.y;
-			if local < 0.0 || local > placed.layout.height {
-				continue;
-			}
-			for overflow in 0..placed.layout.overflow.len() {
-				if let Some(bar) = self.overflow_scrollbar(block, overflow)
-					&& bar.hit(x, y)
-				{
-					return Some((block, overflow, bar));
-				}
-			}
-		}
-		None
+		self.document_interaction().overflow_bar_at(
+			markview_selection::Point::new(x, y),
+			self.preferences
+				.values
+				.stylesheet
+				.overflow_scrollbar_metrics(),
+		)
 	}
 }

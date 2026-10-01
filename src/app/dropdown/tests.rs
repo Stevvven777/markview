@@ -242,7 +242,7 @@ fn arrows_move_the_highlight_and_enter_commits_it() {
 fn an_arrow_under_an_open_list_stays_in_the_list() {
 	let mut app = app_with_panel();
 	app.action(Command::ToggleDropdown(DropdownId::Language, 0));
-	let before = app.readers.session.scroll;
+	let before = app.readers.session.scrolling.offset;
 	app.key_pressed(&Key::Named(NamedKey::ArrowUp));
 	// The wrap lands on the other end of the list, whatever it holds.
 	assert_eq!(
@@ -250,7 +250,7 @@ fn an_arrow_under_an_open_list_stays_in_the_list() {
 		Command::Language(Lang::ALL.last().copied())
 	);
 	assert!(app.interaction.dropdown.is_some());
-	assert_eq!(app.readers.session.scroll, before);
+	assert_eq!(app.readers.session.scrolling.offset, before);
 }
 
 #[test]

@@ -4,7 +4,7 @@
 
 import { Markview as WasmMarkview, create as wasmCreate } from "../wasm/markview_web.js";
 import { LayoutUpdate } from "./layout-update.js";
-import type { MarkviewOptions, MarkviewStats, Modifiers } from "./types.js";
+import type { MarkviewOptions, MarkviewStats, Modifiers, ScrollMode, DocumentCursor, PointerAction } from "./types.js";
 import { parseStats, serializeOptions } from "./internal.js";
 
 /**
@@ -90,6 +90,11 @@ export class Markview {
 		this.#live().scrollBy(normalize(dy));
 	}
 
+	/** Scrolls to the final document end, waiting for pending layout. */
+	scrollToEnd(): void {
+		this.#live().scrollToEnd();
+	}
+
 	/** The current scroll position, logical px. */
 	scroll(): number {
 		return this.#live().scroll();
@@ -118,8 +123,24 @@ export class Markview {
 	}
 
 	/** Ends the press in flight. */
-	pointerUp(x: number, y: number): void {
-		this.#live().pointerUp(normalize(x), normalize(y));
+	pointerUp(x: number, y: number): PointerAction | null {
+		const action = JSON.parse(this.#live().pointerUp(normalize(x), normalize(y))) as PointerAction | null;
+		if (action?.kind === "document" && action.reflowed) this.#supersede();
+		return action;
+	}
+	/** Stops a captured gesture without activating its target. */
+	cancelPointer(): void { this.#live().cancelPointer(); }
+	/** Clears hover when the pointer leaves without a captured gesture. */
+	pointerLeave(): void { this.#live().pointerLeave(); }
+	/** The cursor at the current pointer, including scroll and reflow updates. */
+	cursor(): DocumentCursor { return this.#live().cursor() as DocumentCursor; }
+	/** Enables image activation when the host can answer it. */
+	setImagesClickable(clickable: boolean): void { this.#live().setImagesClickable(clickable); }
+	/** Cancels current animation and changes ownership of wheel motion. */
+	setScrollMode(mode: ScrollMode): void { this.#live().setScrollMode(mode); }
+	/** Feeds normalized CSS-pixel travel to the shared scrolling logic. */
+	scrollInput(dx: number, dy: number, kind: "external" | "step"): void {
+		this.#live().scrollInput(normalize(dx), normalize(dy), kind);
 	}
 
 	/** Selects the whole document. */
