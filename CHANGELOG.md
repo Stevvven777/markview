@@ -62,6 +62,12 @@ at the same level, without `[brackets]`.
 - Complete syntax highlighting synchronously in layout differential fuzzing to avoid reporting background color updates as cache divergence.
 - Keep preceding blocks unchanged when an unused link reference definition is appended, with correct Comrak table source positions and consistent `<details>` body termination.
 - Pin Comrak to our front-matter line-count fix to prevent a `<details>` parsing panic on UTF-8 documents with lone carriage returns, and keep closing-tag ranges correct after HTML normalization.
+- Add versioned MVaaC source geometry, complete TOC and a container-mounted viewer with progressive navigation and reading-position events.
+
+### Fixed
+
+- Preserve Unicode source ranges in adjacent quoted disclosures, atomic image geometry and source navigation through horizontally panned content.
+- Preserve original source ranges inside HTML disclosures and code-line offsets across CRLF input.
 - Preserve symlinked settings resources and fade loading/error feedback when previewing the document.
 
 - Load settings styles and font catalogues in the background with immediate loading feedback, cached refreshes and retry controls.
