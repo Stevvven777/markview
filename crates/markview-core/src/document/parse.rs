@@ -935,7 +935,11 @@ fn merge_text(text: RichText) -> RichText {
 			} else {
 				prev.push_str(t);
 			}
-			last.source.end = span.source.end;
+			// Comrak's source positions can run backwards across siblings — a
+			// paragraph that follows a link reference definition keeps the
+			// definition line's columns — so taking the second span's end
+			// verbatim can invert the merged range. The end only ever grows.
+			last.source.end = last.source.end.max(span.source.end);
 			merged = true;
 		}
 		if !merged {

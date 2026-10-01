@@ -1645,3 +1645,63 @@ fn an_attribute_after_a_stray_slash_does_not_split_a_character() {
 	assert_eq!(image.src, "x");
 }
 
+#[test]
+fn inline_source_ranges_never_run_backwards() {
+	// A fuzz finding: comrak reports the paragraph after a link reference
+	// definition at the definition's own columns, so a `SoftBreak` span can
+	// end before the text before it starts; merging used to move the merged
+	// range's end backwards and leave `17..16`.
+	fn check(blocks: &[Block]) {
+		for block in blocks {
+			let text: &RichText = match &block.kind {
+				BlockKind::Paragraph(text)
+				| BlockKind::Heading { text, .. } => text,
+				BlockKind::Quote { blocks, .. }
+				| BlockKind::Footnote { blocks, .. }
+				| BlockKind::FrontMatter { blocks, .. } => {
+					check(blocks);
+					continue;
+				}
+				BlockKind::Details {
+					summary, blocks, ..
+				} => {
+					for inline in summary {
+						assert!(inline.source.start <= inline.source.end);
+					}
+					check(blocks);
+					continue;
+				}
+				BlockKind::List { items, .. } => {
+					for item in items {
+						check(&item.blocks);
+					}
+					continue;
+				}
+				BlockKind::Table { rows, .. } => {
+					for row in rows {
+						for cell in row {
+							for inline in cell {
+								assert!(
+									inline.source.start <= inline.source.end
+								);
+							}
+						}
+					}
+					continue;
+				}
+				BlockKind::Code { .. } | BlockKind::Rule => continue,
+			};
+			for inline in text {
+				assert!(
+					inline.source.start <= inline.source.end,
+					"inverted inline range {:?} in {:?}",
+					inline.source,
+					block.source
+				);
+			}
+		}
+	}
+	let doc = parse("[foo]: d\n   d\n[foo]: d\nc\n[foo]: d");
+	check(&doc.blocks);
+}
+
