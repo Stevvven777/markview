@@ -16,6 +16,7 @@ mod state;
 #[cfg(target_arch = "wasm32")]
 mod api;
 mod fonts;
+mod images;
 
 #[cfg(target_arch = "wasm32")]
 pub use api::{Markview, configure_fonts, create};

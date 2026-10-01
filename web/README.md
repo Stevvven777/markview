@@ -183,3 +183,53 @@ esbuild's `file` loaders emit them as `assets/[name]-[hash].otf`/`.ttf`, and
 the demo hands those URLs to `init`. The reusable package ships no text fonts.
 Deploy the generated `assets/` directory along with the demo's JavaScript
 and wasm binary.
+
+## Host-managed asynchronous images
+
+Image loading is opt-in and separate from typography options. Supply
+`resources` to `CanvasReader.attach`, or the third argument to `Markview.create`:
+
+```ts
+import { CanvasReader, loadImageUrl } from "@markview/web";
+
+const reader = await CanvasReader.attach(canvas, {
+  markdown: "![Example](images/example.png)",
+  resources: {
+    onResources(events) {
+      for (const event of events) {
+        if (event.kind === "request") void loadImageUrl(event.request);
+      }
+    },
+  },
+});
+```
+
+The callback receives all deduplicated image requests in a microtask, including
+images outside the viewport and in closed details. A request exposes `src`, a
+unique `id`, `signal`, current `priority`, and `resolve(pixels)` / `reject(message)`.
+A custom host can queue requests, fetch authenticated bytes, then call
+`request.resolve(await decodeImage(bytes, request.signal))`. Catch asynchronous
+failures and call `reject`; the callback's return value is ignored.
+
+`priority` events report changes among `visible`, `near`, `offscreen`, and
+`unknown`, with vertical distance in CSS pixels. The host owns concurrency,
+throttling and caching. No resources are fetched when no callback is supplied.
+The URL helper accepts `{ baseUrl, requestInit }`, obeys browser CORS, and
+supports HTTP(S), Blob and `data:image/` URLs. Browser decoding displays one
+static frame and determines format support.
+`decodeImage` infers the SVG MIME type for bytes and untyped Blobs, including
+typed-array views that contain only part of a larger buffer.
+
+Pixels use `{ width, height, rgba: Uint8Array }` in straight-alpha sRGB RGBA8.
+They are copied on completion and published in batches through progressive
+reflow. Low-level hosts drive `stepPending()` and `frame()` after completion;
+`CanvasReader` already does this. An image reflow supersedes a `LayoutUpdate`,
+so that handle becomes stale. Layout completion does not wait for images, and
+`stats.pending` remains a layout counter.
+
+Resize and option changes retain requests. Replacing Markdown or destroying
+the component aborts their signals; late and duplicate results are ignored.
+Failures remain error placeholders until the document is replaced. Recoverable
+callback errors use `resources.onError`, then the reader's `onError`, or the
+console. Text fonts still load through `init({ fonts })`; Mermaid integration
+is separate from external resource loading.

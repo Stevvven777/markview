@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Add host-managed asynchronous MVaaC image requests with viewport priorities, cancellable RGBA delivery, progressive reflow and opt-in browser URL/decode helpers.
+
 - Keep an open option list inside the panel that owns it and cap its width at the panel's, so a list never overflows the window.
 - Open a full-size viewer over any image: click to open, wheel or glide to zoom about the pointer, drag to pan, click or Escape to close.
 - Add `markview-selection`, the pointer-driven selection machine taken out of `InteractionState`, so a second front end can drive the same grains, click counting and drag rules.
@@ -59,7 +61,10 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Apply horizontal overflow transforms and clipping to MVaaC image priorities, and infer SVG MIME types for byte decoding.
 - Keep scanned glyph fallback choices independent of preceding characters, reuse fallback faces when caches fill, and preserve the cached text length limit.
+
+- Preserve Web selections and held drag bases until a replacement reflow has laid out their blocks.
 - Honor a corrected MVaaC wasm URL on retry when an early font failure leaves the previous binary request pending and that request later fails.
 - Preserve the displayed Web scroll offset when changing motion mode or pressing the pointer during an animation over incomplete layout.
 - Toggle Web disclosures using the document behind the published prefix, and stop internal scroll animation when external input pans a wide block.

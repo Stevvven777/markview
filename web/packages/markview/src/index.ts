@@ -10,6 +10,8 @@ import type { CanvasReaderOptions } from "./reader.js";
 import type { MarkviewOptions, MarkviewStats, Modifiers, ScrollMode, DocumentCursor, PointerAction } from "./types.js";
 
 export { CanvasReader, LayoutUpdate, Markview };
+export { decodeImage, loadImageUrl } from "./image-loader.js";
+export type { ImagePixels, ImagePriority, ImageRequest, ImageResourceEvent, ResourceOptions } from "./resources.js";
 export type { CanvasReaderOptions, MarkviewOptions, MarkviewStats, Modifiers, ScrollMode, DocumentCursor, PointerAction };
 export type { FontSource };
 
