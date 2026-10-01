@@ -38,6 +38,81 @@ fn layout(source: &str) -> LayoutSnapshot {
 	LayoutEngine::new().layout(&document::parse(source), &plain_options())
 }
 
+#[test]
+fn triple_click_selects_paragraphs_and_cells_inside_containers() {
+	let cases: &[(&str, &[&str])] = &[
+		(
+			"- First paragraph.\n\n  Second paragraph.\n- Next item.",
+			&["First paragraph.", "Second paragraph.", "Next item."],
+		),
+		(
+			"- Outer paragraph.\n  - Nested paragraph.\n- Next item.",
+			&["Outer paragraph.", "Nested paragraph.", "Next item."],
+		),
+		(
+			"1. First paragraph.\n\n   Second paragraph.\n2. Next item.",
+			&["1. First paragraph.", "Second paragraph.", "2. Next item."],
+		),
+		(
+			"> First paragraph.\n>\n> Second paragraph.\n>\n> - Quoted item.\n> - Next item.",
+			&[
+				"First paragraph.",
+				"Second paragraph.",
+				"Quoted item.",
+				"Next item.",
+			],
+		),
+		(
+			"| Header A | Header B |\n|---|---|\n| Cell **A** | Cell B |",
+			&["Header A", "Header B", "Cell A", "Cell B"],
+		),
+		(
+			"- [x] First item.\n- [ ] Next item.",
+			&["First item.", "Next item."],
+		),
+		(
+			"- First line.  \n  Second line.\n- Next item.",
+			&["First line.\nSecond line.", "Next item."],
+		),
+		(
+			"- Before \\[x+y\\] after.\n- Next item.",
+			&["Before x+y after.", "Next item."],
+		),
+		(
+			"| A | B |\n|---|---|\n| Before \\[x+y\\] after. | Next cell. |",
+			&["A", "B", "Before x+y after.", "Next cell."],
+		),
+	];
+	for &(source, expected) in cases {
+		let snapshot = layout(source);
+		assert_eq!(snapshot.blocks.len(), 1, "{source}");
+		let placed = &snapshot.blocks[0];
+		let mut selected = Vec::new();
+		for node in &placed.layout.text {
+			for cluster in &node.clusters {
+				let hit = snapshot
+					.hit_test_text(
+						cluster.rect.x + cluster.rect.w * 0.5,
+						placed.y + cluster.rect.y + cluster.rect.h * 0.5,
+						&Default::default(),
+						1,
+					)
+					.unwrap();
+				let selection = snapshot.select_block_at(hit).unwrap();
+				let text = snapshot.extract_text(selection, 1);
+				assert!(
+					expected.contains(&text.as_str()),
+					"{source}: selected {text:?}"
+				);
+				if selected.last() != Some(&text) {
+					selected.push(text);
+				}
+			}
+		}
+		assert_eq!(selected, expected, "{source}");
+	}
+}
+
 /// A selection marks only the reading text it names. Every cluster the
 /// selection never reaches draws nothing, which is what keeps a partial
 /// selection from lighting up the rest of the document.

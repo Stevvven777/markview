@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Limit triple-click selection and dragging to the current paragraph or table cell inside lists, block quotes and other containers.
 - Preserve CJK bold in reader and PDF themes by treating the preferred Medium face as a minimum weight instead of an absolute override.
 - Ignore the pointer position reports the macOS backend repeats before every wheel event, which pulled an open list's highlight back to the hovered option between notches.
 
