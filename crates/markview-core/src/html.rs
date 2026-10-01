@@ -570,7 +570,7 @@ fn tokenize(source: &str) -> Vec<Token> {
 }
 
 /// Byte length of a `<...>` candidate, honoring quoted attribute values.
-fn tag_len(source: &str) -> Option<usize> {
+pub(crate) fn tag_len(source: &str) -> Option<usize> {
 	let mut chars = source.char_indices();
 	chars.next()?;
 	let (_, second) = chars.next()?;

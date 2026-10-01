@@ -1621,6 +1621,7 @@ fn an_edit_inside_front_matter_keeps_it_metadata() {
 	assert_eq!(metadata(&updated), metadata(&full));
 	assert!(metadata(&updated).is_some_and(|yaml| yaml.contains("Bob")));
 }
+
 #[test]
 fn an_attribute_after_a_stray_slash_does_not_split_a_character() {
 	// A fuzz finding: `<details /\u{a0}open>` reaches `has_attribute` and
@@ -1735,3 +1736,25 @@ fn a_definition_after_a_leaf_block_still_counts() {
 	assert!(text.iter().any(|i| i.style.link.as_deref() == Some("url")));
 }
 
+#[test]
+fn a_prefix_never_cuts_through_front_matter() {
+	// The opening `---` is a delimiter, not a thematic break: until the
+	// closing delimiter arrives the document puts no block there at all.
+	let source: Arc<str> = Arc::from("---\n\n---");
+	assert!(parse_prefix(&source, 1).is_none());
+	assert!(parse_prefix(&source, 3).is_none());
+	let full = parse(source.as_ref());
+	let prefix = parse_prefix(&source, 5).expect("a prefix past the closer");
+	assert_eq!(prefix.blocks, full.blocks);
+}
+
+#[test]
+fn a_prefix_keeps_the_line_ending_a_list_marker_needs() {
+	// `1.` with no line ending parses as a paragraph; with one it is the
+	// empty ordered item the document has.
+	let source: Arc<str> = Arc::from("1.\n");
+	let full = parse(source.as_ref());
+	assert!(matches!(full.blocks[0].kind, BlockKind::List { .. }));
+	let prefix = parse_prefix(&source, 1).expect("a prefix");
+	assert_eq!(prefix.blocks, full.blocks);
+}

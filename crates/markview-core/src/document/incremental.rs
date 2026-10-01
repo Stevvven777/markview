@@ -134,6 +134,25 @@ pub fn parse_prefix(source: &Arc<str>, bytes: usize) -> Option<Document> {
 	if end == 0 {
 		return None;
 	}
+	// The slice must end the line it cuts: a bare list marker with no line
+	// ending parses as a paragraph where the document's own line ends a list
+	// item.
+	let end = line_end(source, end);
+	// Front matter is one block however many blank lines it holds, and comrak
+	// only recognizes it once the closing delimiter arrives. A cut inside it
+	// would parse the opening `---` as a thematic break, which the document
+	// never puts there.
+	if let Some(close) = front_matter_close(source)
+		&& end < close
+	{
+		return None;
+	}
+	// A raw HTML block is read to its closing token, not to the cut: without
+	// the token the slice parses to ordinary text where the document has one
+	// block, or none at all.
+	if ends_in_open_html(&source[..end]) {
+		return None;
+	}
 	let blocks = prefix_blocks(source, end);
 	Some(Document {
 		source: source.clone(),
@@ -149,7 +168,7 @@ fn prefix_blocks(source: &str, end: usize) -> Vec<Block> {
 	if !bare.contains('[') {
 		return super::parse(bare.to_owned()).blocks;
 	}
-	let definitions = definitions(source);
+	let definitions = missing_definitions(source, bare);
 	if definitions.is_empty() {
 		return super::parse(bare.to_owned()).blocks;
 	}
@@ -169,6 +188,33 @@ fn prefix_blocks(source: &str, end: usize) -> Vec<Block> {
 		.into_iter()
 		.filter(|block| block.source.start < end)
 		.collect()
+}
+
+/// The definitions of `source` that `bare` does not already hold.
+///
+/// A definition inside the prefix resolves natively, and appending a second
+/// copy of it changes how the parser reads the prefix: comrak keeps a repeated
+/// footnote definition where a lone unreferenced one disappears, so the copy
+/// would add a block the document does not have.
+fn missing_definitions(source: &str, bare: &str) -> String {
+	let all = definitions(source);
+	let present = definitions(bare);
+	if present.is_empty() {
+		return all;
+	}
+	let present: Vec<&str> =
+		present.lines().filter_map(definition_label).collect();
+	all.lines()
+		.filter(|line| {
+			!definition_label(line).is_some_and(|l| present.contains(&l))
+		})
+		.map(|line| format!("{line}\n"))
+		.collect()
+}
+
+/// The `[label` of one line `definitions` emitted, for comparing two runs.
+fn definition_label(line: &str) -> Option<&str> {
+	line.split_once("]:").map(|(label, _)| label)
 }
 
 /// The reference and footnote definitions of `source`, rewritten so they can be
@@ -426,6 +472,64 @@ fn group_end(source: &str, at: usize) -> usize {
 		index += 1;
 	}
 	lines[index].end
+}
+
+/// `end`, extended over the line ending that follows it. A slice that stops at
+/// a line's content end has no terminator, and the parser can read the last
+/// line differently without one.
+fn line_end(source: &str, end: usize) -> usize {
+	match source.as_bytes().get(end) {
+		Some(b'\n') => end + 1,
+		Some(b'\r') => {
+			end + 1
+				+ usize::from(source.as_bytes().get(end + 1) == Some(&b'\n'))
+		}
+		_ => end,
+	}
+}
+
+/// The offset just past the line that closes the front matter `source` opens,
+/// or `None` when the document opens none or never closes one. Comrak closes
+/// on the next line that is exactly `---`; without one, the opening line is an
+/// ordinary thematic break and a prefix may cut through it.
+fn front_matter_close(source: &str) -> Option<usize> {
+	let lines = line_ranges(source);
+	if lines.first().map(|range| &source[range.clone()]) != Some("---") {
+		return None;
+	}
+	lines
+		.into_iter()
+		.skip(1)
+		.find(|range| &source[range.clone()] == "---")
+		.map(|range| range.end)
+}
+
+/// Whether `source` ends inside a raw HTML construct that is still open.
+///
+/// Only the last line that can open an HTML block counts: an earlier closed
+/// one does not matter, and a later ordinary line is inside the block the
+/// opener began. A `<` anywhere else is ordinary text.
+fn ends_in_open_html(source: &str) -> bool {
+	for range in line_ranges(source).iter().rev() {
+		let line = &source[range.clone()];
+		let indent = line.len() - line.trim_start_matches(' ').len();
+		if indent > 3 {
+			continue;
+		}
+		let rest = &line[indent..];
+		let Some(after) = rest.strip_prefix('<') else {
+			continue;
+		};
+		let opens = matches!(
+			after.as_bytes().first(),
+			Some(b) if b.is_ascii_alphabetic() || matches!(b, b'/' | b'!' | b'?')
+		);
+		if !opens {
+			continue;
+		}
+		return crate::html::tag_len(rest).is_none();
+	}
+	false
 }
 
 fn shift_range(range: &mut Range<usize>, delta: isize) {
