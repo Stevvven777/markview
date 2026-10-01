@@ -58,6 +58,14 @@ test = false
 doc = false
 bench = false
 
+# G1: a prefix parse versus the start of the full parse (Tier 3 differential).
+[[bin]]
+name = "prefix"
+path = "fuzz_targets/prefix.rs"
+test = false
+doc = false
+bench = false
+
 # G2: MVSS stylesheet parsing (Tier 1).
 [[bin]]
 name = "mvss"
