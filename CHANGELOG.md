@@ -61,6 +61,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep the line ending that closes an incremental parse window, so a multiline formula or code span at the window's edge gets the same source range as in a full parse.
 - Prevent shaping from hanging when an extreme font size overflows Parley's line height, including sizes supplied by a valid MVSS rule.
 - Keep thematic-break source ranges on their marker line, so trailing blank lines no longer change block IDs or make incremental and full parses disagree.
 - A raw HTML attribute scan no longer splits a multi-byte space that stripping a leading `/` exposed (`<details /\u{a0}open>`), which panicked on an 18-byte document.

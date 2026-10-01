@@ -405,6 +405,12 @@ fn reparse_reuses_the_fast_path_and_falls_back_to_a_full_parse() {
 	assert_eq!(replaced.blocks, parse(PARAGRAPHS).blocks);
 }
 
+#[test]
+fn incremental_inline_ranges_match_the_minimized_fuzz_input() {
+	let before = String::from_utf8_lossy(b"  $##o\r\x04\0\xd8$\n");
+	assert_incremental(&before, &format!("$x^2$\n{before}"));
+}
+
 const PARAGRAPHS: &str =
 	"# Title\n\nAlpha beta gamma.\n\nDelta epsilon zeta.\n\nEta theta iota.\n";
 

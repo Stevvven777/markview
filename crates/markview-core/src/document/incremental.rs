@@ -61,7 +61,8 @@ pub fn parse_incremental(
 	// block that merges with its neighbour across the change is re-parsed with
 	// it. Within those bounds `leaf_only` makes the old block boundaries hold.
 	let origin = group_start(&previous.source, changed.start);
-	let end_old = group_end(&previous.source, changed.end);
+	let end_old =
+		line_end(&previous.source, group_end(&previous.source, changed.end));
 	let end = (end_old as isize + delta) as usize;
 	let first = previous
 		.blocks
