@@ -24,7 +24,6 @@ at the same level, without `[brackets]`.
 ### Added
 
 - Add host-managed asynchronous MVaaC image requests with viewport priorities, cancellable RGBA delivery, progressive reflow and opt-in browser URL/decode helpers.
-
 - Keep an open option list inside the panel that owns it and cap its width at the panel's, so a list never overflows the window.
 - Open a full-size viewer over any image: click to open, wheel or glide to zoom about the pointer, drag to pan, click or Escape to close.
 - Add `markview-selection`, the pointer-driven selection machine taken out of `InteractionState`, so a second front end can drive the same grains, click counting and drag rules.
@@ -40,6 +39,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Align publishable web package versions with Markview and synchronize them during releases.
 - Load MVaaC text fonts from host URLs or bytes during initialization; the esbuild demo emits separate font assets, while KaTeX stays embedded in wasm.
 - Share document hover, cursor, scrolling and gesture inertia between desktop and Web; Web adds host activation callbacks, anchors, details and selectable scroll motion ownership, defaulting to internal wheel easing.
 - Route Windows fractional wheel events through ordinary wheel easing, removing the touchpad-specific packet momentum path pending a new adaptation.
@@ -47,7 +47,6 @@ at the same level, without `[brackets]`.
 - Version pixel lookups and frame demand, move eviction outside cache locks, and wake layout through a shared latest-request mailbox.
 - Bound background CPU work by queue size and retained inputs; cancel obsolete highlight epochs and wake owners after completion.
 - Own diagram face metrics under one lock and share reclaimable font names; reject chooser selections from retired catalogues.
-
 - Drive `layout_progressive` from the resumable pass, so the engine has one block loop instead of two and a cancelled prefix costs nothing to resume.
 - Split the font module into validation, directory scanning and diagram selection, so a front end reuses the parts it has and leaves the rest behind.
 - Put directory scanning behind a `font-directories` feature that is off by default, so a build for a host without a filesystem leaves every `std::fs` call out of the binary.
@@ -63,7 +62,6 @@ at the same level, without `[brackets]`.
 
 - Apply horizontal overflow transforms and clipping to MVaaC image priorities, and infer SVG MIME types for byte decoding.
 - Keep scanned glyph fallback choices independent of preceding characters, reuse fallback faces when caches fill, and preserve the cached text length limit.
-
 - Preserve Web selections and held drag bases until a replacement reflow has laid out their blocks.
 - Honor a corrected MVaaC wasm URL on retry when an early font failure leaves the previous binary request pending and that request later fails.
 - Preserve the displayed Web scroll offset when changing motion mode or pressing the pointer during an animation over incomplete layout.
@@ -71,7 +69,6 @@ at the same level, without `[brackets]`.
 - Apply external scroll travel from the displayed animation offset, preserve absolute requests through growing Web layouts, and defer End navigation until the final document height is known.
 - Move image cache writes and eviction off the shared I/O runtime so disk work does not stall transfers or cancellation.
 - Cancel pending save selections during shutdown, keep highlight preparation linear, and finish queued file creation before cancellation cleanup.
-
 - Persist restoring the last font role to Default by removing its saved override.
 - Offer Han font choosers only for definitions resolved by the selected CJK variant.
 - Draw open language menus once to preserve translucent backgrounds and avoid redundant shaping.
