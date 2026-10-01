@@ -64,6 +64,7 @@ at the same level, without `[brackets]`.
 - Keep thematic-break source ranges on their marker line, so trailing blank lines no longer change block IDs or make incremental and full parses disagree.
 - A raw HTML attribute scan no longer splits a multi-byte space that stripping a leading `/` exposed (`<details /\u{a0}open>`), which panicked on an 18-byte document.
 - A merged inline's source range only ever grows, so the out-of-order positions comrak reports after a link reference definition can no longer invert a range.
+- Treat a `[x]: y` line that continues a paragraph as text, not as a reference definition, so a prefix parse or a `<details>` body no longer resolves a link the document never had.
 - Remove deprecated TypeScript `baseUrl` options and resolve web package aliases relative to each configuration file.
 - Apply horizontal overflow transforms and clipping to MVaaC image priorities, and infer SVG MIME types for byte decoding.
 - Keep scanned glyph fallback choices independent of preceding characters, reuse fallback faces when caches fill, and preserve the cached text length limit.

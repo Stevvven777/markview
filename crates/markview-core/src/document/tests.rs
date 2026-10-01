@@ -1705,3 +1705,33 @@ fn inline_source_ranges_never_run_backwards() {
 	check(&doc.blocks);
 }
 
+#[test]
+fn a_definition_line_inside_a_paragraph_is_not_a_definition() {
+	// A fuzz finding: `[bar]: /baz` cannot interrupt the paragraph `Foo`, so
+	// it is text. Extracting it as a definition resolved `[bar]` into a link
+	// the document never had — in the prefix path and in a `<details>` body.
+	let source: Arc<str> = Arc::from("Foo\n[bar]: /baz\n\n[bar]\n");
+	let full = parse(source.as_ref());
+	let BlockKind::Paragraph(first) = &full.blocks[0].kind else {
+		panic!("expected a paragraph")
+	};
+	assert!(first.iter().all(|i| i.style.link.is_none()));
+	let prefix = parse_prefix(&source, source.len() - 1).expect("a prefix");
+	assert_eq!(prefix.blocks, full.blocks);
+}
+
+#[test]
+fn a_definition_after_a_leaf_block_still_counts() {
+	// The paragraph rule must not reject a definition that follows a block
+	// which leaves nothing open: a heading ends the paragraph, so `[x]` in
+	// the prefix resolves through the definition after the cut.
+	let source: Arc<str> = Arc::from("See [x].\n\n# H\n[x]: url\n");
+	let full = parse(source.as_ref());
+	let prefix = parse_prefix(&source, 8).expect("a prefix");
+	assert_eq!(prefix.blocks, full.blocks[..prefix.blocks.len()]);
+	let BlockKind::Paragraph(text) = &prefix.blocks[0].kind else {
+		panic!("expected a paragraph")
+	};
+	assert!(text.iter().any(|i| i.style.link.as_deref() == Some("url")));
+}
+

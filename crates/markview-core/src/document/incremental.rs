@@ -178,9 +178,18 @@ fn prefix_blocks(source: &str, end: usize) -> Vec<Block> {
 /// inside code is text the full parse would not resolve either. A definition
 /// whose destination is on the next line, or a footnote body, is not needed:
 /// the reference only needs its target and its number.
+///
+/// A link reference definition cannot interrupt a paragraph, so a `[x]: y` line
+/// that continues one is ordinary text. Taking it as a definition would let the
+/// appended copy resolve a reference the full parse leaves alone, changing a
+/// prefix block or a `<details>` body that the document itself parses as plain
+/// text.
 pub(super) fn definitions(source: &str) -> String {
 	let mut out = String::new();
 	let mut fence = None;
+	// Whether a paragraph is open going into this line, which is what decides
+	// whether a `[x]: y` line can start a definition here.
+	let mut paragraph = false;
 	// The parser's lines: a lone carriage return ends one too, so `lines()`
 	// would glue a definition onto the text before it and miss the marker.
 	let ranges = line_ranges(source);
@@ -195,27 +204,80 @@ pub(super) fn definitions(source: &str) -> String {
 			} else if fence.is_none() {
 				fence = Some(marker);
 			}
+			// A fence interrupts a paragraph, and its lines are code.
+			paragraph = false;
 			continue;
 		}
-		if fence.is_some() || indent > 0 || !rest.starts_with('[') {
+		if fence.is_some() {
 			continue;
 		}
-		let Some(close) = rest.find("]:") else {
-			continue;
-		};
-		let label = &rest[1..close];
-		let value = rest[close + 2..].trim();
-		if label.is_empty() || value.is_empty() {
-			continue;
+		if indent == 0
+			&& !paragraph
+			&& rest.starts_with('[')
+			&& let Some(close) = rest.find("]:")
+		{
+			let label = &rest[1..close];
+			let value = rest[close + 2..].trim();
+			if !label.is_empty() && !value.is_empty() {
+				out.push('[');
+				out.push_str(label);
+				out.push_str("]: ");
+				// A note needs only its label to take the number a reference
+				// expects.
+				out.push_str(if label.starts_with('^') { "x" } else { value });
+				out.push('\n');
+				paragraph = false;
+				continue;
+			}
 		}
-		out.push('[');
-		out.push_str(label);
-		out.push_str("]: ");
-		// A note needs only its label to take the number a reference expects.
-		out.push_str(if label.starts_with('^') { "x" } else { value });
-		out.push('\n');
+		paragraph = continues_paragraph(line, rest, indent, paragraph);
 	}
 	out
+}
+
+/// Whether a line leaves a paragraph open for the line after it.
+///
+/// A heading or a thematic break ends one; ordinary text, a list marker, a
+/// block quote, raw HTML and indented code all leave the next column-zero line
+/// as a continuation too, because a definition cannot interrupt any of them
+/// either. Indented text inside an open paragraph is a continuation; on its
+/// own it opens an indented code block, which the next unindented line ends.
+fn continues_paragraph(
+	line: &str,
+	rest: &str,
+	indent: usize,
+	open: bool,
+) -> bool {
+	if indent >= 4 {
+		return open;
+	}
+	!blank(line) && !atx_heading(rest) && !thematic_break(rest)
+}
+
+/// An ATX heading: one to six `#` followed by a space, a tab, or the line end.
+fn atx_heading(rest: &str) -> bool {
+	let hashes = rest.bytes().take_while(|b| *b == b'#').count();
+	(1..=6).contains(&hashes)
+		&& matches!(rest.as_bytes().get(hashes), None | Some(b' ' | b'\t'))
+}
+
+/// A thematic break: at least three of one of `*`, `-`, `_`, spaces between.
+fn thematic_break(rest: &str) -> bool {
+	let mut marker = None;
+	let mut count = 0;
+	for c in rest.chars() {
+		match c {
+			' ' | '\t' => {}
+			'*' | '-' | '_' => {
+				if *marker.get_or_insert(c) != c {
+					return false;
+				}
+				count += 1;
+			}
+			_ => return false,
+		}
+	}
+	count >= 3
 }
 
 /// Whether no reference definition or footnote needs source the cut would
