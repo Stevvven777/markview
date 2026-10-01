@@ -60,6 +60,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Remove deprecated TypeScript `baseUrl` options and resolve web package aliases relative to each configuration file.
 - Apply horizontal overflow transforms and clipping to MVaaC image priorities, and infer SVG MIME types for byte decoding.
 - Keep scanned glyph fallback choices independent of preceding characters, reuse fallback faces when caches fill, and preserve the cached text length limit.
 - Preserve Web selections and held drag bases until a replacement reflow has laid out their blocks.
