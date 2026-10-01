@@ -37,7 +37,7 @@ fn rows(settings: &ExportSettings, lang: Lang) -> Vec<Row> {
 				.enumerate()
 				.map(|(i, (scale, label))| {
 					action(
-						label,
+						*label,
 						(settings.scale - scale).abs() < 1e-3,
 						Command::ExportScale(i as u8),
 					)
@@ -53,7 +53,7 @@ fn rows(settings: &ExportSettings, lang: Lang) -> Vec<Row> {
 				.enumerate()
 				.map(|(i, (label, paper))| {
 					action(
-						label,
+						*label,
 						settings.paper.eq_ignore_ascii_case(paper),
 						Command::ExportPaper(i as u8),
 					)
@@ -83,7 +83,7 @@ fn rows(settings: &ExportSettings, lang: Lang) -> Vec<Row> {
 				.enumerate()
 				.map(|(i, (margin, label))| {
 					action(
-						label,
+						*label,
 						settings.margin == *margin,
 						Command::ExportMargin(i as u8),
 					)

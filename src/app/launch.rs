@@ -154,12 +154,17 @@ pub(super) fn run() -> Result<()> {
 		}
 		let mut renderer = pollster::block_on(Renderer::new(None))?;
 		renderer.set_stylesheet(args.options.stylesheet.clone());
-		let mut engine = LayoutEngine::new();
+		let services = std::sync::Arc::new(crate::services::Services::new(4));
+		let mut engine = LayoutEngine::with_executor(
+			services.handle.cpu.clone(),
+			std::sync::Arc::new(|| {}),
+		);
 		engine.validate_stylesheet(&args.options.stylesheet)?;
 		let doc = document::parse(read_document(path)?);
-		let mut images = crate::images::Images::new(
+		let mut images = crate::images::Images::shared(
 			args.offline,
 			args.options.fonts.clone(),
+			&services,
 		);
 		images.prepare(
 			&doc,
@@ -260,7 +265,7 @@ pub(super) fn run() -> Result<()> {
 	if let Some(warning) = &app.preferences.settings_warning {
 		warn!("{}", warning.text(app.preferences.values.lang()));
 	}
-	if let Some(error) = app.fatal {
+	if let Some(error) = app.fatal.take() {
 		bail!("{error}");
 	}
 	Ok(())

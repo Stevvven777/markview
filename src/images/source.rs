@@ -65,13 +65,12 @@ pub(super) fn bounded(reader: impl Read) -> Result<Vec<u8>> {
 	crate::net::bounded_to(reader, MAX_BYTES as u64, "Image")
 }
 
-/// Reads a source. A remote source goes through the shared pinned client and
-/// the disk cache, so `--offline` is decided here rather than at resolution.
+/// Reads local and inline sources; HTTP reads use the asynchronous cache.
 /// Only a diagram reads `theme`; every other source ignores it.
 pub(super) fn fetch(
 	source: &Source,
-	offline: bool,
-	cache: Option<&super::cache::Cache>,
+	_offline: bool,
+	_cache: Option<&super::cache::Cache>,
 	theme: &super::diagram::DiagramTheme,
 ) -> Result<Vec<u8>> {
 	match source {
@@ -82,7 +81,9 @@ pub(super) fn fetch(
 			}
 			bounded(file)
 		}
-		Source::Http(url) => super::cache::fetch_http(url, offline, cache),
+		Source::Http(_) => {
+			unreachable!("HTTP sources are read by the I/O service")
+		}
 		// The rendered SVG feeds the same rasterizer as an SVG file.
 		Source::Diagram(code) => {
 			Ok(super::diagram::svg(code, theme)?.as_bytes().to_vec())

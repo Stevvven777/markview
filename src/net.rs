@@ -7,8 +7,8 @@
 use anyhow::{Context, Result, bail};
 use reqwest::header::HeaderMap;
 use std::{
-	io::{Read, Write},
-	net::{IpAddr, SocketAddr, ToSocketAddrs},
+	io::Read,
+	net::{IpAddr, SocketAddr},
 	path::Path,
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -135,6 +135,7 @@ impl Chain {
 	}
 }
 
+#[derive(Debug)]
 pub(crate) struct Fetched {
 	pub(crate) status: u16,
 	pub(crate) headers: Headers,
@@ -199,7 +200,10 @@ pub(crate) fn permitted(ip: IpAddr) -> bool {
 ///
 /// `Url::host_str` keeps the brackets of an IPv6 literal, which does not
 /// resolve; the address itself is what a lookup and a pin need.
-fn resolved(url: &url::Url, what: &str) -> Result<(String, Vec<SocketAddr>)> {
+async fn resolved(
+	url: &url::Url,
+	what: &str,
+) -> Result<(String, Vec<SocketAddr>)> {
 	let host = match url.host() {
 		Some(url::Host::Domain(domain)) => domain.to_owned(),
 		Some(url::Host::Ipv4(addr)) => addr.to_string(),
@@ -209,8 +213,8 @@ fn resolved(url: &url::Url, what: &str) -> Result<(String, Vec<SocketAddr>)> {
 	let port = url
 		.port_or_known_default()
 		.with_context(|| format!("{what} URL has no port"))?;
-	let addrs: Vec<SocketAddr> = (host.as_str(), port)
-		.to_socket_addrs()
+	let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+		.await
 		.with_context(|| format!("Cannot resolve {what} host"))?
 		.collect();
 	if addrs.is_empty() {
@@ -232,92 +236,53 @@ fn check_scheme(url: &url::Url, what: &str) -> Result<()> {
 	Ok(())
 }
 
-/// Builds a client whose connection can only go to a public address of `url`,
-/// naming the fetched resource `what` in the errors.
-fn pinned_client(
-	url: &url::Url,
-	what: &str,
-) -> Result<reqwest::blocking::Client> {
-	check_scheme(url, what)?;
-	let (host, addrs) = resolved(url, what)?;
-	reqwest::blocking::Client::builder()
-		.timeout(Duration::from_secs(15))
-		.connect_timeout(Duration::from_secs(5))
-		.referer(false)
-		.redirect(reqwest::redirect::Policy::none())
-		.resolve_to_addrs(&host, &addrs)
-		.build()
-		.with_context(|| format!("{what} client"))
-}
-
 /// A transfer that may make no progress at all before it is abandoned.
 ///
 /// A whole-request timeout cannot serve a font archive: the same client that
 /// gives an image fifteen seconds would cut a hundred-megabyte transfer off in
 /// the middle. `read_timeout` bounds the silence between bytes instead.
 const STALL_TIMEOUT: Duration = Duration::from_secs(60);
-/// How often a cancelled transfer is noticed, even while it is stalled.
-const CANCEL_POLL: Duration = Duration::from_millis(150);
-
-/// Streams a document-controlled URL into a file.
-///
-/// Only the async client carries a read timeout, so one small runtime drives
-/// this path; the image cache keeps its blocking client and its own limits.
-/// `what` names the resource the transfers are for, so a font failure is not
-/// reported as an image one.
+/// A stateless transport driven by the application I/O service.
 pub(crate) struct Downloader {
-	runtime: tokio::runtime::Runtime,
 	what: &'static str,
 }
-
 impl Downloader {
-	pub(crate) fn new(what: &'static str) -> Result<Self> {
-		let runtime = tokio::runtime::Builder::new_multi_thread()
-			.worker_threads(1)
-			.enable_all()
-			.build()
-			.context("Download runtime")?;
-		Ok(Self { runtime, what })
+	pub(crate) fn new(what: &'static str) -> Self {
+		Self { what }
 	}
-
-	/// Streams `url` into `path`, bounded by `cap` bytes, reporting the bytes
-	/// written so far and the optional total after every chunk. `cancel` is polled throughout, so a
-	/// stalled transfer still stops promptly.
-	pub(crate) fn fetch(
+	pub(crate) async fn fetch(
 		&self,
 		url: &str,
 		path: &Path,
 		cap: u64,
-		progress: &mut dyn FnMut(u64, Option<u64>),
-		cancel: &dyn Fn() -> bool,
+		progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+		cancel: &tokio_util::sync::CancellationToken,
 	) -> Result<()> {
-		self.runtime
-			.block_on(fetch_into(url, path, cap, progress, cancel, self.what))
+		fetch_into(url, path, cap, progress, self.what, cancel).await
 	}
-
-	/// How long `url` takes to answer a one-byte range request.
-	pub(crate) fn probe(&self, url: &str) -> Result<Duration> {
-		self.runtime.block_on(probe_once(url, self.what))
+	pub(crate) async fn probe(&self, url: &str) -> Result<Duration> {
+		probe_once(url, self.what).await
 	}
 }
 
-/// A client pinned to the addresses `url`'s host resolved to, as
-/// [`pinned_client`] does for the blocking paths.
-fn pinned_async_client(
+/// A client pinned to the addresses resolved and validated for this hop.
+async fn pinned_async_client(
 	url: &url::Url,
 	read_timeout: Duration,
 	total_timeout: Option<Duration>,
 	what: &str,
 ) -> Result<reqwest::Client> {
 	check_scheme(url, what)?;
-	let (host, addrs) = resolved(url, what)?;
+	let (host, addrs) = resolved(url, what).await?;
 	let mut builder = reqwest::Client::builder()
 		.connect_timeout(Duration::from_secs(5))
 		.read_timeout(read_timeout)
 		.referer(false)
-		.user_agent(USER_AGENT)
 		.redirect(reqwest::redirect::Policy::none())
 		.resolve_to_addrs(&host, &addrs);
+	if what == "Font" {
+		builder = builder.user_agent(USER_AGENT);
+	}
 	if let Some(total) = total_timeout {
 		builder = builder.timeout(total);
 	}
@@ -341,23 +306,20 @@ async fn fetch_into(
 	url: &str,
 	path: &Path,
 	cap: u64,
-	progress: &mut dyn FnMut(u64, Option<u64>),
-	cancel: &dyn Fn() -> bool,
+	progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
 	what: &str,
+	cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<()> {
 	let mut current =
 		url::Url::parse(url).with_context(|| format!("Invalid {what} URL"))?;
 	for _ in 0..=MAX_REDIRECTS {
-		// A cancelled transfer must not even open a connection, and a server
-		// that accepts one and then stalls before its headers must not hold
-		// the cancellation off until the stall timeout.
-		if cancel() {
-			bail!("Cancelled");
-		}
-		let client = pinned_async_client(&current, STALL_TIMEOUT, None, what)?;
 		let response = tokio::select! {
-			response = client.get(current.clone()).send() => response?,
-			_ = wait_for_cancel(cancel) => bail!("Cancelled"),
+			biased;
+			_ = cancel.cancelled() => bail!("Cancelled"),
+			response = async {
+				let client = pinned_async_client(&current, STALL_TIMEOUT, None, what).await?;
+				Ok::<_, anyhow::Error>(client.get(current.clone()).send().await?)
+			} => response?,
 		};
 		if response.status().is_redirection() {
 			current = next_hop(&current, &response)?;
@@ -370,12 +332,7 @@ async fn fetch_into(
 		{
 			bail!("File exceeds {} MiB", cap / (1024 * 1024));
 		}
-		let body = stream_body(response, path, cap, total, progress);
-		tokio::pin!(body);
-		tokio::select! {
-			result = &mut body => result?,
-			_ = wait_for_cancel(cancel) => bail!("Cancelled"),
-		}
+		stream_body(response, path, cap, total, progress, cancel).await?;
 		return Ok(());
 	}
 	bail!("{what} redirects to too many locations")
@@ -386,20 +343,41 @@ async fn stream_body(
 	path: &Path,
 	cap: u64,
 	total: Option<u64>,
-	progress: &mut dyn FnMut(u64, Option<u64>),
+	progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+	cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<()> {
-	let mut file = std::fs::File::create(path)
+	use tokio::io::AsyncWriteExt;
+	if cancel.is_cancelled() {
+		bail!("Cancelled");
+	}
+	// Await non-abortable file operations before the caller releases cleanup ownership.
+	let mut file = tokio::fs::File::create(path)
+		.await
 		.with_context(|| format!("Cannot write {}", path.display()))?;
 	let mut written = 0u64;
-	while let Some(chunk) = response.chunk().await? {
+	loop {
+		let chunk = tokio::select! {
+			biased;
+			_ = cancel.cancelled() => bail!("Cancelled"),
+			chunk = response.chunk() => chunk?,
+		};
+		let Some(chunk) = chunk else {
+			break;
+		};
 		written = written.saturating_add(chunk.len() as u64);
 		if written > cap {
 			bail!("File exceeds {} MiB", cap / (1024 * 1024));
 		}
-		file.write_all(&chunk)?;
+		file.write_all(&chunk).await?;
+		if cancel.is_cancelled() {
+			bail!("Cancelled");
+		}
 		progress(written, total);
 	}
-	file.sync_all()?;
+	file.sync_all().await?;
+	if cancel.is_cancelled() {
+		bail!("Cancelled");
+	}
 	// A body shorter than its own announced length is a truncated transfer,
 	// which must not be mistaken for a complete file.
 	if let Some(total) = total
@@ -408,12 +386,6 @@ async fn stream_body(
 		bail!("Truncated transfer");
 	}
 	Ok(())
-}
-
-async fn wait_for_cancel(cancel: &dyn Fn() -> bool) {
-	while !cancel() {
-		tokio::time::sleep(CANCEL_POLL).await;
-	}
 }
 
 async fn probe_once(url: &str, what: &str) -> Result<Duration> {
@@ -426,7 +398,8 @@ async fn probe_once(url: &str, what: &str) -> Result<Duration> {
 			Duration::from_secs(5),
 			Some(Duration::from_secs(10)),
 			what,
-		)?;
+		)
+		.await?;
 		let response = client
 			.get(current.clone())
 			.header(reqwest::header::RANGE, "bytes=0-0")
@@ -451,7 +424,7 @@ async fn probe_once(url: &str, what: &str) -> Result<Duration> {
 /// [`Fetched::freshness_cap`] is the earliest instant the chain allows.
 /// `what` names the resource being fetched, so an error names the transfer
 /// that failed rather than the one this transport was first built for.
-pub(crate) fn get(
+pub(crate) async fn get(
 	url: &str,
 	validators: &Validators,
 	max: u64,
@@ -461,7 +434,13 @@ pub(crate) fn get(
 		url::Url::parse(url).with_context(|| format!("Invalid {what} URL"))?;
 	let mut chain = Chain::default();
 	for _ in 0..=MAX_REDIRECTS {
-		let client = pinned_client(&current, what)?;
+		let client = pinned_async_client(
+			&current,
+			Duration::from_secs(15),
+			Some(Duration::from_secs(15)),
+			what,
+		)
+		.await?;
 		let mut request = client.get(current.clone());
 		// Validators answer for one resource only: they go to the URL that
 		// supplied them, and a request to any other hop is unconditional.
@@ -477,7 +456,7 @@ pub(crate) fn get(
 				);
 			}
 		}
-		let response = request.send()?;
+		let response = request.send().await?;
 		let status = response.status();
 		// `304` is a redirection status but carries no `Location`; it is the
 		// answer a conditional request is looking for.
@@ -506,7 +485,17 @@ pub(crate) fn get(
 			continue;
 		}
 		let headers = headers(response.headers());
-		let body = bounded_to(response.error_for_status()?, max, what)?;
+		let mut response = response.error_for_status()?;
+		if response.content_length().is_some_and(|length| length > max) {
+			bail!("{what} exceeds its byte limit");
+		}
+		let mut body = Vec::new();
+		while let Some(chunk) = response.chunk().await? {
+			if chunk.len() as u64 > max.saturating_sub(body.len() as u64) {
+				bail!("{what} exceeds its byte limit");
+			}
+			body.extend_from_slice(&chunk);
+		}
 		return Ok(Fetched {
 			status: status.as_u16(),
 			headers,
@@ -645,9 +634,10 @@ pub(crate) fn bounded_to(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::io::Write;
 
-	#[test]
-	fn streamed_progress_carries_the_response_size_when_known() {
+	#[tokio::test]
+	async fn streamed_progress_carries_the_response_size_when_known() {
 		for known in [false, true] {
 			let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
 			let address = listener.local_addr().unwrap();
@@ -672,8 +662,7 @@ mod tests {
 			let dir = tempfile::tempdir().unwrap();
 			let path = dir.path().join("download");
 			let mut events = Vec::new();
-			let downloader = Downloader::new("Font").unwrap();
-			downloader.runtime.block_on(async {
+			{
 				let response = reqwest::Client::builder()
 					.no_proxy()
 					.build()
@@ -691,14 +680,94 @@ mod tests {
 					&mut |bytes, total| {
 						events.push((bytes, total));
 					},
+					&tokio_util::sync::CancellationToken::new(),
 				)
 				.await
 				.unwrap();
-			});
+			}
 			server.join().unwrap();
 			assert_eq!(events.last(), Some(&(6, known.then_some(6))));
 			assert_eq!(std::fs::read(path).unwrap(), b"abcdef");
 		}
+	}
+
+	#[test]
+	fn cancelling_a_queued_file_creation_waits_for_cleanup_ownership() {
+		let runtime = tokio::runtime::Builder::new_current_thread()
+			.enable_all()
+			.max_blocking_threads(1)
+			.build()
+			.unwrap();
+		let scenario = async {
+			use tokio::io::{AsyncReadExt, AsyncWriteExt};
+			let listener =
+				tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+			let address = listener.local_addr().unwrap();
+			let server = tokio::spawn(async move {
+				let (mut socket, _) = listener.accept().await.unwrap();
+				let mut request = [0; 4096];
+				assert!(socket.read(&mut request).await.unwrap() > 0);
+				let response = concat!(
+					"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n",
+					"Connection: close\r\n\r\nabcdef"
+				);
+				socket.write_all(response.as_bytes()).await.unwrap();
+			});
+			let response = reqwest::Client::builder()
+				.no_proxy()
+				.build()
+				.unwrap()
+				.get(format!("http://{address}"))
+				.send()
+				.await
+				.unwrap();
+			let directory = tempfile::tempdir().unwrap();
+			let cleanup = tempfile::NamedTempFile::new_in(directory.path())
+				.unwrap()
+				.into_temp_path();
+			let path = cleanup.to_path_buf();
+			std::fs::remove_file(&path).unwrap();
+			let (entered, started) = tokio::sync::oneshot::channel();
+			let (release, gate) = std::sync::mpsc::channel();
+			let blocker = tokio::task::spawn_blocking(move || {
+				entered.send(()).unwrap();
+				let _ = gate.recv();
+			});
+			started.await.unwrap();
+			let cancel = tokio_util::sync::CancellationToken::new();
+			let token = cancel.clone();
+			let output = path.clone();
+			let transfer = async move {
+				let _cleanup = cleanup;
+				stream_body(
+					response,
+					&output,
+					1024,
+					Some(6),
+					&mut |_, _| panic!("cancelled transfer progressed"),
+					&token,
+				)
+				.await
+			};
+			tokio::pin!(transfer);
+			let initially_pending =
+				futures_util::poll!(transfer.as_mut()).is_pending();
+			cancel.cancel();
+			let cancelled = futures_util::poll!(transfer.as_mut());
+			let cancelled_pending = cancelled.is_pending();
+			release.send(()).unwrap();
+			let result = match cancelled {
+				std::task::Poll::Pending => transfer.await,
+				std::task::Poll::Ready(result) => result,
+			};
+			blocker.await.unwrap();
+			server.await.unwrap();
+			assert!(initially_pending && cancelled_pending);
+			assert_eq!(result.unwrap_err().to_string(), "Cancelled");
+			assert!(!path.exists(), "cancelled creation left an orphaned file");
+			assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+		};
+		runtime.block_on(scenario);
 	}
 
 	#[test]
@@ -743,24 +812,28 @@ mod tests {
 		);
 	}
 
-	#[test]
-	fn errors_name_the_resource_the_caller_asked_for() {
+	#[tokio::test]
+	async fn errors_name_the_resource_the_caller_asked_for() {
 		// The transport is shared, so a font failure must not be reported
 		// as an image one.
 		let local = url::Url::parse("file:///fonts/a.ttf").unwrap();
-		let message = pinned_client(&local, "Font").unwrap_err().to_string();
+		let message = pinned_async_client(&local, STALL_TIMEOUT, None, "Font")
+			.await
+			.unwrap_err()
+			.to_string();
 		assert!(message.contains("Font"), "{message}");
 		assert!(!message.contains("Image"), "{message}");
 		let message = get("notaurl", &Validators::default(), 1024, "Font")
-			.err()
-			.expect("an unparsable URL is refused")
+			.await
+			.expect_err("an unparsable URL is refused")
 			.to_string();
 		assert!(message.contains("Font"), "{message}");
 		assert!(!message.contains("Image"), "{message}");
 		// Fonts use the streaming downloader rather than `get`, so the
 		// name it was built with has to reach its own errors too.
-		let downloader = Downloader::new("Font").unwrap();
-		let message = downloader.probe("notaurl").unwrap_err().to_string();
+		let downloader = Downloader::new("Font");
+		let message =
+			downloader.probe("notaurl").await.unwrap_err().to_string();
 		assert!(message.contains("Font"), "{message}");
 		assert!(!message.contains("Image"), "{message}");
 	}

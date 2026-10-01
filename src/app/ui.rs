@@ -16,6 +16,9 @@ impl<P: super::SendEvent> App<P> {
 	}
 
 	pub(super) fn chrome(&mut self) -> Chrome<'_> {
+		if self.interaction.fonts_open() {
+			self.font_panel.refresh_choices(&self.fonts_config);
+		}
 		let (width, height, _) = self.dimensions();
 		let scrollbar = self.document_scrollbar();
 		let remote_notice = self.remote_notice();

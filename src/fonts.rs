@@ -11,18 +11,17 @@ use markview_core::{
 	style::{FontArchive, FontFamily, FontFile, FontSource},
 };
 use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::sync::{Arc, Mutex};
 use std::{
-	collections::BTreeMap,
+	collections::{BTreeMap, HashMap, HashSet},
 	fs,
 	io::{self, Read},
 	path::{Path, PathBuf},
-	sync::{
-		Arc, Condvar, Mutex,
-		atomic::{AtomicUsize, Ordering},
-		mpsc::{Sender, channel},
-	},
+	sync::atomic::{AtomicUsize, Ordering},
 	time::{Duration, Instant},
 };
+use tokio_util::sync::CancellationToken;
 
 /// The largest single downloaded font accepted.
 pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -35,8 +34,6 @@ pub const MAX_MEMBERS: usize = 4096;
 /// Above this the reader warns about the download directory, but never
 /// refuses: the number only exists to explain where the disk went.
 pub const SOFT_TOTAL_BYTES: u64 = 1024 * 1024 * 1024;
-/// Transfers in flight at once unless `--jobs` says otherwise.
-pub const DEFAULT_JOBS: usize = 4;
 /// Limit redraws while still reporting slow transfers regularly.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -329,142 +326,715 @@ pub struct Summary {
 	pub cancelled: Vec<String>,
 }
 
-/// Fetches bytes, so the engine can be exercised without a network.
+/// An injectable async transport. Futures stay on the shared I/O service.
 pub trait Transport: Sync {
-	/// Streams one URL into `path`, reporting bytes written and the optional total.
 	fn fetch(
 		&self,
 		url: &str,
 		path: &Path,
 		cap: u64,
-		progress: &mut dyn FnMut(u64, Option<u64>),
-		cancel: &dyn Fn() -> bool,
-	) -> Result<()>;
-	/// The time a URL takes to answer a one-byte range request.
-	fn probe(&self, url: &str) -> Result<Duration>;
+		progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+		cancel: &CancellationToken,
+	) -> impl std::future::Future<Output = Result<()>> + Send;
+	fn probe(
+		&self,
+		url: &str,
+	) -> impl std::future::Future<Output = Result<Duration>> + Send;
 }
-
 impl Transport for crate::net::Downloader {
-	fn fetch(
+	async fn fetch(
 		&self,
 		url: &str,
 		path: &Path,
 		cap: u64,
-		progress: &mut dyn FnMut(u64, Option<u64>),
-		cancel: &dyn Fn() -> bool,
+		progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+		cancel: &CancellationToken,
 	) -> Result<()> {
 		crate::net::Downloader::fetch(self, url, path, cap, progress, cancel)
+			.await
 	}
-	fn probe(&self, url: &str) -> Result<Duration> {
-		crate::net::Downloader::probe(self, url)
+	async fn probe(&self, url: &str) -> Result<Duration> {
+		crate::net::Downloader::probe(self, url).await
 	}
 }
 
-/// Downloads `families` into `dir`, reporting after every change.
-///
-/// Families run beside one another; inside one family the mirrors are tried in
-/// order and only the chosen one may run its files at once. A source is all or
-/// nothing: when it fails, what it wrote in this run is removed before the
-/// next mirror is tried, so a failed mirror never leaves half a family behind.
-pub fn run(
+#[cfg(test)]
+type CancelPredicate = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
+struct Download<'a, T> {
+	transport: &'a T,
+	services: &'a crate::services::Handle,
+	cancel: &'a Cancellation,
+}
+
+#[derive(Clone)]
+struct Cancellation {
+	token: CancellationToken,
+	#[cfg(test)]
+	predicate: Option<(String, CancelPredicate)>,
+}
+impl Cancellation {
+	fn is_cancelled(&self) -> bool {
+		#[cfg(test)]
+		if let Some((id, predicate)) = &self.predicate
+			&& predicate(id)
+		{
+			self.token.cancel();
+		}
+		self.token.is_cancelled()
+	}
+}
+
+pub async fn run_async<T: Transport>(
 	families: &[FontFamily],
 	dir: &Path,
-	transport: &dyn Transport,
-	jobs: usize,
-	cancel: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-	report: &mut dyn FnMut(Progress),
+	transport: &T,
+	services: &crate::services::Handle,
+	cancels: HashMap<String, CancellationToken>,
+	report: impl FnMut(Progress) + Send,
 ) -> Summary {
-	if families.is_empty() {
-		return Summary::default();
-	}
-	if let Err(error) = fs::create_dir_all(dir) {
-		// Every family failed for the same reason; reporting an empty summary
-		// would let a permission error look like a finished job.
-		let reason = format!("Cannot create {}: {error}", dir.display());
-		log::warn!("Fonts: {reason}");
-		return Summary {
-			requested: families
-				.iter()
-				.map(|family| family.id.clone())
-				.collect(),
-			failed: families
-				.iter()
-				.map(|family| (family.id.clone(), reason.clone()))
-				.collect(),
-			..Default::default()
-		};
-	}
-	let gate = Arc::new(Gate::new(jobs.max(1)));
-	let latencies = probe_hosts(families, transport, &gate, &cancel);
-	let (tx, rx) = channel::<String>();
-	let states: BTreeMap<String, Arc<Mutex<Progress>>> = families
+	let cancels = cancels
+		.into_iter()
+		.map(|(id, token)| {
+			(
+				id,
+				Cancellation {
+					token,
+					#[cfg(test)]
+					predicate: None,
+				},
+			)
+		})
+		.collect();
+	run_operation(families, dir, transport, services, cancels, report).await
+}
+
+#[cfg(test)]
+fn run<T: Transport>(
+	families: &[FontFamily],
+	dir: &Path,
+	transport: &T,
+	jobs: usize,
+	predicate: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+	report: &mut (dyn FnMut(Progress) + Send),
+) -> Summary {
+	let services = crate::services::Services::new(jobs);
+	let cancels = families
 		.iter()
 		.map(|family| {
 			(
 				family.id.clone(),
-				Arc::new(Mutex::new(Progress::queued(&family.id))),
+				Cancellation {
+					token: services.handle.cancel.child_token(),
+					predicate: Some((family.id.clone(), predicate.clone())),
+				},
 			)
 		})
 		.collect();
+	tokio::runtime::Builder::new_current_thread()
+		.enable_all()
+		.build()
+		.unwrap()
+		.block_on(run_operation(
+			families,
+			dir,
+			transport,
+			&services.handle,
+			cancels,
+			report,
+		))
+}
+
+#[derive(Clone)]
+struct Reporter {
+	id: String,
+	run: usize,
+	attempt: usize,
+	tx: tokio::sync::mpsc::Sender<Event>,
+}
+struct Event {
+	id: String,
+	run: usize,
+	attempt: usize,
+	change: Change,
+}
+enum Change {
+	Attempt {
+		total: usize,
+		note: Option<String>,
+	},
+	File {
+		file: usize,
+		bytes: u64,
+		total: Option<u64>,
+		done: bool,
+		phase: Phase,
+		name: String,
+	},
+	Terminal {
+		phase: Phase,
+		note: Option<String>,
+	},
+}
+impl Reporter {
+	fn event(&self, change: Change) -> Event {
+		Event {
+			id: self.id.clone(),
+			run: self.run,
+			attempt: self.attempt,
+			change,
+		}
+	}
+	fn send(
+		&self,
+		change: Change,
+	) -> impl std::future::Future<Output = ()> + Send + use<> {
+		let tx = self.tx.clone();
+		let event = self.event(change);
+		async move {
+			let _ = tx.send(event).await;
+		}
+	}
+	async fn fetch<T: Transport>(
+		&self,
+		file: usize,
+		name: &str,
+		url: &str,
+		path: &Path,
+		cap: u64,
+		download: &Download<'_, T>,
+	) -> Result<u64> {
+		let Download {
+			transport,
+			services,
+			cancel,
+		} = *download;
+		if cancel.is_cancelled() {
+			bail!("Cancelled");
+		}
+		let _permit = services.permit(&cancel.token).await?;
+		let mut last_report: Option<Instant> = None;
+		transport
+			.fetch(
+				url,
+				path,
+				cap,
+				&mut |bytes, total| {
+					if last_report
+						.is_some_and(|at| at.elapsed() < PROGRESS_INTERVAL)
+						&& total != Some(bytes)
+					{
+						return;
+					}
+					let _ = self.tx.try_send(self.event(Change::File {
+						file,
+						bytes,
+						total,
+						done: false,
+						phase: Phase::Downloading,
+						name: name.to_owned(),
+					}));
+					last_report = Some(Instant::now());
+				},
+				&cancel.token,
+			)
+			.await?;
+		drop(_permit);
+		let bytes = tokio::fs::metadata(path).await?.len();
+		self.send(Change::File {
+			file,
+			bytes,
+			total: Some(bytes),
+			done: false,
+			phase: Phase::Downloading,
+			name: name.to_owned(),
+		})
+		.await;
+		Ok(bytes)
+	}
+}
+#[derive(Default)]
+struct FileProgress {
+	bytes: u64,
+	fraction: f64,
+	done: bool,
+}
+struct FamilyProgress {
+	value: Progress,
+	attempt: usize,
+	files: HashMap<usize, FileProgress>,
+}
+
+async fn run_operation<T: Transport>(
+	families: &[FontFamily],
+	dir: &Path,
+	transport: &T,
+	services: &crate::services::Handle,
+	cancels: HashMap<String, Cancellation>,
+	mut report: impl FnMut(Progress) + Send,
+) -> Summary {
+	use futures_util::{FutureExt, StreamExt, stream::FuturesUnordered};
+	if families.is_empty() {
+		return Summary::default();
+	}
 	let mut summary = Summary {
-		requested: families.iter().map(|family| family.id.clone()).collect(),
+		requested: families.iter().map(|f| f.id.clone()).collect(),
 		..Default::default()
 	};
-	std::thread::scope(|scope| {
-		let mut handles = Vec::new();
-		for family in families {
-			let reporter = Reporter {
-				id: family.id.clone(),
-				state: states[&family.id].clone(),
-				tx: tx.clone(),
-			};
-			let family = family.clone();
-			let dir = dir.to_owned();
-			let gate = gate.clone();
-			let latencies = latencies.clone();
-			let cancel = cancel.clone();
-			handles.push((
-				family.id.clone(),
-				scope.spawn(move || {
-					download_family(
-						&family, &dir, transport, &gate, &latencies, &reporter,
-						&*cancel,
-					)
-				}),
-			));
+	if let Err(error) = tokio::fs::create_dir_all(dir).await {
+		summary.failed = families
+			.iter()
+			.map(|f| {
+				(
+					f.id.clone(),
+					format!("Cannot create {}: {error}", dir.display()),
+				)
+			})
+			.collect();
+		for (id, reason) in &summary.failed {
+			report(Progress {
+				phase: Phase::Failed,
+				note: Some(reason.clone()),
+				..Progress::queued(id)
+			});
 		}
-		// Every thread owns a clone, so the loop ends exactly when they all
-		// do, and no report is lost while one is still running.
-		drop(tx);
-		while let Ok(id) = rx.recv() {
-			let Some(state) = states.get(&id) else {
-				continue;
-			};
-			let Some(snapshot) =
-				markview_core::sync::available(state, "Font progress")
-					.map(|state| state.clone())
-			else {
-				continue;
-			};
-			report(snapshot);
-		}
-		for (id, handle) in handles {
-			match handle.join() {
-				Ok(Outcome::Stored { bytes }) => {
-					summary.stored += 1;
-					summary.bytes += bytes;
-				}
-				Ok(Outcome::Failed(reason)) => {
-					summary.failed.push((id, reason))
-				}
-				Ok(Outcome::Cancelled) => summary.cancelled.push(id),
-				Err(_) => {
-					summary.failed.push((id, "Download thread panicked".into()))
-				}
+		return summary;
+	}
+	static RUN: AtomicUsize = AtomicUsize::new(1);
+	let run = RUN.fetch_add(1, Ordering::Relaxed);
+	let mut probes = HashMap::new();
+	for family in families {
+		for source in &family.source {
+			if let Some(url) = first_url(source) {
+				probes.entry(host_of(url)).or_insert_with(|| {
+					let url = url.to_owned();
+					async move {
+						let Ok(_permit) =
+							services.permit(&services.cancel).await
+						else {
+							return Duration::MAX;
+						};
+						tokio::select! {
+							_ = services.cancel.cancelled() => Duration::MAX,
+							latency = transport.probe(&url) => latency.unwrap_or(Duration::MAX),
+						}
+					}
+					.boxed()
+					.shared()
+				});
 			}
 		}
-	});
+	}
+	let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+	let mut states: HashMap<_, _> = families
+		.iter()
+		.map(|f| {
+			let value = Progress::queued(&f.id);
+			report(value.clone());
+			(
+				f.id.clone(),
+				FamilyProgress {
+					value,
+					attempt: 0,
+					files: HashMap::new(),
+				},
+			)
+		})
+		.collect();
+	let mut running = FuturesUnordered::new();
+	for family in families {
+		let reporter = Reporter {
+			id: family.id.clone(),
+			run,
+			attempt: 0,
+			tx: tx.clone(),
+		};
+		let cancel =
+			cancels
+				.get(&family.id)
+				.cloned()
+				.unwrap_or_else(|| Cancellation {
+					token: services.cancel.child_token(),
+					#[cfg(test)]
+					predicate: None,
+				});
+		let probes = probes.clone();
+		running.push(
+			async move {
+				let operation = async {
+					if cancel.is_cancelled() {
+						return Outcome::Cancelled;
+					}
+					let mut latencies = BTreeMap::new();
+					let mut needed = FuturesUnordered::new();
+					for source in &family.source {
+						if let Some(url) = first_url(source) {
+							let host = host_of(url);
+							let probe = probes[&host].clone();
+							needed.push(async move { (host, probe.await) });
+						}
+					}
+					loop {
+						tokio::select! {
+							biased;
+							_ = cancel.token.cancelled() => return Outcome::Cancelled,
+							next = needed.next() => match next {
+								Some((host, latency)) => { latencies.insert(host, latency); }
+								None => break,
+							}
+						}
+					}
+					download_family(
+						family, dir, transport, services, &latencies,
+						&reporter, &cancel,
+					)
+					.await
+				};
+				let outcome = std::panic::AssertUnwindSafe(operation)
+					.catch_unwind()
+					.await
+					.unwrap_or_else(|_| {
+						Outcome::Failed("Download operation failed".into())
+					});
+				let (phase, note) = match &outcome {
+					Outcome::Stored { .. } => (Phase::Done, None),
+					Outcome::Failed(reason) => {
+						(Phase::Failed, Some(reason.clone()))
+					}
+					Outcome::Cancelled => (Phase::Cancelled, None),
+				};
+				// Terminal events apply to the latest attempt, independently of file events.
+				let mut terminal = reporter.clone();
+				terminal.attempt = usize::MAX;
+				terminal.send(Change::Terminal { phase, note }).await;
+				(family.id.clone(), outcome)
+			}
+			.boxed(),
+		);
+	}
+	drop(tx);
+	let mut dirty = HashSet::new();
+	let mut tick = tokio::time::interval(PROGRESS_INTERVAL);
+	loop {
+		tokio::select! {
+			event = rx.recv() => {
+				let Some(event) = event else { if running.is_empty() { break; } else { continue; } };
+				if event.run != run { continue; }
+				let Some(state) = states.get_mut(&event.id) else { continue; };
+				match event.change {
+					Change::Attempt { total, note } => {
+						if event.attempt < state.attempt { continue; }
+						state.attempt = event.attempt; state.files.clear();
+						state.value = Progress { phase: Phase::Downloading, files_total: total, note, ..Progress::queued(&event.id) };
+						dirty.insert(event.id);
+					}
+					Change::File { file, bytes, total, done, phase, name } => {
+						if event.attempt != state.attempt { continue; }
+						state.files.insert(file, FileProgress { bytes, fraction: if done { 1.0 } else { total.filter(|n| *n > 0).map_or(0.0, |n| (bytes as f64 / n as f64).min(1.0)) }, done });
+						state.value.bytes_done = state.files.values().map(|f| f.bytes).sum();
+						state.value.files_progress = state.files.values().map(|f| f.fraction).sum();
+						state.value.files_done = state.files.values().filter(|f| f.done).count();
+						state.value.phase = phase; state.value.current = Some(name);
+						// Finished files are useful immediately, even beside a stalled transfer.
+						if done { report(state.value.clone()); dirty.remove(&event.id); } else { dirty.insert(event.id); }
+					}
+					Change::Terminal { phase, note } => {
+						state.value.phase = phase; state.value.note = note; state.value.current = None;
+						report(state.value.clone()); dirty.remove(&event.id);
+					}
+				}
+			}
+			Some((id, outcome)) = running.next(), if !running.is_empty() => {
+				match outcome {
+					Outcome::Stored { bytes } => { summary.stored += 1; summary.bytes += bytes; }
+					Outcome::Failed(reason) => summary.failed.push((id, reason)),
+					Outcome::Cancelled => summary.cancelled.push(id),
+				}
+			}
+			_ = tick.tick() => { for id in dirty.drain() { report(states[&id].value.clone()); } }
+		}
+	}
+	summary.failed.sort();
+	summary.cancelled.sort();
 	summary
+}
+
+fn first_url(source: &FontSource) -> Option<&str> {
+	source
+		.files
+		.first()
+		.map(FontFile::url)
+		.or_else(|| source.archives.first().map(|a| a.url.as_str()))
+}
+fn host_of(url: &str) -> String {
+	url::Url::parse(url)
+		.ok()
+		.and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+		.unwrap_or_default()
+}
+async fn download_family<T: Transport>(
+	family: &FontFamily,
+	dir: &Path,
+	transport: &T,
+	services: &crate::services::Handle,
+	latencies: &BTreeMap<String, Duration>,
+	reporter: &Reporter,
+	cancel: &Cancellation,
+) -> Outcome {
+	let mut sources: Vec<_> = family.source.iter().collect();
+	sources.sort_by_key(|source| {
+		first_url(source).map(|url| {
+			latencies
+				.get(&host_of(url))
+				.copied()
+				.unwrap_or(Duration::MAX)
+		})
+	});
+	let mut last = "no source".to_owned();
+	for (index, source) in sources.into_iter().enumerate() {
+		if cancel.is_cancelled() {
+			return Outcome::Cancelled;
+		}
+		let mut reporter = reporter.clone();
+		reporter.attempt = index + 1;
+		reporter
+			.send(Change::Attempt {
+				total: source.files.len() + source.archives.len(),
+				note: source.label().map(str::to_owned),
+			})
+			.await;
+		match attempt(
+			family, source, dir, transport, services, &reporter, cancel,
+		)
+		.await
+		{
+			Ok(bytes) => return Outcome::Stored { bytes },
+			Err(error) => last = format!("{error:#}"),
+		}
+	}
+	if cancel.is_cancelled() {
+		Outcome::Cancelled
+	} else {
+		Outcome::Failed(last)
+	}
+}
+
+async fn attempt<T: Transport>(
+	family: &FontFamily,
+	source: &FontSource,
+	dir: &Path,
+	transport: &T,
+	services: &crate::services::Handle,
+	reporter: &Reporter,
+	cancel: &Cancellation,
+) -> Result<u64> {
+	use futures_util::{FutureExt, StreamExt};
+	let download = Download {
+		transport,
+		services,
+		cancel,
+	};
+	// Only the budget's worth of file futures are constructed at a time.
+	let mut pending = source.files.iter().enumerate();
+	let mut files = futures_util::stream::FuturesUnordered::new();
+	let mut staged = Vec::new();
+	let mut first_error = None;
+	loop {
+		while files.len() < services.jobs {
+			let Some((index, file)) = pending.next() else {
+				break;
+			};
+			files.push(
+				fetch_file(family, file, dir, &download, reporter, index)
+					.boxed(),
+			);
+		}
+		let Some(result) = files.next().await else {
+			break;
+		};
+		match result {
+			Ok(entry) => staged.push(entry),
+			Err(error) => {
+				first_error.get_or_insert(error);
+			}
+		}
+	}
+	if let Some(error) = first_error {
+		return Err(error);
+	}
+	for (index, archive) in source.archives.iter().enumerate() {
+		staged.extend(
+			fetch_archive(
+				family,
+				archive,
+				dir,
+				&download,
+				reporter,
+				source.files.len() + index,
+			)
+			.await?,
+		);
+	}
+	if cancel.is_cancelled() {
+		bail!("Cancelled");
+	}
+	let bytes = staged.iter().map(|s| s.bytes).sum();
+	let dir = dir.to_owned();
+	let family = family.clone();
+	let cancelled = cancel.clone();
+	services
+		.compute(0, &cancel.token, move || {
+			if cancelled.is_cancelled() {
+				bail!("Cancelled");
+			}
+			install(&dir, &mut staged)?;
+			let installed: Vec<_> =
+				staged.iter().map(|s| s.name.clone()).collect();
+			if let Err(error) = retire_replaced(&dir, &family, &installed) {
+				log::warn!("Fonts: cannot retire an old file: {error:#}");
+			}
+			Ok(bytes)
+		})
+		.await
+}
+
+struct DownloadTemp(PathBuf, bool);
+impl Drop for DownloadTemp {
+	fn drop(&mut self) {
+		if self.1 {
+			let _ = fs::remove_file(&self.0);
+		}
+	}
+}
+
+async fn fetch_file<T: Transport>(
+	family: &FontFamily,
+	file: &FontFile,
+	dir: &Path,
+	download: &Download<'_, T>,
+	reporter: &Reporter,
+	index: usize,
+) -> Result<Staged> {
+	let Download {
+		services, cancel, ..
+	} = *download;
+	let basename = url_basename(file.url());
+	let temp = DownloadTemp(temp_path(dir), true);
+	let bytes = reporter
+		.fetch(
+			index,
+			&basename,
+			file.url(),
+			&temp.0,
+			MAX_FILE_BYTES,
+			download,
+		)
+		.await?;
+	let family = family.clone();
+	let file = file.clone();
+	let cancelled = cancel.clone();
+	let name = basename.clone();
+	let staged = services
+		.compute(0, &cancel.token, move || {
+			if cancelled.is_cancelled() {
+				bail!("Cancelled");
+			}
+			let mut temp = temp;
+			let staged = stage(&family, &temp.0, &basename, file.sha256())?;
+			temp.1 = false;
+			Ok(staged)
+		})
+		.await?;
+	reporter
+		.send(Change::File {
+			file: index,
+			bytes,
+			total: Some(bytes),
+			done: true,
+			phase: Phase::Downloading,
+			name,
+		})
+		.await;
+	Ok(staged)
+}
+async fn fetch_archive<T: Transport>(
+	family: &FontFamily,
+	archive: &FontArchive,
+	dir: &Path,
+	download: &Download<'_, T>,
+	reporter: &Reporter,
+	index: usize,
+) -> Result<Vec<Staged>> {
+	let Download {
+		services, cancel, ..
+	} = *download;
+	let basename = url_basename(&archive.url);
+	let temp = DownloadTemp(temp_path(dir), true);
+	let bytes = reporter
+		.fetch(
+			index,
+			&basename,
+			&archive.url,
+			&temp.0,
+			MAX_ARCHIVE_BYTES,
+			download,
+		)
+		.await?;
+	reporter
+		.send(Change::File {
+			file: index,
+			bytes,
+			total: Some(bytes),
+			done: false,
+			phase: Phase::Extracting,
+			name: basename.clone(),
+		})
+		.await;
+	let family = family.clone();
+	let archive = archive.clone();
+	let dir = dir.to_owned();
+	let cancelled = cancel.clone();
+	let name = basename.clone();
+	let staged = services
+		.compute(0, &cancel.token, move || {
+			if cancelled.is_cancelled() {
+				bail!("Cancelled");
+			}
+			if let Some(expected) = &archive.sha256
+				&& !sha256_file(&temp.0)?.eq_ignore_ascii_case(expected)
+			{
+				bail!("sha256 mismatch for {basename}");
+			}
+			let container = sniff_file(&temp.0)?;
+			let mut extracted =
+				unpack(container, &temp.0, &archive.members, &dir)?;
+			let mut staged = Vec::new();
+			while !extracted.is_empty() {
+				if cancelled.is_cancelled() {
+					bail!("Cancelled");
+				}
+				let Some((member_temp, member_name)) = extracted.next_file()
+				else {
+					break;
+				};
+				let mut member = DownloadTemp(member_temp, true);
+				staged.push(stage(&family, &member.0, &member_name, None)?);
+				member.1 = false;
+			}
+			Ok(staged)
+		})
+		.await?;
+	reporter
+		.send(Change::File {
+			file: index,
+			bytes,
+			total: Some(bytes),
+			done: true,
+			phase: Phase::Extracting,
+			name,
+		})
+		.await;
+	Ok(staged)
 }
 
 /// How much of a selection to take.
@@ -502,341 +1072,6 @@ enum Outcome {
 	Stored { bytes: u64 },
 	Failed(String),
 	Cancelled,
-}
-
-/// Reports a family's state, and tells the run loop to look at it again.
-struct Reporter {
-	id: String,
-	state: Arc<Mutex<Progress>>,
-	tx: Sender<String>,
-}
-impl Reporter {
-	fn update(&self, change: impl FnOnce(&mut Progress)) {
-		{
-			let Some(mut state) =
-				markview_core::sync::available(&self.state, "Font progress")
-			else {
-				return;
-			};
-			change(&mut state);
-		}
-		// A closed channel means the run loop already finished.
-		let _ = self.tx.send(self.id.clone());
-	}
-
-	/// Each transfer contributes one unit, independent of when other headers arrive.
-	fn fetch(
-		&self,
-		transport: &dyn Transport,
-		url: &str,
-		path: &Path,
-		cap: u64,
-		stopped: &dyn Fn() -> bool,
-	) -> Result<()> {
-		let mut last_bytes = 0;
-		let mut last_fraction = 0.0;
-		let mut last_report: Option<Instant> = None;
-		transport.fetch(
-			url,
-			path,
-			cap,
-			&mut |bytes, total| {
-				if last_report
-					.is_some_and(|at| at.elapsed() < PROGRESS_INTERVAL)
-					&& total != Some(bytes)
-				{
-					return;
-				}
-				let fraction =
-					total.filter(|total| *total > 0).map_or(0.0, |total| {
-						(bytes as f64 / total as f64).min(1.0)
-					});
-				self.update(|state| {
-					state.bytes_done += bytes - last_bytes;
-					state.files_progress += fraction - last_fraction;
-				});
-				last_bytes = bytes;
-				last_fraction = fraction;
-				last_report = Some(Instant::now());
-			},
-			stopped,
-		)?;
-		let bytes = fs::metadata(path)?.len();
-		self.update(|state| {
-			state.bytes_done += bytes - last_bytes;
-			state.files_progress += 1.0 - last_fraction;
-		});
-		Ok(())
-	}
-}
-
-/// Limits how many transfers are in flight at once.
-struct Gate {
-	free: Mutex<usize>,
-	ready: Condvar,
-}
-impl Gate {
-	fn new(free: usize) -> Self {
-		Self {
-			free: Mutex::new(free),
-			ready: Condvar::new(),
-		}
-	}
-	fn enter(self: &Arc<Self>) -> Result<Ticket> {
-		let mut free = self.free.lock().map_err(|_| self.poisoned())?;
-		while *free == 0 {
-			free = self.ready.wait(free).map_err(|_| self.poisoned())?;
-		}
-		*free -= 1;
-		drop(free);
-		Ok(Ticket(self.clone()))
-	}
-
-	fn poisoned(&self) -> anyhow::Error {
-		self.ready.notify_all();
-		anyhow::anyhow!("Font transfer gate is poisoned")
-	}
-}
-struct Ticket(Arc<Gate>);
-impl Drop for Ticket {
-	fn drop(&mut self) {
-		match self.0.free.lock() {
-			Ok(mut free) => {
-				*free += 1;
-				self.0.ready.notify_one();
-			}
-			Err(_) => {
-				let error = self.0.poisoned();
-				log::warn!("{error}");
-			}
-		}
-	}
-}
-
-/// Measures every distinct host once, so a mirror's declared order only
-/// decides ties.
-fn probe_hosts(
-	families: &[FontFamily],
-	transport: &dyn Transport,
-	gate: &Arc<Gate>,
-	cancel: &Arc<dyn Fn(&str) -> bool + Send + Sync>,
-) -> BTreeMap<String, Duration> {
-	let mut hosts: Vec<(String, String)> = Vec::new();
-	for family in families {
-		if cancel(&family.id) {
-			continue;
-		}
-		for source in &family.source {
-			let Some(url) = first_url(source) else {
-				continue;
-			};
-			let host = host_of(url);
-			if !hosts.iter().any(|(known, _)| *known == host) {
-				hosts.push((host, url.to_owned()));
-			}
-		}
-	}
-	// Every host is measured at once, under the same bound as a transfer, so
-	// a slow mirror does not hold up the families that are ready.
-	let measured: Vec<(String, Duration)> = std::thread::scope(|scope| {
-		let handles: Vec<_> = hosts
-			.into_iter()
-			.map(|(host, url)| {
-				let gate = gate.clone();
-				scope.spawn(move || {
-					let Ok(_ticket) = gate.enter() else {
-						return (host, Duration::MAX);
-					};
-					// A mirror that cannot be measured keeps its declared
-					// place, which is what the longest possible wait means.
-					let latency =
-						transport.probe(&url).unwrap_or(Duration::MAX);
-					(host, latency)
-				})
-			})
-			.collect();
-		handles
-			.into_iter()
-			.map(|handle| {
-				handle
-					.join()
-					.unwrap_or_else(|_| (String::new(), Duration::MAX))
-			})
-			.filter(|(host, _)| !host.is_empty())
-			.collect()
-	});
-	measured.into_iter().collect()
-}
-
-fn first_url(source: &FontSource) -> Option<&str> {
-	source
-		.files
-		.first()
-		.map(FontFile::url)
-		.or_else(|| source.archives.first().map(|a| a.url.as_str()))
-}
-
-fn host_of(url: &str) -> String {
-	url::Url::parse(url)
-		.ok()
-		.and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-		.unwrap_or_default()
-}
-
-fn download_family(
-	family: &FontFamily,
-	dir: &Path,
-	transport: &dyn Transport,
-	gate: &Arc<Gate>,
-	latencies: &BTreeMap<String, Duration>,
-	reporter: &Reporter,
-	cancel: &(dyn Fn(&str) -> bool + Send + Sync),
-) -> Outcome {
-	let stopped = || cancel(&family.id);
-	let mut sources: Vec<&FontSource> = family.source.iter().collect();
-	sources.sort_by_key(|source| {
-		first_url(source).map(|url| {
-			let host = host_of(url);
-			latencies.get(&host).copied().unwrap_or(Duration::MAX)
-		})
-	});
-	let mut last = String::from("no source");
-	for source in sources {
-		if stopped() {
-			reporter.update(|state| state.phase = Phase::Cancelled);
-			return Outcome::Cancelled;
-		}
-		reporter.update(|state| {
-			state.phase = Phase::Downloading;
-			state.note = source.label().map(str::to_owned);
-			state.current = None;
-			state.files_done = 0;
-			state.bytes_done = 0;
-			state.files_progress = 0.0;
-		});
-		match attempt(family, source, dir, transport, gate, reporter, &stopped)
-		{
-			Ok(bytes) => {
-				reporter.update(|state| {
-					state.phase = Phase::Done;
-					state.current = None;
-					state.note = None;
-				});
-				return Outcome::Stored { bytes };
-			}
-			Err(error) => last = format!("{error:#}"),
-		}
-	}
-	if stopped() {
-		reporter.update(|state| state.phase = Phase::Cancelled);
-		return Outcome::Cancelled;
-	}
-	reporter.update(|state| {
-		state.phase = Phase::Failed;
-		state.current = None;
-		state.note = Some(last.clone());
-	});
-	Outcome::Failed(last)
-}
-
-/// Downloads one whole source and installs it, or leaves the directory alone.
-///
-/// Nothing is replaced until every file of the source has been downloaded and
-/// verified: a source that fails half way leaves the copies it would have
-/// replaced exactly where they were, and the next mirror starts from the same
-/// directory it saw.
-fn attempt(
-	family: &FontFamily,
-	source: &FontSource,
-	dir: &Path,
-	transport: &dyn Transport,
-	gate: &Arc<Gate>,
-	reporter: &Reporter,
-	stopped: &(dyn Fn() -> bool + Sync),
-) -> Result<u64> {
-	let total = source.files.len() + source.archives.len();
-	reporter.update(|state| state.files_total = total);
-	let mut staged: Vec<Staged> = Vec::new();
-	let mut bytes = 0u64;
-	let outcome = (|| -> Result<()> {
-		let mut files: Vec<&FontFile> = source.files.iter().collect();
-		// Several direct files are independent, so they may run at once; the
-		// gate keeps the total number of transfers bounded.
-		let results = std::thread::scope(|scope| {
-			let mut handles = Vec::new();
-			for file in files.drain(..) {
-				handles.push(scope.spawn(|| {
-					let entry = fetch_file(
-						family, file, dir, transport, gate, reporter, stopped,
-					)?;
-					reporter.update(|state| state.files_done += 1);
-					Ok(entry)
-				}));
-			}
-			handles
-				.into_iter()
-				.map(|handle| {
-					handle.join().unwrap_or_else(|_| {
-						Err(anyhow::anyhow!("Download thread panicked"))
-					})
-				})
-				.collect::<Vec<_>>()
-		});
-		let mut first_error = None;
-		for result in results {
-			match result {
-				Ok(entry) => {
-					bytes += entry.bytes;
-					staged.push(entry);
-				}
-				Err(error) => {
-					first_error.get_or_insert(error);
-				}
-			}
-		}
-		if let Some(error) = first_error {
-			return Err(error);
-		}
-		for archive in &source.archives {
-			reporter.update(|state| {
-				state.phase = Phase::Downloading;
-				state.current = Some(url_basename(&archive.url));
-			});
-			let members = fetch_archive(
-				family, archive, dir, transport, gate, reporter, stopped,
-			)?;
-			bytes += members.iter().map(|entry| entry.bytes).sum::<u64>();
-			staged.extend(members);
-			reporter.update(|state| {
-				state.files_done += 1;
-				state.phase = Phase::Downloading;
-			});
-		}
-		Ok(())
-	})();
-	match outcome {
-		Ok(()) => {
-			// The last chance to stop: nothing installed yet, so a cancelled
-			// family leaves the directory exactly as it found it.
-			if stopped() {
-				return Err(anyhow::anyhow!("Cancelled"));
-			}
-			install(dir, &mut staged)?;
-			// Two mirrors may name the same face differently, so a refresh can
-			// leave the copy it replaced under another name. Only files this
-			// application wrote, for one of the stems just installed, and whose
-			// every name belongs to this family, are retired.
-			let installed: Vec<String> =
-				staged.iter().map(|entry| entry.name.clone()).collect();
-			if let Err(error) = retire_replaced(dir, family, &installed) {
-				log::warn!("Fonts: cannot retire an old file: {error:#}");
-			}
-			Ok(bytes)
-		}
-		// A source is all or nothing: its staged files never touched the
-		// directory's own copies, and the records remove them as they drop.
-		Err(error) => Err(error),
-	}
 }
 
 /// One verified file of a source, waiting for the rest of it to succeed.
@@ -996,107 +1231,6 @@ fn restore(replaced: &[(PathBuf, PathBuf)]) {
 	for (target, keep) in replaced {
 		let _ = fs::rename(keep, target);
 	}
-}
-
-/// Downloads one file and stages it under its own name.
-fn fetch_file(
-	family: &FontFamily,
-	file: &FontFile,
-	dir: &Path,
-	transport: &dyn Transport,
-	gate: &Arc<Gate>,
-	reporter: &Reporter,
-	stopped: &(dyn Fn() -> bool + Sync),
-) -> Result<Staged> {
-	let basename = url_basename(file.url());
-	let temp = temp_path(dir);
-	let outcome = (|| -> Result<Staged> {
-		{
-			let _ticket = gate.enter()?;
-			reporter.update(|state| state.current = Some(basename.clone()));
-			reporter.fetch(
-				transport,
-				file.url(),
-				&temp,
-				MAX_FILE_BYTES,
-				stopped,
-			)?;
-		}
-		stage(family, &temp, &basename, file.sha256())
-	})();
-	if outcome.is_err() {
-		let _ = fs::remove_file(&temp);
-	}
-	outcome
-}
-
-/// Downloads one archive, unpacks its matched members, and stages each one.
-fn fetch_archive(
-	family: &FontFamily,
-	archive: &FontArchive,
-	dir: &Path,
-	transport: &dyn Transport,
-	gate: &Arc<Gate>,
-	reporter: &Reporter,
-	stopped: &(dyn Fn() -> bool + Sync),
-) -> Result<Vec<Staged>> {
-	let basename = url_basename(&archive.url);
-	let temp = temp_path(dir);
-	let outcome = (|| -> Result<Vec<Staged>> {
-		{
-			let _ticket = gate.enter()?;
-			reporter.update(|state| state.current = Some(basename.clone()));
-			reporter.fetch(
-				transport,
-				&archive.url,
-				&temp,
-				MAX_ARCHIVE_BYTES,
-				stopped,
-			)?;
-		}
-		if let Some(expected) = &archive.sha256 {
-			let actual = sha256_file(&temp)?;
-			if !actual.eq_ignore_ascii_case(expected) {
-				bail!("sha256 mismatch for {basename}");
-			}
-		}
-		reporter.update(|state| {
-			state.phase = Phase::Extracting;
-			state.current = Some(basename.clone());
-		});
-		if stopped() {
-			bail!("Cancelled");
-		}
-		let container = sniff_file(&temp)?;
-		let mut extracted = unpack(container, &temp, &archive.members, dir)?;
-		let mut staged = Vec::new();
-		// The check comes before the pop: what is still in `extracted` is
-		// removed when it drops, while a popped member would be owned by
-		// nothing.
-		while !extracted.is_empty() {
-			// Unpacking a large archive is work too: a cancelled family stops
-			// between members rather than finishing the whole extraction.
-			if stopped() {
-				bail!("Cancelled");
-			}
-			let Some((member_temp, member_name)) = extracted.next_file() else {
-				break;
-			};
-			match stage(family, &member_temp, &member_name, None) {
-				Ok(entry) => staged.push(entry),
-				Err(error) => {
-					// The member that just failed is not `Staged` yet, so it is
-					// removed here; `extracted` and every `Staged` before it
-					// clean themselves up when they drop.
-					let _ = fs::remove_file(&member_temp);
-					return Err(error);
-				}
-			}
-		}
-		Ok(staged)
-	})();
-	let _ = fs::remove_file(&temp);
-	outcome
 }
 
 /// Verifies a downloaded body and gives it the name it will be installed under.
@@ -1601,51 +1735,6 @@ mod tests {
 		.unwrap()
 	}
 
-	#[test]
-	fn poisoned_gate_releases_waiters_and_tickets_without_panicking() {
-		let gate = Arc::new(Gate::new(1));
-		let ticket = gate.enter().unwrap();
-		let (tx, rx) = std::sync::mpsc::channel();
-		let waiting = gate.clone();
-		let handle = std::thread::spawn(move || {
-			tx.send(waiting.enter().is_err()).unwrap();
-		});
-		crate::test_support::poison(&gate.free);
-		drop(ticket);
-		assert!(rx.recv_timeout(Duration::from_secs(5)).unwrap());
-		handle.join().unwrap();
-		assert!(gate.enter().is_err());
-		assert!(gate.free.is_poisoned());
-	}
-
-	#[test]
-	fn poisoned_progress_does_not_block_a_download() {
-		let (tx, rx) = channel();
-		let reporter = Reporter {
-			id: "test".into(),
-			state: Arc::new(Mutex::new(Progress::queued("test"))),
-			tx,
-		};
-		crate::test_support::poison(&reporter.state);
-		let dir = tempfile::tempdir().unwrap();
-		let path = dir.path().join("download");
-		let mut transport = Fake::default();
-		transport
-			.bodies
-			.insert("https://x.example/a.otf".into(), font_bytes());
-		reporter
-			.fetch(
-				&transport,
-				"https://x.example/a.otf",
-				&path,
-				MAX_FILE_BYTES,
-				&|| false,
-			)
-			.unwrap();
-		assert!(fs::metadata(path).unwrap().len() > 0);
-		assert!(rx.try_recv().is_err());
-	}
-
 	fn family(id: &str, files: &[&str]) -> FontFamily {
 		FontFamily {
 			id: id.into(),
@@ -1663,6 +1752,103 @@ mod tests {
 				archives: Vec::new(),
 			}],
 		}
+	}
+
+	#[tokio::test]
+	async fn simultaneous_runs_share_the_transfer_budget() {
+		use std::sync::atomic::{AtomicUsize, Ordering};
+		struct Controlled {
+			active: AtomicUsize,
+			peak: AtomicUsize,
+			entered: tokio::sync::mpsc::UnboundedSender<()>,
+			release: tokio::sync::Semaphore,
+			bytes: Vec<u8>,
+		}
+		impl Transport for Controlled {
+			async fn fetch(
+				&self,
+				_: &str,
+				path: &Path,
+				_: u64,
+				progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+				cancel: &CancellationToken,
+			) -> Result<()> {
+				let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+				self.peak.fetch_max(active, Ordering::SeqCst);
+				self.entered.send(()).unwrap();
+				let permit = tokio::select! { permit = self.release.acquire() => permit?, _ = cancel.cancelled() => bail!("Cancelled") };
+				permit.forget();
+				tokio::fs::write(path, &self.bytes).await?;
+				progress(
+					self.bytes.len() as u64,
+					Some(self.bytes.len() as u64),
+				);
+				self.active.fetch_sub(1, Ordering::SeqCst);
+				Ok(())
+			}
+			async fn probe(&self, _: &str) -> Result<Duration> {
+				Ok(Duration::ZERO)
+			}
+		}
+		let services = crate::services::Services::new(2);
+		let (entered, mut events) = tokio::sync::mpsc::unbounded_channel();
+		let transport = Controlled {
+			active: AtomicUsize::new(0),
+			peak: AtomicUsize::new(0),
+			entered,
+			release: tokio::sync::Semaphore::new(0),
+			bytes: font_bytes(),
+		};
+		let a = tempfile::tempdir().unwrap();
+		let b = tempfile::tempdir().unwrap();
+		let first = [family(
+			"first",
+			&["https://example.com/a.otf", "https://example.com/b.otf"],
+		)];
+		let second = [family(
+			"second",
+			&["https://example.com/c.otf", "https://example.com/d.otf"],
+		)];
+		let release = async {
+			events.recv().await.unwrap();
+			events.recv().await.unwrap();
+			assert_eq!(transport.active.load(Ordering::SeqCst), 2);
+			transport.release.add_permits(4);
+		};
+		let (first, second, ()) = tokio::join!(
+			run_async(
+				&first,
+				a.path(),
+				&transport,
+				&services.handle,
+				HashMap::new(),
+				|_| {}
+			),
+			run_async(
+				&second,
+				b.path(),
+				&transport,
+				&services.handle,
+				HashMap::new(),
+				|_| {}
+			),
+			release
+		);
+		assert!(first.failed.is_empty(), "{:?}", first.failed);
+		assert!(second.failed.is_empty(), "{:?}", second.failed);
+		assert_eq!(first.stored + second.stored, 2);
+		let count = |dir: &Path| {
+			fs::read_dir(dir)
+				.unwrap()
+				.filter_map(Result::ok)
+				.filter(|entry| {
+					entry.path().extension().is_some_and(|ext| ext == "otf")
+				})
+				.count()
+		};
+		assert_eq!(count(a.path()) + count(b.path()), 4);
+		assert_eq!(transport.peak.load(Ordering::SeqCst), 2);
+		assert_eq!(transport.active.load(Ordering::SeqCst), 0);
 	}
 
 	#[test]
@@ -1912,13 +2098,13 @@ mod tests {
 		arm: Option<Arc<std::sync::atomic::AtomicBool>>,
 	}
 	impl Transport for Fake {
-		fn fetch(
+		async fn fetch(
 			&self,
 			url: &str,
 			path: &Path,
 			_cap: u64,
-			progress: &mut dyn FnMut(u64, Option<u64>),
-			_cancel: &dyn Fn() -> bool,
+			progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+			_cancel: &CancellationToken,
 		) -> Result<()> {
 			self.seen.lock().unwrap().push(url.to_owned());
 			if self.fail.iter().any(|pattern| url.contains(pattern)) {
@@ -1935,7 +2121,7 @@ mod tests {
 			progress(body.len() as u64, Some(body.len() as u64));
 			Ok(())
 		}
-		fn probe(&self, url: &str) -> Result<Duration> {
+		async fn probe(&self, url: &str) -> Result<Duration> {
 			Ok(self
 				.probe
 				.get(&host_of(url))
@@ -1981,31 +2167,32 @@ mod tests {
 	fn completed_files_report_before_a_slower_first_file_finishes() {
 		struct Delayed {
 			fake: Fake,
-			release: Mutex<std::sync::mpsc::Receiver<()>>,
+			release: tokio::sync::Notify,
 		}
 		impl Transport for Delayed {
-			fn fetch(
+			async fn fetch(
 				&self,
 				url: &str,
 				path: &Path,
 				cap: u64,
-				progress: &mut dyn FnMut(u64, Option<u64>),
-				cancel: &dyn Fn() -> bool,
+				progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
+				cancel: &CancellationToken,
 			) -> Result<()> {
 				if url.ends_with("slow.otf") {
 					let body = &self.fake.bodies[url];
 					let half = body.len() / 2;
 					fs::write(path, &body[..half])?;
 					progress(half as u64, Some(body.len() as u64));
-					self.release
-						.lock()
-						.unwrap()
-						.recv_timeout(Duration::from_secs(5))?;
+					tokio::time::timeout(
+						Duration::from_secs(5),
+						self.release.notified(),
+					)
+					.await?;
 				}
-				self.fake.fetch(url, path, cap, progress, cancel)
+				self.fake.fetch(url, path, cap, progress, cancel).await
 			}
-			fn probe(&self, url: &str) -> Result<Duration> {
-				self.fake.probe(url)
+			async fn probe(&self, url: &str) -> Result<Duration> {
+				self.fake.probe(url).await
 			}
 		}
 		let dir = tempfile::tempdir().unwrap();
@@ -2014,7 +2201,7 @@ mod tests {
 			"https://good.example/slow.otf",
 			"https://good.example/fast.otf",
 		];
-		let (release, receiver) = channel();
+
 		let transport = Delayed {
 			fake: Fake {
 				bodies: urls
@@ -2023,7 +2210,7 @@ mod tests {
 					.collect(),
 				..Default::default()
 			},
-			release: Mutex::new(receiver),
+			release: tokio::sync::Notify::new(),
 		};
 		let mut events = Vec::new();
 		let summary = run(
@@ -2034,7 +2221,7 @@ mod tests {
 			Arc::new(|_| false),
 			&mut |progress| {
 				if progress.files_done == 1 && progress.files_progress > 1.0 {
-					let _ = release.send(());
+					transport.release.notify_one();
 				}
 				events.push(progress);
 			},

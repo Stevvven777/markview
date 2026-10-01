@@ -35,8 +35,11 @@ impl ImageTextures {
 		});
 		self.demand.clear();
 	}
-	pub(super) fn publish(&self) {
-		self.images.pixels.demand().clone_from(&self.demand);
+	pub(super) fn publish(&mut self) {
+		self.images.pixels.publish_demand(
+			self.images.generation,
+			std::mem::take(&mut self.demand),
+		);
 	}
 	pub(super) fn bytes(&self) -> u64 {
 		self.cache.values().map(|(_, bytes)| bytes).sum()
@@ -80,7 +83,7 @@ impl ImageTextures {
 			.and_modify(|d| d.merge(demand))
 			.or_insert(demand);
 		if !self.cache.contains_key(&key) {
-			let pixels = self.images.pixels.decoded().get(src).cloned();
+			let pixels = self.images.pixels.get(src, version);
 			let pixels = pixels?;
 			if pixels.width > gpu.device.limits().max_texture_dimension_2d
 				|| pixels.height > gpu.device.limits().max_texture_dimension_2d

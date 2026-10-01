@@ -48,7 +48,7 @@ pub(super) const SCALE_PRESETS: [(f32, &str); 2] = [(1.0, "1×"), (2.0, "2×")];
 
 /// Where one job writes to.
 enum Destination {
-	/// Ask the reader, on the exporting thread so the window never blocks.
+	/// Ask the reader asynchronously before exporting.
 	Ask {
 		stem: String,
 		directory: Option<PathBuf>,
@@ -244,25 +244,40 @@ impl<P: super::SendEvent> App<P> {
 		);
 		let cjk = self.preferences.values.cjk_type;
 		let overrides = self.preferences.values.fontdef_overrides.clone();
-		std::thread::spawn(move || {
+		let services = self.services.clone();
+		let output = match &destination {
+			Destination::Ask { stem, directory } => Some(wait_for_output(
+				&services.handle,
+				choose_output(
+					stem,
+					&settings,
+					directory.as_deref(),
+					self.window.as_deref(),
+				),
+			)),
+			Destination::Path(_) => None,
+		};
+		if let Some(thread) = self.export_thread.take() {
+			let _ = thread.join();
+		}
+		self.export_thread = Some(std::thread::spawn(move || {
 			let outcome = match destination {
-				Destination::Ask { stem, directory } => {
-					match choose_output(&stem, &settings, directory.as_deref())
-					{
+				Destination::Ask { .. } => {
+					match output.unwrap().recv().ok().flatten() {
 						Some(output) => run(
 							&path, &output, &settings, metadata, fonts, cjk,
-							&overrides, offline,
+							&overrides, offline, services,
 						),
 						None => ExportOutcome::Cancelled,
 					}
 				}
 				Destination::Path(output) => run(
 					&path, &output, &settings, metadata, fonts, cjk,
-					&overrides, offline,
+					&overrides, offline, services,
 				),
 			};
 			proxy.send(Event::Exported(Box::new(outcome)));
-		});
+		}));
 	}
 
 	/// Receives one export result on the event loop.
@@ -300,7 +315,7 @@ impl<P: super::SendEvent> App<P> {
 				stylesheet,
 			} => {
 				self.start_png_export(
-					snapshot, path, stylesheet, watch, rebuild,
+					*snapshot, path, stylesheet, watch, rebuild,
 				);
 			}
 			ExportOutcome::Failed(error) => {
@@ -613,12 +628,13 @@ pub(super) fn write_png(
 	export::write_atomic(path, &bytes)
 }
 
-/// The save dialog, on the exporting thread so the window never blocks.
+/// Construct native dialogs on the UI thread; await their result on the I/O service.
 fn choose_output(
 	stem: &str,
 	settings: &ExportSettings,
 	directory: Option<&Path>,
-) -> Option<PathBuf> {
+	window: Option<&winit::window::Window>,
+) -> impl std::future::Future<Output = Option<PathBuf>> + Send + use<> {
 	// The format names the export panel offers, so the dialog and the page
 	// behind it cannot drift apart.
 	let lang = crate::lang::Lang::default();
@@ -626,13 +642,35 @@ fn choose_output(
 		ExportFormat::Pdf => ("pdf", lang.export_pdf()),
 		ExportFormat::Png => ("png", lang.export_png()),
 	};
-	let mut dialog = rfd::FileDialog::new()
+	let mut dialog = rfd::AsyncFileDialog::new()
 		.set_file_name(format!("{stem}.{extension}"))
 		.add_filter(label, &[extension]);
 	if let Some(directory) = directory.filter(|dir| dir.is_dir()) {
 		dialog = dialog.set_directory(directory);
 	}
-	dialog.save_file()
+	if let Some(window) = window {
+		dialog = dialog.set_parent(window);
+	}
+	// Construct native dialogs on the UI thread and await them on the I/O service.
+	let selection = dialog.save_file();
+	async move { selection.await.map(|file| file.path().to_owned()) }
+}
+
+fn wait_for_output(
+	services: &crate::services::Handle,
+	dialog: impl std::future::Future<Output = Option<PathBuf>> + Send + 'static,
+) -> std::sync::mpsc::Receiver<Option<PathBuf>> {
+	let (send, recv) = std::sync::mpsc::channel();
+	let cancel = services.cancel.clone();
+	services.submit(async move {
+		let output = tokio::select! {
+			biased;
+			_ = cancel.cancelled() => None,
+			output = dialog => output,
+		};
+		let _ = send.send(output);
+	});
+	recv
 }
 
 /// Everything that happens off the event loop for one export.
@@ -649,6 +687,7 @@ fn run(
 	cjk: CjkType,
 	overrides: &[FontDefOverride],
 	offline: bool,
+	services: Arc<crate::services::Services>,
 ) -> ExportOutcome {
 	match settings.format {
 		ExportFormat::Pdf => {
@@ -667,7 +706,7 @@ fn run(
 				}
 			};
 			args.metadata = metadata;
-			match crate::pdf::export_once(&args) {
+			match crate::pdf::export_with_services(&args, services) {
 				Ok(stats) => ExportOutcome::Written {
 					path: output.to_path_buf(),
 					detail: format!(
@@ -703,9 +742,11 @@ fn run(
 				stylesheet.clone(),
 				fonts,
 			);
-			match export::png_snapshot(path, options, offline) {
+			match export::png_snapshot_with_services(
+				path, options, offline, services,
+			) {
 				Ok(snapshot) => ExportOutcome::PngReady {
-					snapshot,
+					snapshot: Box::new(snapshot),
 					path: output.to_path_buf(),
 					stylesheet,
 				},
@@ -718,6 +759,59 @@ fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	#[test]
+	fn closing_the_app_cancels_an_open_save_selection_before_joining() {
+		#[derive(Clone)]
+		struct Proxy;
+		impl super::super::SendEvent for Proxy {
+			fn send(&self, _: Event) {}
+		}
+		struct OpenDialog {
+			entered: Option<std::sync::mpsc::Sender<()>>,
+			dropped: std::sync::mpsc::Sender<()>,
+		}
+		impl std::future::Future for OpenDialog {
+			type Output = Option<PathBuf>;
+			fn poll(
+				mut self: std::pin::Pin<&mut Self>,
+				_: &mut std::task::Context<'_>,
+			) -> std::task::Poll<Self::Output> {
+				if let Some(entered) = self.entered.take() {
+					entered.send(()).unwrap();
+				}
+				std::task::Poll::Pending
+			}
+		}
+		impl Drop for OpenDialog {
+			fn drop(&mut self) {
+				self.dropped.send(()).unwrap();
+			}
+		}
+		let mut app = App::new(
+			crate::cli::LaunchOptions {
+				mode: crate::cli::Mode::Smoke,
+				options: crate::test_support::options(),
+				..Default::default()
+			},
+			Proxy,
+		);
+		let (entered, started) = std::sync::mpsc::channel();
+		let (dropped, released) = std::sync::mpsc::channel();
+		let output = wait_for_output(
+			&app.services.handle,
+			OpenDialog {
+				entered: Some(entered),
+				dropped,
+			},
+		);
+		app.export_thread = Some(std::thread::spawn(move || {
+			assert!(output.recv().unwrap().is_none());
+		}));
+		started.recv_timeout(Duration::from_secs(5)).unwrap();
+		drop(app);
+		released.recv_timeout(Duration::from_secs(5)).unwrap();
+	}
+
 	#[test]
 	fn desktop_pdf_jobs_use_custom_titles_and_empty_titles_fall_back() {
 		let dir = tempfile::tempdir().unwrap();
@@ -737,6 +831,7 @@ mod tests {
 				CjkType::Sc,
 				&[],
 				false,
+				Arc::new(crate::services::Services::new(4)),
 			);
 			assert!(matches!(result, ExportOutcome::Written { .. }));
 			let bytes = std::fs::read(&output).unwrap();

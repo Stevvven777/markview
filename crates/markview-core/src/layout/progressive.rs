@@ -107,7 +107,11 @@ impl LayoutEngine {
 			.unwrap_or([0.; 4]);
 		let content_width = (options.width - pad[1] - pad[3]).max(1.);
 		crate::profile::span(crate::profile::Stage::Highlights, || {
-			self.highlights.prepare(&document.blocks, options)
+			self.highlights.prepare(
+				document.content_id,
+				&document.blocks,
+				options,
+			)
 		});
 		// A host with no threads colors `prepare`'s jobs in that very call, so
 		// their results are already waiting here; a host with threads leaves

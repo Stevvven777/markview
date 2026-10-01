@@ -25,6 +25,7 @@ use markview_core::style::{
 	CjkType, ColorField as C, Condition, TextAppearance,
 };
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// The height one family occupies, actions included.
 const ROW: f32 = 88.0;
@@ -106,7 +107,8 @@ fn centered(top: f32, height: f32, size: f32) -> f32 {
 /// reader has installed is one the document may be set in.
 fn font_options(
 	role: FontRole,
-	families: &[&'static str],
+	families: &[Arc<str>],
+	generation: u64,
 	settings: &ReaderSettings,
 	t: Lang,
 ) -> Vec<crate::app::chrome::components::Action> {
@@ -115,11 +117,17 @@ fn font_options(
 		settings.font_family(role).is_none(),
 		Command::FontFamily(role, None),
 	)];
-	entries.extend(families.iter().map(|family| {
+	entries.extend(families.iter().enumerate().map(|(index, family)| {
 		entry(
-			family,
-			settings.font_family(role) == Some(family),
-			Command::FontFamily(role, Some(family)),
+			family.clone(),
+			settings.font_family(role) == Some(family.as_ref()),
+			Command::FontFamily(
+				role,
+				Some(super::Selection {
+					catalog_generation: generation,
+					index,
+				}),
+			),
 		)
 	}));
 	entries
@@ -142,7 +150,7 @@ fn chooser_button(
 	list: &List,
 	index: usize,
 	role: FontRole,
-	fonts: &FontConfig,
+	choices: &super::Choices,
 	settings: &ReaderSettings,
 	lang: Lang,
 ) -> Button {
@@ -150,7 +158,8 @@ fn chooser_button(
 	let w = 232.0_f32.min(band.w * 0.56);
 	let entries = font_options(
 		role,
-		&markview_core::fonts::families(fonts, role.han()),
+		choices.families(role),
+		choices.generation,
 		settings,
 		lang,
 	);
@@ -159,7 +168,7 @@ fn chooser_button(
 		.find(|entry| entry.active)
 		.or_else(|| entries.first());
 	Button {
-		label: chosen.map_or("", |entry| entry.label),
+		label: chosen.map_or_else(|| "".into(), |entry| entry.label.clone()),
 		icon: None,
 		marker: Some(crate::app::chrome::icons::CHEVRON),
 		active: false,
@@ -185,7 +194,7 @@ fn chooser_button(
 pub(in crate::app) fn menu(
 	view: &super::View<'_>,
 	settings: &ReaderSettings,
-	fonts: &FontConfig,
+	_fonts: &FontConfig,
 	open: &mut Dropdown,
 	size: (f32, f32),
 ) -> Option<crate::app::chrome::components::Menu> {
@@ -205,13 +214,20 @@ pub(in crate::app) fn menu(
 		true,
 		roles(settings).len(),
 	);
-	let anchor =
-		chooser_button(&list, index, role, fonts, settings, settings.lang())
-			.rect;
+	let anchor = chooser_button(
+		&list,
+		index,
+		role,
+		&view.choices,
+		settings,
+		settings.lang(),
+	)
+	.rect;
 	anchor.intersect(list.viewport)?;
 	let entries = font_options(
 		role,
-		&markview_core::fonts::families(fonts, role.han()),
+		view.choices.families(role),
+		view.choices.generation,
 		settings,
 		settings.lang(),
 	);
@@ -221,7 +237,7 @@ pub(in crate::app) fn menu(
 pub(in crate::app) fn buttons(
 	view: &super::View<'_>,
 	settings: &ReaderSettings,
-	fonts: &FontConfig,
+	_fonts: &FontConfig,
 	preview: bool,
 	width: f32,
 	height: f32,
@@ -246,7 +262,12 @@ pub(in crate::app) fn buttons(
 					.enumerate()
 					.map(|(index, role)| {
 						chooser_button(
-							&list, index, *role, fonts, settings, lang,
+							&list,
+							index,
+							*role,
+							&view.choices,
+							settings,
+							lang,
 						)
 					})
 					.collect(),
@@ -325,7 +346,7 @@ fn fonts_controls(
 		lang,
 	);
 	out.extend(vec![Button {
-		label: lang.fonts_open_folder(),
+		label: (lang.fonts_open_folder()).into(),
 		icon: None,
 		marker: None,
 		active: false,
@@ -366,7 +387,7 @@ fn fonts_controls(
 			(lang.fonts_filter_set(), None, true),
 		] {
 			out.push(Button {
-				label,
+				label: label.into(),
 				icon: None,
 				marker: None,
 				active: if set {
@@ -408,7 +429,7 @@ fn fonts_controls(
 		),
 	] {
 		out.push(Button {
-			label,
+			label: label.into(),
 			icon: None,
 			marker: None,
 			active: false,
@@ -471,7 +492,7 @@ fn font_rows(
 			_ => Command::Fonts(FontCommand::DownloadOne(row)),
 		};
 		out.push(Button {
-			label,
+			label: label.into(),
 			icon: if running {
 				Some(crate::app::chrome::icons::CLOSE)
 			} else if family.state == crate::fonts::State::Downloaded {
@@ -532,7 +553,7 @@ pub(in crate::app) fn draw_fonts(
 	interaction: &InteractionState,
 	view: &super::View<'_>,
 	settings: &ReaderSettings,
-	fonts: &FontConfig,
+	_fonts: &FontConfig,
 	width: f32,
 	height: f32,
 ) -> Vec<Draw> {
@@ -544,6 +565,7 @@ pub(in crate::app) fn draw_fonts(
 		note,
 		status_filter,
 		choosers,
+		..
 	} = view;
 	let (scroll, note, status_filter, choosers) =
 		(*scroll, *note, *status_filter, *choosers);
@@ -628,7 +650,14 @@ pub(in crate::app) fn draw_fonts(
 			.iter()
 			.enumerate()
 			.map(|(index, role)| {
-				chooser_button(&list, index, *role, fonts, settings, lang)
+				chooser_button(
+					&list,
+					index,
+					*role,
+					&view.choices,
+					settings,
+					lang,
+				)
 			})
 			.collect();
 		for (index, role) in roles.iter().enumerate() {
@@ -924,6 +953,11 @@ mod tests {
 			Some(State::Provided),
 		] {
 			let view = super::super::View {
+				choices: {
+					let mut c = super::super::Choices::default();
+					c.refresh(&crate::test_support::fonts());
+					c
+				},
 				catalog: &[],
 				shown: vec![],
 				jobs: &jobs,
@@ -992,6 +1026,11 @@ mod tests {
 		let fonts = crate::test_support::fonts();
 		for (choosers, open) in [(true, false), (false, true)] {
 			let view = super::super::View {
+				choices: {
+					let mut c = super::super::Choices::default();
+					c.refresh(&crate::test_support::fonts());
+					c
+				},
 				catalog: &catalog,
 				shown: shown.clone(),
 				jobs: &jobs,
@@ -1062,6 +1101,11 @@ mod tests {
 		for (w, h) in [(500., 300.), (820., 600.)] {
 			let panel = panel_rect(w, h);
 			let view = super::super::View {
+				choices: {
+					let mut c = super::super::Choices::default();
+					c.refresh(&crate::test_support::fonts());
+					c
+				},
 				catalog: &catalog,
 				shown: shown.clone(),
 				jobs: &jobs,
@@ -1336,6 +1380,11 @@ mod tests {
 		);
 		let jobs = HashMap::from([("a".into(), progress)]);
 		let view = super::super::View {
+			choices: {
+				let mut c = super::super::Choices::default();
+				c.refresh(&crate::test_support::fonts());
+				c
+			},
 			catalog: &catalog,
 			shown: vec![0],
 			jobs: &jobs,
@@ -1404,29 +1453,43 @@ mod tests {
 		] {
 			let settings = ReaderSettings::default();
 			let t = settings.lang();
-			let entries = font_options(role, families, &settings, t);
+			let entries = font_options(role, families, 1, &settings, t);
 			assert_eq!(entries.len(), 1 + families.len());
 			assert_eq!(entries[0].label, t.settings_font_default());
 			assert_eq!(entries[0].action, Command::FontFamily(role, None));
 			assert!(entries[0].active, "the stylesheet's chain is in force");
 			// Every family names itself, and none is in force yet.
-			for (entry, family) in entries[1..].iter().zip(families.iter()) {
+			for (index, (entry, family)) in
+				entries[1..].iter().zip(families.iter()).enumerate()
+			{
 				assert_eq!(entry.label, *family);
 				assert_eq!(
 					entry.action,
-					Command::FontFamily(role, Some(family))
+					Command::FontFamily(
+						role,
+						Some(super::super::Selection {
+							catalog_generation: 1,
+							index
+						})
+					)
 				);
 				assert!(!entry.active);
 			}
 			// A pick marks itself rather than the default entry.
 			let mut picked = ReaderSettings::default();
-			picked.set_font_family(role, Some(families[0].to_owned()));
-			let entries = font_options(role, families, &picked, t);
+			picked.set_font_family(role, Some(families[0].to_string()));
+			let entries = font_options(role, families, 1, &picked, t);
 			assert!(!entries[0].active);
 			assert!(entries[1].active);
 			assert_eq!(
 				entries[1].action,
-				Command::FontFamily(role, Some(families[0]))
+				Command::FontFamily(
+					role,
+					Some(super::super::Selection {
+						catalog_generation: 1,
+						index: 0
+					})
+				)
 			);
 		}
 	}
@@ -1439,6 +1502,11 @@ mod tests {
 		let families = markview_core::fonts::families(&fonts, false);
 		let jobs = HashMap::new();
 		let view = super::super::View {
+			choices: {
+				let mut c = super::super::Choices::default();
+				c.refresh(&crate::test_support::fonts());
+				c
+			},
 			catalog: &[],
 			shown: vec![],
 			jobs: &jobs,
@@ -1470,8 +1538,10 @@ mod tests {
 			.expect("the monospace chooser")
 		};
 		let mut settings = ReaderSettings::default();
-		settings
-			.set_font_family(FontRole::Monospace, Some(families[0].to_owned()));
+		settings.set_font_family(
+			FontRole::Monospace,
+			Some(families[0].to_string()),
+		);
 		let t = settings.lang();
 		let row = control(&settings);
 		assert_eq!(row.label, families[0]);
@@ -1480,7 +1550,7 @@ mod tests {
 			unreachable!()
 		};
 		let entries =
-			font_options(FontRole::Monospace, &families, &settings, t);
+			font_options(FontRole::Monospace, &families, 1, &settings, t);
 		assert!(entries[highlight].active);
 		// Without a pick the chooser names the default entry instead.
 		let settings = ReaderSettings::default();
@@ -1492,6 +1562,11 @@ mod tests {
 		let fonts = crate::test_support::fonts();
 		let jobs = HashMap::new();
 		let view = super::super::View {
+			choices: {
+				let mut c = super::super::Choices::default();
+				c.refresh(&crate::test_support::fonts());
+				c
+			},
 			catalog: &[],
 			shown: vec![],
 			jobs: &jobs,
@@ -1553,6 +1628,11 @@ mod tests {
 		let settings = ReaderSettings::default();
 		let jobs = HashMap::new();
 		let view = |scroll: f32| super::super::View {
+			choices: {
+				let mut c = super::super::Choices::default();
+				c.refresh(&crate::test_support::fonts());
+				c
+			},
 			catalog: &[],
 			shown: vec![],
 			jobs: &jobs,

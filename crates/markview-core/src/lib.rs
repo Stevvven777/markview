@@ -1,4 +1,5 @@
 //! Window-independent Markdown reading and layout.
+pub mod background;
 pub mod document;
 pub mod fonts;
 mod highlight;

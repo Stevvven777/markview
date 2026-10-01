@@ -1,195 +1,233 @@
-//! Background highlighting owns its jobs, completion queue and bounded results.
+//! The layout owner retains pending inputs and accepts only its current epoch.
 use super::{LayoutOptions, expand_tabs_mapped};
-use crate::{document::Block, style::Condition};
-use std::ops::Range;
-use std::time::Duration;
-use std::{
-	collections::{HashMap, HashSet},
-	sync::{Arc, mpsc},
+use crate::{
+	background::{Executor, Task, Wake},
+	document::Block,
+	style::Condition,
 };
-#[cfg(not(target_arch = "wasm32"))]
 use std::{
-	sync::atomic::{AtomicUsize, Ordering},
-	thread,
+	collections::{HashMap, HashSet, VecDeque},
+	ops::Range,
+	sync::{
+		Arc,
+		atomic::{AtomicBool, Ordering},
+		mpsc,
+	},
+	time::Duration,
 };
 use web_time::Instant;
 pub(super) type HighlightLines =
 	Vec<Vec<(Range<usize>, Option<crate::style::Color>)>>;
 pub(super) type HighlightResult = Arc<HighlightLines>;
-type HighlightMessage = (u64, HighlightResult);
-/// One code block's source, and the theme to color it with.
-type Job = (u64, String, String, Option<Arc<str>>);
+type Message = (u64, u64, Option<HighlightResult>);
 
 pub(super) struct Highlights {
-	highlight_cache: HashMap<u64, HighlightResult>,
-	highlight_tx: mpsc::Sender<HighlightMessage>,
-	highlight_rx: mpsc::Receiver<HighlightMessage>,
-	highlight_inflight: HashSet<u64>,
+	cache: HashMap<u64, HighlightResult>,
+	tx: mpsc::Sender<Message>,
+	rx: mpsc::Receiver<Message>,
+	current: HashSet<u64>,
+	inflight: HashSet<u64>,
+	finished: HashSet<u64>,
+	pending: VecDeque<(u64, Task)>,
+	pending_keys: HashSet<u64>,
+	epoch: u64,
+	identity: Option<(u64, Option<Arc<str>>, usize, usize)>,
+	cancel: Arc<AtomicBool>,
+	executor: Arc<dyn Executor>,
+	wake: Wake,
 }
 impl Highlights {
-	pub(super) fn new() -> Self {
-		let (highlight_tx, highlight_rx) = mpsc::channel();
+	pub(super) fn new(executor: Arc<dyn Executor>, wake: Wake) -> Self {
+		let (tx, rx) = mpsc::channel();
+		executor.on_available(wake.clone());
 		Self {
-			highlight_cache: HashMap::new(),
-			highlight_tx,
-			highlight_rx,
-			highlight_inflight: HashSet::new(),
+			cache: HashMap::new(),
+			tx,
+			rx,
+			current: HashSet::new(),
+			inflight: HashSet::new(),
+			finished: HashSet::new(),
+			pending: VecDeque::new(),
+			pending_keys: HashSet::new(),
+			epoch: 0,
+			identity: None,
+			cancel: Arc::new(AtomicBool::new(false)),
+			executor,
+			wake,
 		}
 	}
 	pub(super) fn results(&self) -> &HashMap<u64, HighlightResult> {
-		&self.highlight_cache
+		&self.cache
 	}
-	/// Drops every colored result, used when no document is open.
 	pub(super) fn clear(&mut self) {
-		self.highlight_cache.clear();
+		self.cancel.store(true, Ordering::Relaxed);
+		self.cancel = Arc::new(AtomicBool::new(false));
+		self.epoch += 1;
+		self.identity = None;
+		self.pending.clear();
+		self.pending_keys.clear();
+		self.inflight.clear();
+		self.finished.clear();
+		self.current.clear();
+		self.cache.clear();
+		while self.rx.try_recv().is_ok() {}
 	}
 	pub(super) fn prepare(
 		&mut self,
+		document: u64,
 		blocks: &[Block],
 		options: &LayoutOptions,
 	) {
 		let theme = resolved_theme(options);
-		// Every code block of the current document, cached or not. Retaining on
-		// this set bounds the cache to the document in hand, so the results of
-		// a code block that left the document cannot pile up.
-		let mut candidates: Vec<(u64, &str, &str)> = Vec::new();
-		collect(blocks, theme.as_deref(), &mut candidates);
-		let current: HashSet<u64> =
-			candidates.iter().map(|(key, ..)| *key).collect();
-		self.highlight_cache.retain(|key, _| current.contains(key));
-		// Highlighting is cosmetic, so work past the byte budget is simply not
-		// done: the code keeps its text and is laid out uncolored.
-		let mut bytes = 0;
-		let jobs: Vec<Job> = candidates
-			.into_iter()
-			.filter(|(key, ..)| {
-				!self.highlight_cache.contains_key(key)
-					&& !self.highlight_inflight.contains(key)
-			})
-			.filter(|(_, _, text)| {
-				bytes += text.len();
-				bytes <= options.limits.highlight_bytes
-			})
-			.map(|(key, language, text)| {
-				(key, language.to_owned(), text.to_owned(), theme.clone())
+		let line_bytes = options.limits.highlight_line_bytes;
+		let identity = (
+			document,
+			theme.clone(),
+			line_bytes,
+			options.limits.highlight_bytes,
+		);
+		if self.identity.as_ref() != Some(&identity) {
+			let cache = std::mem::take(&mut self.cache);
+			self.clear();
+			self.cache = cache;
+			self.identity = Some(identity);
+		}
+		let mut candidates = Vec::new();
+		collect(blocks, theme.as_deref(), line_bytes, &mut candidates);
+		let mut seen = HashSet::new();
+		candidates.retain(|(key, ..)| seen.insert(*key));
+		let mut bytes = 0usize;
+		self.current = candidates
+			.iter()
+			.filter_map(|(key, _, text)| {
+				bytes = bytes.saturating_add(text.len());
+				(bytes <= options.limits.highlight_bytes).then_some(*key)
 			})
 			.collect();
-		if jobs.is_empty() {
-			return;
+		self.cache.retain(|key, _| self.current.contains(key));
+		for (key, language, text) in candidates {
+			if !self.current.contains(&key)
+				|| self.cache.contains_key(&key)
+				|| self.finished.contains(&key)
+				|| self.inflight.contains(&key)
+				|| self.pending_keys.contains(&key)
+			{
+				continue;
+			}
+			let language = language.to_owned();
+			let text = text.to_owned();
+			let theme = theme.clone();
+			let cancel = self.cancel.clone();
+			let epoch = self.epoch;
+			let tx = self.tx.clone();
+			let wake = self.wake.clone();
+			let task = Task::new(text.len(), move || {
+				let result = std::panic::catch_unwind(
+					std::panic::AssertUnwindSafe(|| {
+						if cancel.load(Ordering::Relaxed) {
+							return None;
+						}
+						let mut highlighter =
+							crate::highlight::Highlighter::new(
+								&language,
+								theme.as_deref(),
+							);
+						let mut colored = Vec::new();
+						for line in super::code::code_lines(&text) {
+							if cancel.load(Ordering::Relaxed) {
+								return None;
+							}
+							colored.push(highlighter.highlight(
+								&expand_tabs_mapped(line, 4).0,
+								line_bytes,
+							));
+						}
+						(!cancel.load(Ordering::Relaxed))
+							.then(|| Arc::new(colored))
+					}),
+				)
+				.ok()
+				.flatten();
+				let _ = tx.send((epoch, key, result));
+				wake();
+			});
+			self.pending_keys.insert(key);
+			self.pending.push_back((key, task));
 		}
-		for (key, ..) in &jobs {
-			self.highlight_inflight.insert(*key);
-		}
-		let tx = self.highlight_tx.clone();
-		let max_line_bytes = options.limits.highlight_line_bytes;
-		// A desktop colors off the critical path, so a page of code never
-		// delays the frame that asked for it. A browser has no threads at all
-		// — `spawn` compiles there and panics at run time — so it colors the
-		// same jobs in this call, under the same byte budget.
-		#[cfg(not(target_arch = "wasm32"))]
-		thread::spawn(move || color(&jobs, &tx, max_line_bytes));
-		#[cfg(target_arch = "wasm32")]
-		color(&jobs, &tx, max_line_bytes);
+		self.submit();
 	}
-
-	pub(super) fn poll(&mut self) -> bool {
-		let mut changed = false;
-		while let Ok((key, highlighted)) = self.highlight_rx.try_recv() {
-			self.store(key, highlighted);
-			changed = true;
-		}
-		changed
-	}
-
-	/// Waits for every started job, so a caller without an event loop draws the
-	/// colored layout on its first and only pass. A job that never reports is
-	/// given up on after [`HIGHLIGHT_WAIT`], because an export must not hang.
-	pub(super) fn settle(&mut self) -> bool {
-		let mut changed = self.poll();
-		let deadline = Instant::now() + HIGHLIGHT_WAIT;
-		while !self.highlight_inflight.is_empty() {
-			let Some(remaining) =
-				deadline.checked_duration_since(Instant::now())
-			else {
-				log::warn!(
-					"Highlights: {} job(s) did not report; the export stays uncolored",
-					self.highlight_inflight.len()
-				);
-				self.highlight_inflight.clear();
-				break;
-			};
-			let wait = remaining.min(Duration::from_millis(50));
-			match self.highlight_rx.recv_timeout(wait) {
-				Ok((key, highlighted)) => {
-					self.store(key, highlighted);
-					changed = true;
+	fn submit(&mut self) {
+		while let Some((key, task)) = self.pending.pop_front() {
+			match self.executor.try_submit(task) {
+				Ok(()) => {
+					self.pending_keys.remove(&key);
+					self.inflight.insert(key);
 				}
-				Err(mpsc::RecvTimeoutError::Timeout) => {}
-				Err(mpsc::RecvTimeoutError::Disconnected) => {
-					self.highlight_inflight.clear();
+				Err(task) => {
+					self.pending.push_front((key, task));
 					break;
 				}
 			}
 		}
+	}
+	pub(super) fn poll(&mut self) -> bool {
+		let mut changed = false;
+		while let Ok(message) = self.rx.try_recv() {
+			changed |= self.store(message);
+		}
+		self.submit();
 		changed
 	}
-
-	fn store(&mut self, key: u64, highlighted: HighlightResult) {
-		self.highlight_inflight.remove(&key);
-		self.highlight_cache.insert(key, highlighted);
-	}
-}
-
-/// Colors every job and reports it, fanning out across threads where the
-/// target has them. Every job reports exactly once, so a caller that waits
-/// for the queue to drain is never left waiting on a job that never ran.
-fn color(jobs: &[Job], tx: &mpsc::Sender<HighlightMessage>, line_bytes: usize) {
-	let color_one = |(key, language, text, theme): &Job| {
-		let code = super::code::code_lines(text);
-		let lines = code
-			.iter()
-			.map(|line| expand_tabs_mapped(line, 4).0.to_owned());
-		let highlighted = crate::highlight::highlight_block(
-			language,
-			theme.as_deref(),
-			lines,
-			line_bytes,
-		);
-		let _ = tx.send((*key, Arc::new(highlighted)));
-	};
-	#[cfg(target_arch = "wasm32")]
-	for job in jobs {
-		color_one(job);
-	}
-	#[cfg(not(target_arch = "wasm32"))]
-	{
-		// Four at most: more workers than that only contend for the same
-		// syntax set, and a couple of blocks do not pay for the split.
-		let workers = thread::available_parallelism()
-			.map_or(1, std::num::NonZeroUsize::get)
-			.min(jobs.len())
-			.min(if jobs.len() < 4 { 1 } else { 4 });
-		let next = AtomicUsize::new(0);
-		thread::scope(|scope| {
-			for _ in 0..workers {
-				let next = &next;
-				let color_one = &color_one;
-				scope.spawn(move || {
-					loop {
-						let index = next.fetch_add(1, Ordering::Relaxed);
-						let Some(job) = jobs.get(index) else {
-							break;
-						};
-						color_one(job);
-					}
-				});
+	pub(super) fn settle(&mut self) -> bool {
+		let mut changed = self.poll();
+		let deadline = Instant::now() + HIGHLIGHT_WAIT;
+		while !self.inflight.is_empty() || !self.pending.is_empty() {
+			let Some(remaining) =
+				deadline.checked_duration_since(Instant::now())
+			else {
+				log::warn!(
+					"Highlights: current work exceeded the export deadline"
+				);
+				self.cancel.store(true, Ordering::Relaxed);
+				self.pending.clear();
+				self.pending_keys.clear();
+				self.inflight.clear();
+				break;
+			};
+			match self
+				.rx
+				.recv_timeout(remaining.min(Duration::from_millis(50)))
+			{
+				Ok(message) => {
+					changed |= self.store(message);
+				}
+				Err(mpsc::RecvTimeoutError::Timeout) => {}
+				Err(mpsc::RecvTimeoutError::Disconnected) => break,
 			}
-		});
+			self.submit();
+		}
+		changed
+	}
+	fn store(&mut self, (epoch, key, result): Message) -> bool {
+		if epoch != self.epoch || !self.current.contains(&key) {
+			return false;
+		}
+		self.inflight.remove(&key);
+		self.finished.insert(key);
+		if let Some(result) = result {
+			self.cache.insert(key, result);
+			true
+		} else {
+			false
+		}
+	}
+}
+impl Drop for Highlights {
+	fn drop(&mut self) {
+		self.cancel.store(true, Ordering::Relaxed);
 	}
 }
 
-/// The syntax theme in force, resolved from `options` exactly as the code
-/// layout resolves it.
 fn resolved_theme(options: &LayoutOptions) -> Option<Arc<str>> {
 	options
 		.codeblock_theme_override
@@ -201,77 +239,171 @@ fn resolved_theme(options: &LayoutOptions) -> Option<Arc<str>> {
 			.as_deref())
 		.map(Arc::from)
 }
-
-/// Identity of one code block's coloring. It is a pure function of the source
-/// and theme, so it doubles as the block cache's highlight token.
-pub(super) fn key(language: &str, text: &str, theme: Option<&str>) -> u64 {
-	crate::document::fingerprint(&(language, text, theme))
+pub(super) fn key(
+	language: &str,
+	text: &str,
+	theme: Option<&str>,
+	line_bytes: usize,
+) -> u64 {
+	crate::document::fingerprint(&(language, text, theme, line_bytes))
 }
-
 fn collect<'a>(
 	blocks: &'a [Block],
 	theme: Option<&str>,
+	line_bytes: usize,
 	out: &mut Vec<(u64, &'a str, &'a str)>,
 ) {
 	for block in blocks {
 		block.for_each_code_block(&mut |language, text| {
-			out.push((key(language, text, theme), language, text));
+			out.push((key(language, text, theme, line_bytes), language, text))
 		});
 	}
 }
-
-/// How long an export waits for the cosmetic highlighting pass.
 const HIGHLIGHT_WAIT: Duration = Duration::from_secs(30);
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::layout::LayoutOptions;
-
-	/// Front matter is a `yaml` code block to the highlighter whatever the
-	/// metadata holds, so it starts a job like any other fenced block.
+	use std::sync::Mutex;
+	#[derive(Default)]
+	struct Controlled {
+		tasks: Mutex<Vec<Task>>,
+		full: AtomicBool,
+	}
+	impl Executor for Controlled {
+		fn try_submit(&self, task: Task) -> Result<(), Task> {
+			if self.full.load(Ordering::Relaxed) {
+				return Err(task);
+			}
+			self.tasks.lock().unwrap().push(task);
+			Ok(())
+		}
+	}
 	#[test]
-	fn front_matter_starts_a_highlight_job() {
-		let source = crate::document::parse(
-			"---\ntitle: N\nauthor:\n  name: A\n---\n\nBody\n",
-		);
-		let options = LayoutOptions::default();
-		let theme = resolved_theme(&options);
-		let mut out = Vec::new();
-		collect(&source.blocks, theme.as_deref(), &mut out);
-		assert_eq!(
-			out,
-			[(
-				key(
-					crate::document::front_matter::LANGUAGE,
-					"title: N\nauthor:\n  name: A",
-					theme.as_deref(),
-				),
-				crate::document::front_matter::LANGUAGE,
-				"title: N\nauthor:\n  name: A",
-			)]
-		);
-		// A flat metadata block is the same job: nothing parses it.
-		let flat = crate::document::parse("---\ntitle: N\n---\n\nBody\n");
-		let mut out = Vec::new();
-		collect(&flat.blocks, theme.as_deref(), &mut out);
-		assert_eq!(out.len(), 1, "{out:?}");
+	fn many_backpressured_blocks_are_queued_once_across_reflows() {
+		for count in [2_000, 16_000] {
+			let text: String = (0..count)
+				.map(|index| format!("```rust\nlet n = {index};\n```\n\n"))
+				.collect();
+			let document = crate::document::parse(text);
+			let executor = Arc::new(Controlled::default());
+			executor.full.store(true, Ordering::Relaxed);
+			let mut highlights =
+				Highlights::new(executor.clone(), Arc::new(|| {}));
+			let start = Instant::now();
+			highlights.prepare(
+				document.content_id,
+				&document.blocks,
+				&LayoutOptions::default(),
+			);
+			eprintln!(
+				"highlight preparation: {count} blocks in {:?}",
+				start.elapsed()
+			);
+			assert_eq!(highlights.pending.len(), count);
+			assert_eq!(highlights.pending_keys.len(), count);
+			highlights.prepare(
+				document.content_id,
+				&document.blocks,
+				&LayoutOptions {
+					width: 100.,
+					..LayoutOptions::default()
+				},
+			);
+			assert_eq!(highlights.pending.len(), count);
+			assert_eq!(highlights.pending_keys.len(), count);
+			executor.full.store(false, Ordering::Relaxed);
+			highlights.poll();
+			assert!(highlights.pending.is_empty());
+			assert!(highlights.pending_keys.is_empty());
+			assert_eq!(executor.tasks.lock().unwrap().len(), count);
+			assert_eq!(highlights.inflight.len(), count);
+			highlights.clear();
+			assert!(highlights.inflight.is_empty());
+		}
 	}
 
-	/// Every queued job reports exactly one result. That count is the
-	/// contract `settle` rests on: an export waits for the queue to drain,
-	/// and a job that ran without reporting would hold it until the timeout.
 	#[test]
-	fn every_job_reports_its_own_result() {
-		let jobs: Vec<Job> = vec![
-			(1, "rust".to_owned(), "fn main() {}".to_owned(), None),
-			(2, "python".to_owned(), "print(1)".to_owned(), None),
-		];
-		let (tx, rx) = mpsc::channel();
-		color(&jobs, &tx, 64 * 1024);
-		drop(tx);
-		let mut reported: Vec<u64> = rx.iter().map(|(key, _)| key).collect();
-		reported.sort_unstable();
-		assert_eq!(reported, [1, 2]);
+	fn epochs_reject_late_results_and_reflow_does_not_duplicate_jobs() {
+		let executor = Arc::new(Controlled::default());
+		let mut highlights = Highlights::new(executor.clone(), Arc::new(|| {}));
+		let doc = crate::document::parse(
+			"---\ntitle: N\n---\n\n```rust\nlet n = 1;\n```\n",
+		);
+		let options = LayoutOptions::default();
+		highlights.prepare(doc.content_id, &doc.blocks, &options);
+		assert_eq!(executor.tasks.lock().unwrap().len(), 2);
+		highlights.prepare(
+			doc.content_id,
+			&doc.blocks,
+			&LayoutOptions {
+				width: 100.,
+				..options.clone()
+			},
+		);
+		assert_eq!(executor.tasks.lock().unwrap().len(), 2);
+		let old_epoch = highlights.epoch;
+		let old_key = *highlights.current.iter().next().unwrap();
+		highlights.clear();
+		highlights.prepare(doc.content_id, &doc.blocks, &options);
+		highlights
+			.tx
+			.send((old_epoch, old_key, Some(Arc::new(Vec::new()))))
+			.unwrap();
+		assert!(!highlights.poll());
+		assert!(highlights.cache.is_empty());
+		let tasks = std::mem::take(&mut *executor.tasks.lock().unwrap());
+		for task in tasks {
+			task.run();
+		}
+		assert!(highlights.poll());
+		assert!(highlights.inflight.is_empty());
+		assert_eq!(highlights.cache.len(), 2);
+		let theme = LayoutOptions {
+			codeblock_theme_override: Some("none".into()),
+			..options.clone()
+		};
+		highlights.prepare(doc.content_id, &doc.blocks, &theme);
+		assert!(highlights.cache.is_empty());
+		highlights.prepare(
+			doc.content_id,
+			&doc.blocks,
+			&LayoutOptions {
+				limits: crate::limits::Limits {
+					highlight_line_bytes: 1,
+					..theme.limits
+				},
+				..theme
+			},
+		);
+		assert!(highlights.cache.is_empty());
+	}
+	#[test]
+	fn backpressure_retains_inputs_and_failed_work_settles() {
+		let executor = Arc::new(Controlled::default());
+		executor.full.store(true, Ordering::Relaxed);
+		let mut highlights = Highlights::new(executor.clone(), Arc::new(|| {}));
+		let doc = crate::document::parse("```rust\nfn main() {}\n```\n");
+		highlights.prepare(
+			doc.content_id,
+			&doc.blocks,
+			&LayoutOptions::default(),
+		);
+		assert_eq!(highlights.pending.len(), 1);
+		assert!(highlights.inflight.is_empty());
+		executor.full.store(false, Ordering::Relaxed);
+		highlights.poll();
+		let key = *highlights.current.iter().next().unwrap();
+		highlights.tx.send((highlights.epoch, key, None)).unwrap();
+		assert!(!highlights.poll());
+		assert!(highlights.inflight.is_empty());
+		highlights.prepare(
+			doc.content_id,
+			&doc.blocks,
+			&LayoutOptions::default(),
+		);
+		assert_eq!(executor.tasks.lock().unwrap().len(), 1);
+		highlights.clear();
+		assert!(highlights.pending.is_empty());
 	}
 }

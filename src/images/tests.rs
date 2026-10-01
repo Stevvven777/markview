@@ -221,7 +221,7 @@ fn mermaid_fences_render_through_the_image_scheduler() {
 	assert!(entry.error.is_none());
 	let (width, height) = entry.size.expect("diagram size");
 	assert!(width > 0 && height > 0);
-	let pixels = images.snapshot.pixels.decoded.lock().unwrap();
+	let pixels = images.snapshot.decoded();
 	let pixels = &pixels[&src];
 	assert!(pixels.rgba.chunks(4).any(|p| p[3] > 0), "blank diagram");
 }
@@ -367,7 +367,7 @@ fn a_private_font_directory_draws_a_diagram() {
 	let entry = &images.snapshot.entries[&src];
 	assert!(entry.error.is_none(), "{entry:?}");
 	assert!(entry.size.is_some());
-	let pixels = images.snapshot.pixels.decoded.lock().unwrap();
+	let pixels = images.snapshot.decoded();
 	assert!(
 		pixels[&src].rgba.chunks(4).any(|pixel| pixel[3] > 0),
 		"blank diagram"
@@ -414,7 +414,7 @@ fn a_new_font_configuration_reaches_the_diagrams() {
 	images.prepare(&doc, path, 1, false, &sheet, &initial);
 	images.wait();
 	let painted = |images: &Images| {
-		let pixels = images.snapshot.pixels.decoded.lock().unwrap();
+		let pixels = images.snapshot.decoded();
 		crate::document::fingerprint(&pixels[&src].rgba.to_vec())
 	};
 	let before = painted(&images);
@@ -468,7 +468,7 @@ fn a_new_diagram_theme_redraws_the_diagram() {
 	);
 	images.wait();
 	let painted = |images: &Images| {
-		let pixels = images.snapshot.pixels.decoded.lock().unwrap();
+		let pixels = images.snapshot.decoded();
 		pixels[&src].rgba.to_vec()
 	};
 	let light = painted(&images);
@@ -613,15 +613,7 @@ fn broken_mermaid_diagram_becomes_an_error_placeholder() {
 	let entry = &images.snapshot.entries[&src];
 	assert!(entry.error.is_some());
 	assert_eq!(entry.size, None);
-	assert!(
-		!images
-			.snapshot
-			.pixels
-			.decoded
-			.lock()
-			.unwrap()
-			.contains_key(&src)
-	);
+	assert!(!images.snapshot.decoded().contains_key(&src));
 	let doc = crate::document::parse("```mermaid\nflowchart LR\n A-->B\n```\n");
 	let mut specs = Vec::new();
 	for block in &doc.blocks {
@@ -637,7 +629,7 @@ fn broken_mermaid_diagram_becomes_an_error_placeholder() {
 	);
 	images.wait();
 	assert!(images.snapshot.entries[&specs[0].src].error.is_none());
-	assert!(images.snapshot.pixels.decoded().contains_key(&specs[0].src));
+	assert!(images.snapshot.decoded().contains_key(&specs[0].src));
 }
 
 #[test]
@@ -686,15 +678,7 @@ fn pathological_mermaid_label_nesting_becomes_an_error_placeholder() {
 		"{entry:?}"
 	);
 	assert_eq!(entry.size, None);
-	assert!(
-		!images
-			.snapshot
-			.pixels
-			.decoded
-			.lock()
-			.unwrap()
-			.contains_key(&src)
-	);
+	assert!(!images.snapshot.decoded().contains_key(&src));
 }
 
 #[test]
@@ -717,15 +701,7 @@ fn pathological_mermaid_chain_becomes_an_error_placeholder() {
 		"{entry:?}"
 	);
 	assert_eq!(entry.size, None);
-	assert!(
-		!images
-			.snapshot
-			.pixels
-			.decoded
-			.lock()
-			.unwrap()
-			.contains_key(&src)
-	);
+	assert!(!images.snapshot.decoded().contains_key(&src));
 }
 
 #[test]
@@ -742,7 +718,7 @@ fn mermaid_chain_just_under_the_graph_budget_renders() {
 	assert!(entry.error.is_none(), "{entry:?}");
 	let (width, height) = entry.size.expect("diagram size");
 	assert!(width > 0 && height > 0);
-	let pixels = images.snapshot.pixels.decoded.lock().unwrap();
+	let pixels = images.snapshot.decoded();
 	assert!(
 		pixels[&src].rgba.chunks(4).any(|p| p[3] > 0),
 		"blank diagram"
@@ -820,8 +796,9 @@ fn gpu_frame_draws_decoded_images() -> Result<()> {
 		held_overflow: None,
 	};
 	// A frame republishes demand and reloads pixels after interrupted cache updates.
-	crate::test_support::poison(&images.snapshot.pixels.decoded);
-	crate::test_support::poison(&images.snapshot.pixels.demand);
+	images.resident.clear();
+	images.publish_pixels();
+
 	let submission = renderer.render(
 		&snapshot,
 		&view,
@@ -830,14 +807,11 @@ fn gpu_frame_draws_decoded_images() -> Result<()> {
 	)?;
 	renderer.wait(Some(submission))?;
 	assert_eq!(
-		images.snapshot.pixels.demand.lock().unwrap()["b.svg"].size,
+		images.snapshot.pixels.demand(images.snapshot.generation)["b.svg"].size,
 		(80, 60)
 	);
 	images.wait();
-	assert_eq!(
-		images.snapshot.pixels.decoded.lock().unwrap()["b.svg"].width,
-		80
-	);
+	assert_eq!(images.snapshot.decoded()["b.svg"].width, 80);
 	// Updating the resource metadata through layout also updates Draw versions.
 	snapshot = LayoutEngine::new().layout_with_images(
 		&doc,
@@ -895,7 +869,7 @@ fn loader_publishes_pixels_and_reports_failures() {
 	assert_eq!(images.snapshot.entries["a.png"].size, Some((6, 4)));
 	assert!(images.snapshot.entries["a.png"].error.is_none());
 	assert!(images.snapshot.entries["missing.png"].error.is_some());
-	let pixels = images.snapshot.pixels.decoded.lock().unwrap();
+	let pixels = images.snapshot.decoded();
 	assert_eq!(pixels["a.png"].width, 6);
 	assert!(!pixels.contains_key("missing.png"));
 }
@@ -915,7 +889,7 @@ fn renamed_alias_reuses_pixels_and_removed_aliases_are_released() {
 		&crate::test_support::fonts(),
 	);
 	images.wait();
-	let first = images.snapshot.pixels.decoded.lock().unwrap()["a.png"].clone();
+	let first = images.snapshot.decoded()["a.png"].clone();
 	let version = images.snapshot.entries["a.png"].version;
 	images.prepare(
 		&crate::document::parse("![a](./a.png)"),
@@ -926,7 +900,7 @@ fn renamed_alias_reuses_pixels_and_removed_aliases_are_released() {
 		&crate::test_support::fonts(),
 	);
 	assert_eq!(images.snapshot.entries["./a.png"].version, version);
-	let pixels = images.snapshot.pixels.decoded.lock().unwrap();
+	let pixels = images.snapshot.decoded();
 	assert!(!pixels.contains_key("a.png"));
 	assert!(Arc::ptr_eq(&first, &pixels["./a.png"]));
 }
@@ -1028,29 +1002,33 @@ fn vector_demand_merges_alias_sizes_and_gpu_residency_avoids_refetch() {
 		&crate::test_support::fonts(),
 	);
 	images.wait();
-	*images.snapshot.pixels.demand.lock().unwrap() = HashMap::from([
-		(
-			"a.svg".into(),
-			ImageDemand {
-				size: (160, 80),
-				needs_pixels: false,
-			},
-		),
-		(
-			"./a.svg".into(),
-			ImageDemand {
-				size: (80, 40),
-				needs_pixels: false,
-			},
-		),
-	]);
+	images.snapshot.pixels.publish_demand(
+		images.snapshot.generation,
+		HashMap::from([
+			(
+				"a.svg".into(),
+				ImageDemand {
+					size: (160, 80),
+					needs_pixels: false,
+				},
+			),
+			(
+				"./a.svg".into(),
+				ImageDemand {
+					size: (80, 40),
+					needs_pixels: false,
+				},
+			),
+		]),
+	);
 	images.wait();
 	let version = images.snapshot.entries["a.svg"].version;
 	assert_eq!(
 		images.entries.values().next().unwrap().raster,
 		Some((160, 80))
 	);
-	images.snapshot.pixels.decoded.lock().unwrap().clear();
+	images.resident.clear();
+	images.publish_pixels();
 	images.poll();
 	assert!(!images.entries.values().next().unwrap().busy);
 	assert_eq!(images.snapshot.entries["a.svg"].version, version);
@@ -1093,10 +1071,19 @@ fn bracketed_ipv6_hosts_are_parsed_and_refused_before_connecting() {
 		"http://[fe80::1]:9/x.png",
 		"http://[fd00::1]:9/x.png",
 	] {
-		let error =
-			fetch(&Source::Http(url.into()), false, None, &diagram_theme())
-				.unwrap_err()
-				.to_string();
+		let error = tokio::runtime::Builder::new_current_thread()
+			.enable_all()
+			.build()
+			.unwrap()
+			.block_on(crate::net::get(
+				url,
+				&crate::net::Validators::default(),
+				super::source::MAX_BYTES as u64,
+				"Image",
+			))
+			.err()
+			.unwrap()
+			.to_string();
 		assert!(error.contains("local or private address"), "{url}: {error}");
 	}
 }
@@ -1211,7 +1198,7 @@ fn offline_serves_a_cached_remote_image_and_fails_without_one() {
 	let entry = &images.snapshot.entries[url];
 	assert!(entry.error.is_none(), "{entry:?}");
 	assert_eq!(entry.size, Some((5, 3)));
-	assert_eq!(images.snapshot.pixels.decoded.lock().unwrap()[url].width, 5);
+	assert_eq!(images.snapshot.decoded()[url].width, 5);
 	// With nothing cached, `--offline` fails with the reader's usual message.
 	let missing = "https://example.com/missing.png";
 	let document = format!("![a]({missing})");
@@ -1234,7 +1221,7 @@ fn offline_serves_a_cached_remote_image_and_fails_without_one() {
 }
 
 #[test]
-fn poisoned_image_caches_reload_pixels() {
+fn evicted_image_pixels_reload_on_frame_demand() {
 	let src = data_uri("image/png", &png(4, 3, [255, 0, 0, 255]));
 	let doc = crate::document::parse(format!("![image]({src})"));
 	let mut loader = images(true);
@@ -1247,20 +1234,111 @@ fn poisoned_image_caches_reload_pixels() {
 		&crate::test_support::fonts(),
 	);
 	loader.wait();
-	assert!(loader.snapshot.pixels.decoded().contains_key(&src));
-	crate::test_support::poison(&loader.snapshot.pixels.decoded);
-	crate::test_support::poison(&loader.snapshot.pixels.demand);
-	assert!(loader.snapshot.pixels.decoded().is_empty());
-	loader.snapshot.pixels.demand().insert(
-		src.clone(),
-		markview_core::image::ImageDemand {
-			size: (4, 3),
-			needs_pixels: true,
-		},
+	assert!(loader.snapshot.decoded().contains_key(&src));
+	loader.resident.clear();
+	loader.publish_pixels();
+
+	assert!(loader.snapshot.decoded().is_empty());
+	loader.snapshot.pixels.publish_demand(
+		loader.snapshot.generation,
+		HashMap::from([(
+			src.clone(),
+			markview_core::image::ImageDemand {
+				size: (4, 3),
+				needs_pixels: true,
+			},
+		)]),
 	);
 	loader.schedule();
 	loader.wait();
-	assert!(loader.snapshot.pixels.decoded().contains_key(&src));
-	assert!(!loader.snapshot.pixels.decoded.is_poisoned());
-	assert!(!loader.snapshot.pixels.demand.is_poisoned());
+	assert!(loader.snapshot.decoded().contains_key(&src));
+}
+
+#[test]
+fn released_image_jobs_cannot_publish_into_a_reopened_document() {
+	struct Controlled(std::sync::mpsc::Sender<markview_core::background::Task>);
+	impl markview_core::background::Executor for Controlled {
+		fn try_submit(
+			&self,
+			task: markview_core::background::Task,
+		) -> std::result::Result<(), markview_core::background::Task> {
+			self.0.send(task).map_err(|error| error.0)
+		}
+	}
+	let services = Arc::new(crate::services::Services::new(4));
+	let mut handle = services.handle.clone();
+	let (tasks, recv) = std::sync::mpsc::channel();
+	handle.cpu = Arc::new(Controlled(tasks));
+	let (wake, woke) = std::sync::mpsc::channel();
+	let mut images = Images::with_services(
+		true,
+		None,
+		crate::test_support::fonts(),
+		handle,
+		Some(services),
+		Arc::new(move || {
+			let _ = wake.send(());
+		}),
+	);
+	let src = data_uri("image/png", &png(2, 1, [20, 30, 40, 255]));
+	let doc = crate::document::parse(format!("![test]({src})"));
+	let prepare = |images: &mut Images| {
+		images.prepare(
+			&doc,
+			Path::new("note.md"),
+			1,
+			false,
+			&Stylesheet::default(),
+			&crate::test_support::fonts(),
+		)
+	};
+	prepare(&mut images);
+	let old = recv.recv_timeout(Duration::from_secs(5)).unwrap();
+	let generation = images.snapshot.generation;
+	images.release();
+	prepare(&mut images);
+	assert_ne!(images.snapshot.generation, generation);
+	let current = recv.recv_timeout(Duration::from_secs(5)).unwrap();
+	old.run();
+	woke.recv_timeout(Duration::from_secs(5)).unwrap();
+	images.poll();
+	assert!(images.snapshot.decoded().is_empty());
+	current.run();
+	woke.recv_timeout(Duration::from_secs(5)).unwrap();
+	images.poll();
+	assert_eq!(images.snapshot.decoded()[&src].width, 2);
+	let snapshot = images.snapshot.clone();
+	let released = Arc::downgrade(&snapshot.decoded()[&src]);
+	images.release();
+	assert!(snapshot.decoded().is_empty());
+	assert!(released.upgrade().is_none());
+	assert!(images.resident.is_empty());
+}
+
+#[test]
+fn repeated_document_release_reclaims_pixels_with_shared_services() {
+	let services = Arc::new(crate::services::Services::new(4));
+	let fonts = crate::test_support::fonts();
+	let src = data_uri("image/png", &png(64, 48, [20, 30, 40, 255]));
+	let doc = crate::document::parse(format!("![test]({src})"));
+	let mut images = Images::shared(true, fonts.clone(), &services);
+	for index in 0..24 {
+		images.prepare(
+			&doc,
+			&PathBuf::from(format!("document-{index}.md")),
+			index,
+			false,
+			&Stylesheet::default(),
+			&fonts,
+		);
+		images.wait();
+		let snapshot = images.snapshot.clone();
+		let weak = Arc::downgrade(&snapshot.decoded()[&src]);
+		images.release();
+		assert!(weak.upgrade().is_none());
+		assert!(snapshot.decoded().is_empty());
+		assert!(images.entries.is_empty() && images.resident.is_empty());
+	}
+	drop(images);
+	drop(services);
 }

@@ -358,28 +358,60 @@ fn open(path: &Path) -> Result<(fs::File, Meta)> {
 /// Serving stale offline deliberately overrides `no-cache` and
 /// `must-revalidate`: there is no network to revalidate against, and a stored
 /// image is exactly what offline reading wants.
+#[cfg(test)]
 pub(super) fn fetch(
 	cache: &Cache,
 	url: &str,
 	offline: bool,
-	get: &mut dyn FnMut(Validators) -> Result<Fetched>,
+	get: &mut (dyn FnMut(Validators) -> Result<Fetched> + Send),
+) -> Result<Vec<u8>> {
+	tokio::runtime::Builder::new_current_thread()
+		.enable_all()
+		.build()
+		.unwrap()
+		.block_on(fetch_cached(cache, url, offline, |validators| {
+			std::future::ready(get(validators))
+		}))
+}
+
+impl Cache {
+	async fn disk<T: Send + 'static>(
+		&self,
+		url: &str,
+		operation: impl FnOnce(Self, String) -> T + Send + 'static,
+	) -> Result<T> {
+		let cache = self.clone();
+		let url = url.to_owned();
+		Ok(tokio::task::spawn_blocking(move || operation(cache, url)).await?)
+	}
+}
+
+async fn fetch_cached<
+	F: std::future::Future<Output = Result<Fetched>> + Send,
+>(
+	cache: &Cache,
+	url: &str,
+	offline: bool,
+	mut get: impl FnMut(Validators) -> F + Send,
 ) -> Result<Vec<u8>> {
 	if offline {
-		return match cache.load_body(url) {
+		return match cache.disk(url, |cache, url| cache.load_body(&url)).await?
+		{
 			Some(body) => Ok(body),
 			None => bail!("Network images disabled (--offline)"),
 		};
 	}
 	let now = SystemTime::now();
-	let stored = cache.load_meta(url);
+	let stored = cache.disk(url, |cache, url| cache.load_meta(&url)).await?;
 	if let Some(meta) = &stored
 		&& meta.fresh(unix(now))
-		&& let Some(body) = cache.load_body(url)
+		&& let Some(body) =
+			cache.disk(url, |cache, url| cache.load_body(&url)).await?
 	{
 		return Ok(body);
 	}
 	let validators = stored.as_ref().map(Meta::validators).unwrap_or_default();
-	let fetched = get(validators)?;
+	let fetched = get(validators).await?;
 	// A `304` is only an answer for the resource the stored validators belong
 	// to. When the chain now ends at another URL, the response says nothing
 	// about this entry, so the new resource is fetched in full.
@@ -388,14 +420,16 @@ pub(super) fn fetch(
 			.as_ref()
 			.is_some_and(|meta| meta.final_url() == fetched.final_url);
 	if fetched.status == 304 && !revalidated {
-		let fetched = get(Validators::default())?;
-		return Ok(install(cache, url, fetched, now));
+		let fetched = get(Validators::default()).await?;
+		return install(cache, url, fetched, now).await;
 	}
 	if revalidated {
 		// The metadata and the body are read together, so a replacement that
 		// landed while the request was in flight cannot pair its bytes with
 		// the validators this response answered.
-		if let Some((current, body)) = cache.load_entry(url) {
+		if let Some((current, body)) =
+			cache.disk(url, |cache, url| cache.load_entry(&url)).await?
+		{
 			// A revalidation that forbids storage, varies on external factors,
 			// or that resolved through a redirect chain the cache cannot
 			// represent, drops the entry instead of retaining it.
@@ -403,7 +437,7 @@ pub(super) fn fetch(
 				|| fetched.headers.varies_wildcard()
 				|| !fetched.redirects_cacheable
 			{
-				cache.remove(url);
+				cache.disk(url, |cache, url| cache.remove(&url)).await?;
 				return Ok(body);
 			}
 			// Only the entry the `304` actually answered may be refreshed. If
@@ -419,27 +453,32 @@ pub(super) fn fetch(
 					now,
 					fetched.freshness_cap,
 				);
-				cache.store(url, &meta, &body);
+				return cache
+					.disk(url, move |cache, url| {
+						cache.store(&url, &meta, &body);
+						body
+					})
+					.await;
 			}
 			return Ok(body);
 		}
 		// The entry vanished between the two reads; fetch it in full rather
 		// than fail a document over a revalidation.
-		let fetched = get(Validators::default())?;
-		return Ok(install(cache, url, fetched, now));
+		let fetched = get(Validators::default()).await?;
+		return install(cache, url, fetched, now).await;
 	}
-	Ok(install(cache, url, fetched, now))
+	install(cache, url, fetched, now).await
 }
 
 /// Stores a fetched response when it may be stored, and returns its body. A
 /// response that must not be stored replaces any stale entry, so it cannot be
 /// served from the cache later.
-fn install(
+async fn install(
 	cache: &Cache,
 	url: &str,
 	fetched: Fetched,
 	now: SystemTime,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
 	if fetched.redirects_cacheable
 		&& !fetched.headers.no_store
 		&& !fetched.headers.varies_wildcard()
@@ -456,37 +495,44 @@ fn install(
 			meta.date.unwrap_or(0),
 			fetched.freshness_cap,
 		);
-		cache.store(url, &meta, &fetched.body);
+		return cache
+			.disk(url, move |cache, url| {
+				cache.store(&url, &meta, &fetched.body);
+				fetched.body
+			})
+			.await;
 	} else {
-		cache.remove(url);
+		cache.disk(url, |cache, url| cache.remove(&url)).await?;
 	}
-	fetched.body
+	Ok(fetched.body)
 }
 
 /// Fetches a remote image, through `cache` when one is configured and directly
 /// otherwise. `offline` never opens a socket.
-pub(super) fn fetch_http(
+pub(super) async fn fetch_http(
 	url: &str,
 	offline: bool,
 	cache: Option<&Cache>,
+	services: &crate::services::Handle,
+	cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<Vec<u8>> {
+	let get = |validators: Validators| {
+		let services = services.clone();
+		let cancel = cancel.clone();
+		let url = url.to_owned();
+		async move {
+			let _permit = services.permit(&cancel).await?;
+			tokio::select! {
+				biased;
+				_ = cancel.cancelled() => bail!("Cancelled"),
+				result = crate::net::get(&url, &validators, super::source::MAX_BYTES as u64, "Image") => result,
+			}
+		}
+	};
 	match cache {
-		Some(cache) => fetch(cache, url, offline, &mut |validators| {
-			crate::net::get(
-				url,
-				&validators,
-				super::source::MAX_BYTES as u64,
-				"Image",
-			)
-		}),
+		Some(cache) => fetch_cached(cache, url, offline, get).await,
 		None if offline => bail!("Network images disabled (--offline)"),
-		None => Ok(crate::net::get(
-			url,
-			&Validators::default(),
-			super::source::MAX_BYTES as u64,
-			"Image",
-		)?
-		.body),
+		None => Ok(get(Validators::default()).await?.body),
 	}
 }
 
@@ -519,6 +565,44 @@ mod tests {
 			has_cache_control: max_age.is_some(),
 			..Default::default()
 		}
+	}
+
+	#[test]
+	fn cacheable_install_yields_while_waiting_for_disk_work() {
+		let runtime = tokio::runtime::Builder::new_current_thread()
+			.enable_all()
+			.max_blocking_threads(1)
+			.build()
+			.unwrap();
+		let scenario = async {
+			let dir = tempfile::tempdir().unwrap();
+			let cache = Cache::new(dir.path().to_owned());
+			let url = "https://example.com/a.png";
+			let (entered, started) = tokio::sync::oneshot::channel();
+			let (release, gate) = std::sync::mpsc::channel();
+			let blocker = tokio::task::spawn_blocking(move || {
+				entered.send(()).unwrap();
+				let _ = gate.recv();
+			});
+			started.await.unwrap();
+			let response = fetched(url, 200, hit(None, Some(600)), b"image");
+			let writing = install(&cache, url, response, SystemTime::now());
+			tokio::pin!(writing);
+			assert!(futures_util::poll!(writing.as_mut()).is_pending());
+			assert!(!cache.path(url).exists());
+			let cancel = tokio_util::sync::CancellationToken::new();
+			let waiting = cancel.clone();
+			let cancellation = tokio::spawn(async move {
+				waiting.cancelled().await;
+			});
+			cancel.cancel();
+			cancellation.await.unwrap();
+			release.send(()).unwrap();
+			assert_eq!(writing.await.unwrap(), b"image");
+			blocker.await.unwrap();
+			assert_eq!(cache.load_body(url).unwrap(), b"image");
+		};
+		runtime.block_on(scenario);
 	}
 
 	/// Stores an immediately stale entry as if it had been fetched through a

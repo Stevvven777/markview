@@ -1,7 +1,7 @@
 //! Shared, concrete chrome components. Geometry owns painting and input alike.
 use super::icons;
 use crate::{
-	app::Button,
+	app::{Button, Label},
 	lang::Lang,
 	layout::{Draw, Paint, Rect, Scrollbar, TextShaper},
 	state::{Command, Dropdown, DropdownId, InteractionState, PanelTab},
@@ -33,12 +33,12 @@ pub(in crate::app) enum ButtonKind {
 }
 
 pub(super) fn button(
-	label: &'static str,
+	label: impl Into<Label>,
 	action: Command,
 	rect: Rect,
 ) -> Button {
 	Button {
-		label,
+		label: label.into(),
 		action,
 		rect,
 		icon: match action {
@@ -100,7 +100,7 @@ pub(in crate::app) fn tab_controls(
 	let mut out = Vec::new();
 	for (index, (label, tab)) in tabs.iter().enumerate() {
 		let mut b = button(
-			label,
+			*label,
 			Command::SettingsTab(*tab),
 			Rect {
 				x: rect.x + INSET + index as f32 * step,
@@ -388,7 +388,7 @@ fn draw_button_edges(
 		} else {
 			0.0
 		};
-		let text = ui.fit(b.label, 13.0, (b.rect.w - 8.0 - room).max(0.0));
+		let text = ui.fit(&b.label, 13.0, (b.rect.w - 8.0 - room).max(0.0));
 		let width = ui.text_width(&text, 13.0);
 		let x = if link {
 			b.rect.x
@@ -460,17 +460,17 @@ fn mix(ui: &TextShaper, from: C, to: C, amount: f32) -> Paint {
 }
 
 pub(in crate::app) struct Action {
-	pub label: &'static str,
+	pub label: Label,
 	pub action: Command,
 	pub active: bool,
 }
 pub(in crate::app) fn action(
-	label: &'static str,
+	label: impl Into<Label>,
 	active: bool,
 	action: Command,
 ) -> Action {
 	Action {
-		label,
+		label: label.into(),
 		active,
 		action,
 	}
@@ -650,7 +650,7 @@ impl Form {
 					h: CONTROL,
 				};
 				let mut b = button(
-					chosen.label,
+					chosen.label.clone(),
 					Command::ToggleDropdown(
 						menu.id,
 						menu.entries
@@ -685,7 +685,7 @@ impl Form {
 					(right - w + i as f32 * slot, slot)
 				};
 				let mut b = button(
-					entry.label,
+					entry.label.clone(),
 					entry.action,
 					Rect {
 						x,
@@ -741,11 +741,12 @@ impl Form {
 		for b in &mut self.buttons {
 			if b.action == Command::SettingsPreview {
 				b.active = enabled;
-				b.label = if enabled {
+				b.label = (if enabled {
 					self.lang.panel_exit_preview()
 				} else {
 					self.lang.panel_preview()
-				};
+				})
+				.into();
 				b.icon =
 					Some(if enabled { icons::EYE_OFF } else { icons::EYE });
 			}
@@ -1104,7 +1105,7 @@ pub(in crate::app) fn menu(
 		.enumerate()
 		.map(|(slot, entry)| {
 			let mut b = button(
-				entry.label,
+				entry.label.clone(),
 				entry.action,
 				Rect {
 					x: rect.x + MENU_PAD,

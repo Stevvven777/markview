@@ -1,8 +1,5 @@
 //! Downloadable-font UI state and operations, independent of the application.
-use std::{
-	collections::{HashMap, HashSet},
-	sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 pub(super) mod view;
 
@@ -24,12 +21,44 @@ pub(super) enum Message {
 	Settled(Box<crate::fonts::Summary>),
 }
 
+#[derive(Clone, Default)]
+pub(super) struct Choices {
+	generation: u64,
+	config: Option<markview_core::fonts::FontConfig>,
+	latin: Arc<[Arc<str>]>,
+	han: Arc<[Arc<str>]>,
+}
+impl Choices {
+	pub(super) fn refresh(
+		&mut self,
+		config: &markview_core::fonts::FontConfig,
+	) {
+		if self.config.as_ref() == Some(config) {
+			return;
+		}
+		self.generation += 1;
+		self.latin = markview_core::fonts::families(config, false);
+		self.han = markview_core::fonts::families(config, true);
+		self.config = Some(config.clone());
+	}
+	fn families(&self, role: crate::settings::FontRole) -> &[Arc<str>] {
+		if role.han() { &self.han } else { &self.latin }
+	}
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Selection {
+	pub catalog_generation: u64,
+	pub index: usize,
+}
+
 #[derive(Default)]
 pub(super) struct FontPanel {
+	choices: Choices,
 	// Built only when a page needs it; catalogue scans must not delay launch.
 	font_catalog: Vec<crate::fonts::Family>,
 	font_jobs: HashMap<String, crate::fonts::Progress>,
-	font_cancel: Arc<Mutex<HashSet<String>>>,
+	font_cancel: HashMap<String, tokio_util::sync::CancellationToken>,
+	services: Option<crate::services::Handle>,
 	font_note: Option<String>,
 	font_status_filter: Option<crate::fonts::State>,
 	/// Whether the page shows its chooser rows rather than the catalogue.
@@ -38,6 +67,7 @@ pub(super) struct FontPanel {
 }
 
 pub(super) struct View<'a> {
+	pub(super) choices: Choices,
 	pub(super) catalog: &'a [crate::fonts::Family],
 	pub(super) shown: Vec<usize>,
 	pub(super) jobs: &'a HashMap<String, crate::fonts::Progress>,
@@ -48,8 +78,15 @@ pub(super) struct View<'a> {
 }
 
 impl FontPanel {
+	pub(super) fn with_services(services: crate::services::Handle) -> Self {
+		Self {
+			services: Some(services),
+			..Default::default()
+		}
+	}
 	pub(super) fn view(&self) -> View<'_> {
 		View {
+			choices: self.choices.clone(),
 			catalog: &self.font_catalog,
 			shown: self.shown_fonts(),
 			jobs: &self.font_jobs,
@@ -58,6 +95,22 @@ impl FontPanel {
 			status_filter: self.font_status_filter,
 			choosers: self.font_choosers,
 		}
+	}
+	pub(super) fn refresh_choices(
+		&mut self,
+		config: &markview_core::fonts::FontConfig,
+	) {
+		self.choices.refresh(config);
+	}
+	pub(super) fn resolve(
+		&self,
+		role: crate::settings::FontRole,
+		selection: Selection,
+	) -> Option<String> {
+		(selection.catalog_generation == self.choices.generation)
+			.then(|| self.choices.families(role).get(selection.index))
+			.flatten()
+			.map(|name| name.to_string())
 	}
 	pub(super) fn set_scroll(&mut self, scroll: f32) {
 		self.scroll = scroll;
@@ -68,6 +121,7 @@ impl FontPanel {
 	pub(super) fn settled(&mut self, summary: &crate::fonts::Summary) {
 		for id in &summary.requested {
 			self.font_jobs.remove(id);
+			self.font_cancel.remove(id);
 		}
 		self.font_note =
 			match (summary.failed.first(), summary.cancelled.first()) {
@@ -169,6 +223,9 @@ impl FontPanel {
 		entries: &[crate::stylesheet::Entry],
 		fonts: &markview_core::fonts::FontConfig,
 	) {
+		if self.font_choosers {
+			self.choices.refresh(fonts);
+		}
 		let builtin = markview_core::style::Stylesheet::builtin();
 		let sheets =
 			std::iter::once(("builtin", builtin.font_families.as_slice()))
@@ -191,7 +248,7 @@ impl FontPanel {
 		ids: &[String],
 		scope: crate::fonts::Scope,
 		offline: bool,
-		send: impl Fn(Message) + Send + 'static,
+		mut send: impl FnMut(Message) + Send + 'static,
 	) -> bool {
 		let ids: Vec<String> = ids
 			.iter()
@@ -216,71 +273,47 @@ impl FontPanel {
 			self.font_note = Some("No user configuration directory".into());
 			return false;
 		};
+		let services =
+			self.services.as_ref().expect("font panel services").clone();
+		let mut cancels = HashMap::new();
 		for family in &missing {
 			self.font_jobs.insert(
 				family.id.clone(),
 				crate::fonts::Progress::queued(&family.id),
 			);
-			if let Some(mut cancel) = markview_core::sync::available(
-				&self.font_cancel,
-				"Font cancellation",
-			) {
-				cancel.remove(&family.id);
-			}
+			let cancel = services.cancel.child_token();
+			self.font_cancel.insert(family.id.clone(), cancel.clone());
+			cancels.insert(family.id.clone(), cancel);
 		}
 		self.font_note = None;
-		let cancels = self.font_cancel.clone();
-		std::thread::spawn(move || {
-			let transport = match crate::net::Downloader::new("Font") {
-				Ok(transport) => transport,
-				Err(error) => {
-					let reason = format!("{error:#}");
-					let failed = missing
-						.iter()
-						.map(|family| (family.id.clone(), reason.clone()))
-						.collect();
-					send(Message::Settled(Box::new(crate::fonts::Summary {
-						requested: missing
-							.iter()
-							.map(|family| family.id.clone())
-							.collect(),
-						failed,
-						..Default::default()
-					})));
-					return;
-				}
-			};
-			let cancel: Arc<dyn Fn(&str) -> bool + Send + Sync> =
-				Arc::new(move |id: &str| {
-					markview_core::sync::available(
-						&cancels,
-						"Font cancellation",
-					)
-					.is_none_or(|cancel| cancel.contains(id))
-				});
-			let summary = crate::fonts::run(
+		let ids: Vec<_> =
+			missing.iter().map(|family| family.id.clone()).collect();
+		let handle = services.clone();
+		if !services.submit(async move {
+			let transport = crate::net::Downloader::new("Font");
+			let summary = crate::fonts::run_async(
 				&missing,
 				&dir,
 				&transport,
-				crate::fonts::DEFAULT_JOBS,
-				cancel,
-				&mut |progress| {
-					send(Message::Progress(Box::new(progress)));
-				},
-			);
+				&handle,
+				cancels,
+				|progress| send(Message::Progress(Box::new(progress))),
+			)
+			.await;
 			send(Message::Settled(Box::new(summary)));
-		});
+		}) {
+			for id in ids {
+				self.font_jobs.remove(&id);
+				self.font_cancel.remove(&id);
+			}
+			self.font_note = Some("Font service closed".into());
+		}
 		false
 	}
 
 	/// Asks one family's running download to stop.
 	fn cancel_font(&mut self, id: &str) {
-		if let Some(mut cancel) = markview_core::sync::available(
-			&self.font_cancel,
-			"Font cancellation",
-		) {
-			cancel.insert(id.to_owned());
-		}
+		self.font_cancel.entry(id.to_owned()).or_default().cancel();
 	}
 
 	/// Opens the download directory, creating it when it does not exist yet.
@@ -329,6 +362,37 @@ mod tests {
 	}
 
 	#[test]
+	fn refreshed_catalogues_reject_old_selection_positions() {
+		let mut panel = panel();
+		let mut config = crate::test_support::fonts();
+		panel.refresh_choices(&config);
+		let selection = Selection {
+			catalog_generation: panel.choices.generation,
+			index: 0,
+		};
+		let selected = panel
+			.resolve(crate::settings::FontRole::Serif, selection)
+			.unwrap();
+		config.revision += 1;
+		panel.refresh_choices(&config);
+		assert!(
+			panel
+				.resolve(crate::settings::FontRole::Serif, selection)
+				.is_none()
+		);
+		assert_eq!(
+			panel.resolve(
+				crate::settings::FontRole::Serif,
+				Selection {
+					catalog_generation: panel.choices.generation,
+					..selection
+				}
+			),
+			Some(selected)
+		);
+	}
+
+	#[test]
 	fn filters_and_row_commands_address_the_same_families() {
 		let mut panel = panel();
 		panel.set_scroll(72.0);
@@ -342,7 +406,7 @@ mod tests {
 		let id = panel.font_catalog[1].family.id.clone();
 		panel.progress(crate::fonts::Progress::queued(&id));
 		panel.command(Command::Cancel(1), true, |_| unreachable!());
-		assert!(panel.font_cancel.lock().unwrap().contains(&id));
+		assert!(panel.font_cancel[&id].is_cancelled());
 		panel.progress(crate::fonts::Progress::queued(
 			&panel.font_catalog[0].family.id,
 		));

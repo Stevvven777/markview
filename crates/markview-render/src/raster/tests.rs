@@ -380,6 +380,7 @@ fn prewarming_leaves_the_visible_image_demand_alone() {
 		images: ImageSnapshot {
 			entries,
 			pixels: pixels.clone(),
+			..Default::default()
 		},
 		blocks: vec![
 			image_block("on-screen.png", 0.),
@@ -407,8 +408,7 @@ fn prewarming_leaves_the_visible_image_demand_alone() {
 		held_overflow: None,
 	};
 	let demanded = |pixels: &ImagePixels| {
-		let mut srcs: Vec<String> =
-			pixels.demand.lock().unwrap().keys().cloned().collect();
+		let mut srcs: Vec<String> = pixels.demand(0).keys().cloned().collect();
 		srcs.sort();
 		srcs
 	};

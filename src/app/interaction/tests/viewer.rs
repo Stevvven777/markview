@@ -41,8 +41,9 @@ fn image_reader(source: &str, src: &str, loaded: bool) -> App<StubProxy> {
 				error: None,
 			},
 		);
-		images.pixels.decoded().insert(
+		images.pixels.insert(
 			src.into(),
+			1,
 			Arc::new(Pixels {
 				width: 400,
 				height: 400,
@@ -232,8 +233,9 @@ fn decoding_refreshes_the_viewer_dimensions_and_texture_version() {
 	open(&mut app);
 	let placeholder = viewer_rect(&mut app);
 	assert_ne!(placeholder.w, placeholder.h);
-	app.readers.session.snapshot.images.pixels.decoded().insert(
+	app.readers.session.snapshot.images.pixels.insert(
 		"a.png".into(),
+		2,
 		Arc::new(Pixels {
 			width: 400,
 			height: 400,

@@ -155,15 +155,32 @@ pub(crate) fn pdf_request(
 
 /// Lays the document out once at the export's own measure. This is the PNG
 /// half of the work, and it runs on the exporting thread.
+#[cfg(test)]
 pub(crate) fn png_snapshot(
 	path: &Path,
 	options: LayoutOptions,
 	offline: bool,
 ) -> Result<LayoutSnapshot> {
-	let mut engine = LayoutEngine::new();
+	png_snapshot_with_services(
+		path,
+		options,
+		offline,
+		std::sync::Arc::new(crate::services::Services::new(4)),
+	)
+}
+pub(crate) fn png_snapshot_with_services(
+	path: &Path,
+	options: LayoutOptions,
+	offline: bool,
+	services: std::sync::Arc<crate::services::Services>,
+) -> Result<LayoutSnapshot> {
+	let mut engine = LayoutEngine::with_executor(
+		services.handle.cpu.clone(),
+		std::sync::Arc::new(|| {}),
+	);
 	engine.validate_stylesheet(&options.stylesheet)?;
 	let document = document::parse(read_document(path)?);
-	let mut images = Images::new(offline, options.fonts.clone());
+	let mut images = Images::shared(offline, options.fonts.clone(), &services);
 	images.prepare(
 		&document,
 		path,

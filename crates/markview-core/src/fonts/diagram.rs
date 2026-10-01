@@ -5,10 +5,7 @@ use parley::fontique::{
 	Blob, Collection, FamilyId, FontInfo, FontStyle, FontWeight, FontWidth,
 	GenericFamily, SourceCache,
 };
-use std::{
-	collections::HashMap,
-	sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Mutex};
 
 /// One face of the shaper's collection, for a caller that measures or draws
 /// outside the shaper.
@@ -111,19 +108,22 @@ impl FaceMetrics {
 	}
 }
 
+type FaceId = usize;
+
 struct DiagramInner {
 	collection: Collection,
 	sources: SourceCache,
 	/// The families the stylesheet's Han font definitions name, in order.
 	han: Vec<String>,
 	/// Every face of one family, the shaper's first choice first.
-	families: HashMap<String, Arc<Vec<Arc<Mutex<FaceMetrics>>>>>,
+	families: HashMap<String, Vec<FaceId>>,
 	/// Every face seen so far, by the key that identifies it.
-	faces: HashMap<(u64, u32), Arc<Mutex<FaceMetrics>>>,
+	faces: Vec<FaceMetrics>,
+	face_ids: HashMap<(u64, u32), FaceId>,
 	/// Production Mermaid requests opt out of collection-wide fallback scans.
 	restricted: bool,
 	/// What the unrestricted compatibility path found for one character.
-	scanned: HashMap<char, Option<(u64, u32)>>,
+	scanned: HashMap<char, Option<FaceId>>,
 }
 
 /// The generic family names a font list may carry, with the substring that
@@ -146,7 +146,7 @@ const GENERICS: [(&str, GenericFamily, &str, &str); 5] = [
 /// list resolves to ([`Self::cover`]); a caller that only lays the diagram out
 /// asks for a width ([`Self::measure`]). Both resolve through this one policy,
 /// so the boxes the layout computes match the text that is drawn.
-/// Poisoned policy state declines queries; poisoned faces are skipped.
+/// Poisoned policy state declines queries.
 pub struct DiagramFonts {
 	inner: Mutex<DiagramInner>,
 }
@@ -161,7 +161,8 @@ impl DiagramFonts {
 				sources: SourceCache::default(),
 				han: han.to_vec(),
 				families: HashMap::new(),
-				faces: HashMap::new(),
+				faces: Vec::new(),
+				face_ids: HashMap::new(),
 				restricted: false,
 				scanned: HashMap::new(),
 			}),
@@ -185,12 +186,12 @@ impl DiagramFonts {
 		}
 		let mut inner = available(&self.inner, "Diagram fonts")?;
 		let base = inner.base_face(families)?;
-		let faces = inner.resolved(families, text, &base);
+		let faces = inner.resolved(families, text, base);
 		let mut width = 0.0;
 		for (ch, face) in text.chars().zip(faces) {
 			width += match face {
-				Some(face) => available(&face, "Font metrics")
-					.and_then(|mut metrics| metrics.advance(ch, size))
+				Some(face) => inner.faces[face]
+					.advance(ch, size)
 					.unwrap_or_else(|| estimate(ch, size)),
 				None => estimate(ch, size),
 			};
@@ -201,9 +202,9 @@ impl DiagramFonts {
 	/// The face that draws `ch` for this family list, for a rasterizer that
 	/// falls back per character.
 	pub fn cover(&self, families: &str, ch: char) -> Option<DiagramFace> {
-		let face =
-			available(&self.inner, "Diagram fonts")?.cover(families, ch)?;
-		Some(available(&face, "Font metrics")?.face.clone())
+		let mut inner = available(&self.inner, "Diagram fonts")?;
+		let face = inner.cover(families, ch)?;
+		Some(inner.faces[face].face.clone())
 	}
 
 	/// The families this collection resolves the generic names a font list may
@@ -249,12 +250,8 @@ impl DiagramFonts {
 		let mut seen = HashMap::new();
 		let mut out = Vec::new();
 		for name in names {
-			for face in inner.family(&name).iter() {
-				let Some(face) = available(face, "Font metrics")
-					.map(|metrics| metrics.face.clone())
-				else {
-					continue;
-				};
+			for id in inner.family(&name) {
+				let face = inner.faces[id].face.clone();
 				if seen.insert(face.key(), ()).is_none() {
 					out.push(face);
 				}
@@ -275,10 +272,8 @@ impl DiagramFonts {
 			inner.collection.family_names().map(str::to_owned).collect();
 		let mut out = Vec::new();
 		for name in names {
-			for face in inner.family(&name).iter() {
-				if let Some(metrics) = available(face, "Font metrics") {
-					out.push(metrics.face.clone());
-				}
+			for id in inner.family(&name) {
+				out.push(inner.faces[id].face.clone());
 			}
 		}
 		out
@@ -327,7 +322,7 @@ impl DiagramInner {
 	}
 
 	/// The faces of one family, the shaper's first choice first.
-	fn family(&mut self, name: &str) -> Arc<Vec<Arc<Mutex<FaceMetrics>>>> {
+	fn family(&mut self, name: &str) -> Vec<FaceId> {
 		if let Some(faces) = self.families.get(name) {
 			return faces.clone();
 		}
@@ -360,21 +355,20 @@ impl DiagramInner {
 				let Some(bytes) = self.sources.get(info.source()) else {
 					continue;
 				};
-				faces.push(Arc::new(Mutex::new(FaceMetrics::new(
-					DiagramFace {
-						family: family.name().to_owned(),
-						weight: info.weight().value() as u16,
-						italic: !matches!(info.style(), FontStyle::Normal),
-						bytes,
-						index: info.index(),
-					},
-				))));
-			}
-		}
-		let faces = Arc::new(faces);
-		for face in faces.iter() {
-			if let Some(metrics) = available(face, "Font metrics") {
-				self.faces.insert(metrics.face.key(), face.clone());
+				let face = DiagramFace {
+					family: family.name().to_owned(),
+					weight: info.weight().value() as u16,
+					italic: !matches!(info.style(), FontStyle::Normal),
+					bytes,
+					index: info.index(),
+				};
+				let id =
+					*self.face_ids.entry(face.key()).or_insert_with(|| {
+						let id = self.faces.len();
+						self.faces.push(FaceMetrics::new(face));
+						id
+					});
+				faces.push(id);
 			}
 		}
 		self.families.insert(name.to_owned(), faces.clone());
@@ -384,82 +378,50 @@ impl DiagramInner {
 	/// The face a rasterizer's own selector picks for this list: the first
 	/// family the collection has. A measurement starts from it, exactly as the
 	/// rasterizer's `select_font` starts from the list.
-	fn base_face(&mut self, families: &str) -> Option<Arc<Mutex<FaceMetrics>>> {
-		split_families(families).into_iter().find_map(|name| {
-			self.family(&name)
-				.iter()
-				.find(|face| available(face, "Font metrics").is_some())
-				.cloned()
-		})
+	fn base_face(&mut self, families: &str) -> Option<FaceId> {
+		split_families(families)
+			.into_iter()
+			.find_map(|name| self.family(&name).first().copied())
 	}
 
-	/// The face each character of `text` is drawn with. The base face draws
-	/// what it covers; a character it cannot draw falls back per character,
-	/// but a fallback that covers the whole text replaces the base face
-	/// everywhere, which is what the rasterizer's own fallback does.
+	/// A fallback covering the whole text replaces the base everywhere.
 	fn resolved(
 		&mut self,
 		families: &str,
 		text: &str,
-		base: &Arc<Mutex<FaceMetrics>>,
-	) -> Vec<Option<Arc<Mutex<FaceMetrics>>>> {
+		base: FaceId,
+	) -> Vec<Option<FaceId>> {
 		let chars: Vec<char> = text.chars().collect();
-		let (mut faces, mut used) = {
-			let Some(mut metrics) = available(base, "Font metrics") else {
-				return vec![None; chars.len()];
-			};
-			let faces: Vec<_> = chars
-				.iter()
-				.map(|ch| metrics.covers(*ch).then(|| base.clone()))
-				.collect();
-			(faces, vec![metrics.face.key()])
-		};
+		let metrics = &mut self.faces[base];
+		let mut faces: Vec<_> = chars
+			.iter()
+			.map(|ch| metrics.covers(*ch).then_some(base))
+			.collect();
+		let mut used = vec![base];
 		while let Some(index) = faces.iter().position(Option::is_none) {
 			let Some(fallback) = self.cover(families, chars[index]) else {
 				break;
 			};
-			let Some(key) = available(&fallback, "Font metrics")
-				.map(|metrics| metrics.face.key())
-			else {
-				break;
-			};
-			if used.contains(&key) {
+			if used.contains(&fallback) {
 				break;
 			}
-			let covers_all = {
-				let Some(mut metrics) = available(&fallback, "Font metrics")
-				else {
-					break;
-				};
-				chars.iter().all(|ch| metrics.covers(*ch))
-			};
-			if covers_all {
+			let metrics = &mut self.faces[fallback];
+			if chars.iter().all(|ch| metrics.covers(*ch)) {
 				faces.fill(Some(fallback));
 				break;
 			}
-			{
-				let Some(mut metrics) = available(&fallback, "Font metrics")
-				else {
-					break;
-				};
-				for (face, ch) in faces.iter_mut().zip(&chars) {
-					if face.is_none() && metrics.covers(*ch) {
-						*face = Some(fallback.clone());
-					}
+			for (face, ch) in faces.iter_mut().zip(&chars) {
+				if face.is_none() && metrics.covers(*ch) {
+					*face = Some(fallback);
 				}
 			}
-			used.push(key);
+			used.push(fallback);
 		}
 		faces
 	}
 
-	/// The face that draws `ch`: the requested families in order, then the
-	/// stylesheet's selected Han families.
-	fn cover(
-		&mut self,
-		families: &str,
-		ch: char,
-	) -> Option<Arc<Mutex<FaceMetrics>>> {
+	/// Requested families first, followed by the stylesheet's Han families.
+	fn cover(&mut self, families: &str, ch: char) -> Option<FaceId> {
 		let mut names = split_families(families);
 		names.extend(self.han.iter().cloned());
 		if let Some(face) =
@@ -470,11 +432,8 @@ impl DiagramInner {
 		if self.restricted {
 			return None;
 		}
-		if let Some(key) = self.scanned.get(&ch).copied().flatten()
-			&& let Some(face) = self.faces.get(&key)
-			&& available(face, "Font metrics").is_some()
-		{
-			return Some(face.clone());
+		if let Some(found) = self.scanned.get(&ch) {
+			return *found;
 		}
 		let rest: Vec<String> = self
 			.collection
@@ -483,29 +442,14 @@ impl DiagramInner {
 			.filter(|name| !names.contains(name))
 			.collect();
 		let found = rest.iter().find_map(|name| self.covering_face(name, ch));
-		self.scanned.insert(
-			ch,
-			found.as_ref().and_then(|face| {
-				available(face, "Font metrics")
-					.map(|metrics| metrics.face.key())
-			}),
-		);
+		self.scanned.insert(ch, found);
 		found
 	}
 
-	/// The first face of `name` that draws `ch`.
-	fn covering_face(
-		&mut self,
-		name: &str,
-		ch: char,
-	) -> Option<Arc<Mutex<FaceMetrics>>> {
+	fn covering_face(&mut self, name: &str, ch: char) -> Option<FaceId> {
 		self.family(name)
-			.iter()
-			.find(|face| {
-				available(face, "Font metrics")
-					.is_some_and(|mut metrics| metrics.covers(ch))
-			})
-			.cloned()
+			.into_iter()
+			.find(|id| self.faces[*id].covers(ch))
 	}
 }
 
@@ -638,12 +582,10 @@ mod tests {
 			let mut inner = fonts.inner.lock().unwrap();
 			let base = inner.base_face("Noto Sans").expect("a base face");
 			inner
-				.resolved("Noto Sans", "A\u{4e2d}", &base)
+				.resolved("Noto Sans", "A\u{4e2d}", base)
 				.into_iter()
 				.map(|face| {
-					face.expect("every character resolves")
-						.lock()
-						.unwrap()
+					inner.faces[face.expect("every character resolves")]
 						.face
 						.family
 						.clone()
@@ -671,28 +613,5 @@ mod tests {
 		assert!(fonts.faces().is_empty());
 		assert!(fonts.faces_for(&["serif".into()]).is_empty());
 		assert!(!DiagramFonts::new(&config, &[]).inner.is_poisoned());
-	}
-	#[cfg(feature = "font-directories")]
-	#[test]
-	fn poisoned_face_uses_a_healthy_fallback() {
-		let config = FontConfig {
-			ignore_system_fonts: true,
-			directories: vec![
-				Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts"),
-			],
-			..Default::default()
-		};
-		let fonts = DiagramFonts::new(&config, &[]);
-		let face = fonts.inner.lock().unwrap().base_face("Noto Sans").unwrap();
-		poison(&face);
-		let fallback = fonts.cover("Noto Sans, Noto Serif", 'A').unwrap();
-		assert_ne!(
-			fallback.key(),
-			face.lock().err().unwrap().into_inner().face.key()
-		);
-		assert!(
-			fonts.measure("Noto Sans, Noto Serif", "A", 16.0).unwrap() > 0.0
-		);
-		assert!(!fonts.inner.is_poisoned());
 	}
 }

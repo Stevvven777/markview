@@ -449,10 +449,10 @@ fn worker_latest_request_wins_after_cancellation() {
 		query: "needle".into(),
 		options: SearchOptions::default(),
 	});
-	let index_generation = worker.index_generation.load(Ordering::Relaxed);
+	let index_generation = worker.control.generation.load(Ordering::Relaxed);
 	let latest = worker.cancel();
 	assert_eq!(
-		worker.index_generation.load(Ordering::Relaxed),
+		worker.control.generation.load(Ordering::Relaxed),
 		index_generation
 	);
 	worker.submit(Request {
@@ -464,7 +464,7 @@ fn worker_latest_request_wins_after_cancellation() {
 		options: SearchOptions::default(),
 	});
 	assert_eq!(
-		worker.index_generation.load(Ordering::Relaxed),
+		worker.control.generation.load(Ordering::Relaxed),
 		index_generation,
 		"typing must preserve in-progress indexing"
 	);
@@ -484,7 +484,9 @@ fn worker_latest_request_wins_after_cancellation() {
 		query: "needle".into(),
 		options: SearchOptions::default(),
 	});
-	assert!(worker.index_generation.load(Ordering::Relaxed) > index_generation);
+	assert!(
+		worker.control.generation.load(Ordering::Relaxed) > index_generation
+	);
 	let result = rx.recv_timeout(Duration::from_secs(10)).unwrap();
 	assert_eq!(result.sequence, reloaded);
 	assert_eq!(result.matches.len(), 1);
@@ -588,8 +590,7 @@ fn poisoned_search_inbox_accepts_new_requests_and_shuts_down() {
 fn a_panicked_search_thread_does_not_panic_on_drop() {
 	let worker = Worker {
 		inbox: Arc::new((Mutex::new(Inbox::default()), Condvar::new())),
-		sequence: Arc::new(AtomicU64::new(0)),
-		index_generation: Arc::new(AtomicU64::new(0)),
+		control: Arc::new(crate::mailbox::Control::default()),
 		handle: Some(std::thread::spawn(|| panic!("injected worker failure"))),
 	};
 	crate::test_support::poison(&worker.inbox.0);

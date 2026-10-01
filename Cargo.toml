@@ -105,7 +105,7 @@ zstd = { version = "0.13", default-features = false }
 sha2 = "0.10"
 # The download path needs a read timeout while it streams, which only the
 # async `reqwest` client offers; one small runtime drives it.
-tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "time", "macros"] }
+tokio = { version = "1", default-features = false, features = ["rt", "time", "macros", "sync", "fs", "io-util", "net"] }
 clap = { version = "4", features = ["derive"] }
 wgpu = { version = "29.0.4", default-features = false, features = ["std", "parking_lot", "wgsl"] }
 winit = "0.30.13"
@@ -117,7 +117,9 @@ resvg = "0.45"
 # Library only: the default `cli` and `png` features would add a second
 # `resvg`/`usvg` and `clap`, while Markview renders the SVG itself.
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "socks"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "socks"] }
+futures-util = "0.3"
+tokio-util = { version = "0.7", features = ["rt"] }
 url = "2"
 percent-encoding = "2"
 base64 = "0.22"

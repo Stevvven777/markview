@@ -36,7 +36,7 @@ pub(super) const MAX_GRAPH_ELEMENTS: usize = 512;
 /// a pathological one cannot abort a worker. It is also the ultimate bound on
 /// the dependency's recursion: a recursive descent consumes at least one byte
 /// per frame to terminate, so no traversal can be deeper than the source is
-/// long. [`RENDER_STACK_BYTES`] is sized for that whole range rather than for
+/// long. The shared CPU worker stack is sized for that whole range rather than for
 /// one grammar's nesting cost.
 pub(super) const MAX_SOURCE_BYTES: usize = 8 * 1024;
 
@@ -46,19 +46,6 @@ pub(super) const MAX_SOURCE_BYTES: usize = 8 * 1024;
 /// diagrams nest a handful of groups; the byte cap would otherwise allow
 /// thousands.
 pub(super) const MAX_LABEL_NESTING: usize = 64;
-
-/// Stack for the thread that runs the parse and layout stages.
-///
-/// The source cap is the ultimate bound on every recursive descent in the
-/// dependency: a frame consumes at least one byte before it can return, so no
-/// traversal is deeper than the 8192 bytes the cap allows. A debug build (the
-/// largest frames) was measured at about 1.8 KiB per nesting level, so the
-/// worst case a one-byte-per-frame recursion could reach is under 15 MiB;
-/// 32 MiB covers that with room for frames up to 4 KiB. The graph traversals
-/// are separately bounded by [`MAX_GRAPH_ELEMENTS`] at a few hundred bytes per
-/// frame, and [`MAX_LABEL_NESTING`] rejects deep brace markup before this
-/// backstop is needed at all.
-const RENDER_STACK_BYTES: usize = 32 * 1024 * 1024;
 
 /// A stylesheet's resolved diagram theme. Two of these are the same theme
 /// exactly when their fingerprints match, so the scheduler can tell a color
@@ -321,22 +308,6 @@ pub(super) fn within_nesting_budget(code: &str) -> bool {
 	deepest <= MAX_LABEL_NESTING
 }
 
-/// Runs `f` on a thread whose stack covers the worst case the byte cap allows.
-/// The thread is joined before this returns, so none is left behind.
-fn on_render_stack<T: Send>(f: impl FnOnce() -> Result<T> + Send) -> Result<T> {
-	std::thread::scope(|scope| {
-		std::thread::Builder::new()
-			.name("markview-mermaid".into())
-			.stack_size(RENDER_STACK_BYTES)
-			.spawn_scoped(scope, f)
-			.map_err(|error| {
-				anyhow!("Mermaid: cannot start renderer: {error}")
-			})?
-			.join()
-			.unwrap_or_else(|_| Err(anyhow!("Mermaid: renderer panicked")))
-	})
-}
-
 /// The parsed diagram for `code`, parsing it on first use.
 fn parsed(code: &str) -> Result<Arc<mermaid_rs_renderer::ParseOutput>> {
 	if let Some(parsed) =
@@ -345,10 +316,10 @@ fn parsed(code: &str) -> Result<Arc<mermaid_rs_renderer::ParseOutput>> {
 	{
 		return Ok(parsed.clone());
 	}
-	let parsed = Arc::new(on_render_stack(|| {
+	let parsed = Arc::new(
 		mermaid_rs_renderer::parse_mermaid_strict(code)
-			.map_err(|e| anyhow!("Mermaid: {e}"))
-	})?);
+			.map_err(|e| anyhow!("Mermaid: {e}"))?,
+	);
 	let mut cache =
 		markview_core::sync::cache(parsed_cache(), "Mermaid parse cache");
 	if let Some(existing) = cache.get(code) {
@@ -387,11 +358,11 @@ fn render_bounded(code: &str, theme: &DiagramTheme) -> Result<String> {
 		..Default::default()
 	};
 	let render = &theme.render;
-	on_render_stack(|| {
+	{
 		let layout =
 			mermaid_rs_renderer::compute_layout(graph, render, &config);
 		Ok(mermaid_rs_renderer::render_svg(&layout, render, &config))
-	})
+	}
 }
 
 /// The SVG for a diagram source under one theme, rendering it on first use.

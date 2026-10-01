@@ -89,7 +89,7 @@ enum ExportOutcome {
 	},
 	/// A PNG layout is ready for the main thread to draw and write.
 	PngReady {
-		snapshot: crate::layout::LayoutSnapshot,
+		snapshot: Box<crate::layout::LayoutSnapshot>,
 		path: PathBuf,
 		/// What the strips render with; the shared renderer borrows it and
 		/// then takes the reading view's sheet back.
@@ -104,13 +104,49 @@ pub(super) struct WatchExport {
 	pub(super) source: PathBuf,
 	pub(super) output: PathBuf,
 }
+#[derive(Clone, Debug)]
+enum Label {
+	Static(&'static str),
+	Shared(Arc<str>),
+}
+impl std::ops::Deref for Label {
+	type Target = str;
+	fn deref(&self) -> &str {
+		match self {
+			Self::Static(text) => text,
+			Self::Shared(text) => text,
+		}
+	}
+}
+impl AsRef<str> for Label {
+	fn as_ref(&self) -> &str {
+		self
+	}
+}
+impl<T: AsRef<str>> PartialEq<T> for Label {
+	fn eq(&self, other: &T) -> bool {
+		self.as_ref() == other.as_ref()
+	}
+}
+impl Eq for Label {}
+impl From<&'static str> for Label {
+	fn from(text: &'static str) -> Self {
+		Self::Static(text)
+	}
+}
+impl From<Arc<str>> for Label {
+	fn from(text: Arc<str>) -> Self {
+		Self::Shared(text)
+	}
+}
+
 #[derive(Clone)]
 struct Button {
 	kind: chrome::components::ButtonKind,
 	enabled: bool,
 	rect: Rect,
 	/// Names the button; drawn only when it has no icon.
-	label: &'static str,
+	label: Label,
 	/// Drawn centered in place of the label when set.
 	icon: Option<&'static [markview_core::scene::IconPath]>,
 	/// Drawn after the label, which makes room for it. It marks what the
@@ -177,6 +213,7 @@ struct App<P = EventLoopProxy<Event>> {
 	/// nothing reports the desktop setting changing afterwards.
 	wheel_notch: crate::platform::WheelNotch,
 	font_panel: font_panel::FontPanel,
+	services: Arc<crate::services::Services>,
 	clipboard: crate::platform::Clipboard,
 	text_input: text_input::InputState,
 	paste_dir: tempfile::TempDir,
@@ -195,6 +232,7 @@ struct App<P = EventLoopProxy<Event>> {
 	fatal: Option<String>,
 	/// An export is being prepared or written; one at a time.
 	export_running: bool,
+	export_thread: Option<std::thread::JoinHandle<()>>,
 	/// A PNG layout waiting to be drawn, one strip per frame.
 	png_export: Option<export::PngExport>,
 	/// The file a live export keeps rewriting, while the watch toggle is on.
@@ -206,6 +244,17 @@ struct App<P = EventLoopProxy<Event>> {
 	/// The export in flight was asked to keep watching its file.
 	export_watch_request: bool,
 }
+impl<P> Drop for App<P> {
+	fn drop(&mut self) {
+		self.services.handle.cancel.cancel();
+		self.worker.shutdown();
+		self.search_worker.shutdown();
+		if let Some(thread) = self.export_thread.take() {
+			let _ = thread.join();
+		}
+	}
+}
+
 impl<P: SendEvent> App<P> {
 	pub(super) fn new(args: LaunchOptions, proxy: P) -> Self {
 		// Parse already folded the personal download directory into the font
@@ -214,7 +263,9 @@ impl<P: SendEvent> App<P> {
 		let fonts_config = args.options.fonts.clone();
 		let done = proxy.clone();
 		let parsed_proxy = proxy.clone();
-		let worker = Worker::with_images_and_parsed(
+		let services = Arc::new(crate::services::Services::new(4));
+		let worker = Worker::with_services_and_parsed(
+			services.clone(),
 			args.offline,
 			fonts_config.clone(),
 			move |update| {
@@ -266,7 +317,10 @@ impl<P: SendEvent> App<P> {
 			ui,
 			preferences,
 			wheel_notch: crate::platform::wheel_notch(),
-			font_panel: font_panel::FontPanel::default(),
+			font_panel: font_panel::FontPanel::with_services(
+				services.handle.clone(),
+			),
+			services,
 			clipboard: Default::default(),
 			text_input: Default::default(),
 			paste_dir: tempfile::tempdir()
@@ -283,6 +337,7 @@ impl<P: SendEvent> App<P> {
 			started: Instant::now(),
 			fatal: None,
 			export_running: false,
+			export_thread: None,
 			png_export: None,
 			watch_export: None,
 			watch_at: None,

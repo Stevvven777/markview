@@ -202,7 +202,7 @@ pub(in crate::app) fn modal_buttons(
 	let row = rect.y + rect.h - 46.0;
 	vec![
 		Button {
-			label: lang.modal_open_folder(),
+			label: (lang.modal_open_folder()).into(),
 			icon: None,
 			marker: None,
 			active: false,
@@ -217,7 +217,7 @@ pub(in crate::app) fn modal_buttons(
 			},
 		},
 		Button {
-			label: lang.modal_open_anyway(),
+			label: (lang.modal_open_anyway()).into(),
 			icon: None,
 			marker: None,
 			active: false,
@@ -232,7 +232,7 @@ pub(in crate::app) fn modal_buttons(
 			},
 		},
 		Button {
-			label: lang.modal_close(),
+			label: (lang.modal_close()).into(),
 			icon: Some(icons::CLOSE),
 			marker: None,
 			active: false,

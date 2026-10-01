@@ -324,7 +324,7 @@ fn list_form_at(
 		.iter()
 		.enumerate()
 		.map(|(index, label)| {
-			action(label, index == 0, Command::Indent(index as u8))
+			action(*label, index == 0, Command::Indent(index as u8))
 		})
 		.collect();
 	let mut rows: Vec<Row> = (0..fillers)

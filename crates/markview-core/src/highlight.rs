@@ -18,8 +18,6 @@ pub(crate) struct Highlighter {
 	inner: Option<HighlightLines<'static>>,
 }
 
-pub(crate) type HighlightedLines = Vec<Vec<(Range<usize>, Option<Color>)>>;
-
 impl Highlighter {
 	pub(crate) fn new(language: &str, theme: Option<&str>) -> Self {
 		if theme == Some("none") {
@@ -103,18 +101,6 @@ pub fn prewarm_highlight() {
 		let mut lines = HighlightLines::new(syntax, theme);
 		let _ = lines.highlight_line("x\n", set);
 	}
-}
-
-pub(crate) fn highlight_block(
-	language: &str,
-	theme: Option<&str>,
-	lines: impl Iterator<Item = String>,
-	max_line_bytes: usize,
-) -> HighlightedLines {
-	let mut highlighter = Highlighter::new(language, theme);
-	lines
-		.map(|line| highlighter.highlight(&line, max_line_bytes))
-		.collect()
 }
 
 #[cfg(test)]

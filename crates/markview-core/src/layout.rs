@@ -103,7 +103,12 @@ fn external_key(
 			.collect::<Vec<_>>(),
 		code.iter()
 			.map(|(language, text)| {
-				let key = highlights::key(language, text, theme);
+				let key = highlights::key(
+					language,
+					text,
+					theme,
+					options.limits.highlight_line_bytes,
+				);
 				(key, highlights.results().contains_key(&key))
 			})
 			.collect::<Vec<_>>(),
@@ -319,13 +324,23 @@ impl Default for LayoutEngine {
 }
 impl LayoutEngine {
 	pub fn new() -> Self {
+		Self::with_executor(
+			crate::background::default_executor(),
+			Arc::new(|| {}),
+		)
+	}
+	/// Injects shared CPU capacity and a completion callback.
+	pub fn with_executor(
+		executor: Arc<dyn crate::background::Executor>,
+		wake: crate::background::Wake,
+	) -> Self {
 		Self {
 			shaper: TextShaper::new(),
 			math: MathEngine::default(),
 			cache: HashMap::new(),
 			pass: 0,
 			completed: None,
-			highlights: highlights::Highlights::new(),
+			highlights: highlights::Highlights::new(executor, wake),
 		}
 	}
 	pub fn clear_document_cache(&mut self) {

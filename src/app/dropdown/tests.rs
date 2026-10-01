@@ -191,6 +191,7 @@ fn committing_a_language_relabels_the_front_matter() {
 		.readers
 		.session
 		.requested_options
+		.clone()
 		.expect("a language change asks for a relayout");
 	assert_eq!(options.front_matter_label, Lang::ZhHans.front_matter());
 }
@@ -645,9 +646,10 @@ fn a_family_option_commits_and_the_default_restores_the_chain() {
 		.buttons()
 		.into_iter()
 		.find_map(|button| match button.action {
-			Command::FontFamily(FontRole::Serif, Some(name)) => {
-				Some((button.action, name))
-			}
+			Command::FontFamily(FontRole::Serif, Some(name)) => Some((
+				button.action,
+				app.font_panel.resolve(FontRole::Serif, name).unwrap(),
+			)),
 			_ => None,
 		})
 		.expect("a family to pick");
@@ -659,7 +661,7 @@ fn a_family_option_commits_and_the_default_restores_the_chain() {
 
 	assert_eq!(
 		app.preferences.values.font_family(FontRole::Serif),
-		Some(family)
+		Some(family.as_str())
 	);
 	assert!(app.interaction.dropdown.is_none());
 	assert!(

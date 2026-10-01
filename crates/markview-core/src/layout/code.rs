@@ -78,7 +78,12 @@ impl BlockContext<'_> {
 			.rule(Condition::CodeBlock)
 			.theme
 			.as_deref());
-		let highlight_key = super::highlights::key(language, text, theme);
+		let highlight_key = super::highlights::key(
+			language,
+			text,
+			theme,
+			opts.limits.highlight_line_bytes,
+		);
 		let lines = code_lines(text);
 		let highlighted = self
 			.highlight_cache

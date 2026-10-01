@@ -307,31 +307,39 @@ fn download(
 		return Ok(());
 	}
 	let dir = directory()?;
-	let transport = crate::net::Downloader::new("Font")?;
+	let transport = crate::net::Downloader::new("Font");
 	let terminal = std::io::stdout().is_terminal();
 	let mut last: std::collections::HashMap<String, (usize, String)> =
 		std::collections::HashMap::new();
-	let summary = crate::fonts::run(
-		&selected,
-		&dir,
-		&transport,
-		jobs,
-		std::sync::Arc::new(|_: &str| false),
-		&mut |progress| {
-			let line = describe(&progress);
-			if terminal {
-				report(format_args!("\r\x1b[K{line}"));
-			} else {
-				// One line per change of file or phase, so a piped log shows
-				// what happened without repeating every chunk.
-				let key = (progress.phase as usize, line.clone());
-				if last.get(&progress.id) != Some(&key) {
-					last.insert(progress.id.clone(), key);
-					report(format_args!("{line}\n"));
+	let services = crate::services::Services::new(jobs);
+	let handle = services.handle.clone();
+	let (done, recv) = std::sync::mpsc::channel();
+	services.handle.submit(async move {
+		let summary = crate::fonts::run_async(
+			&selected,
+			&dir,
+			&transport,
+			&handle,
+			std::collections::HashMap::new(),
+			move |progress| {
+				let line = describe(&progress);
+				if terminal {
+					report(format_args!("\r\x1b[K{line}"));
+				} else {
+					// One line per change of file or phase, so a piped log shows
+					// what happened without repeating every chunk.
+					let key = (progress.phase as usize, line.clone());
+					if last.get(&progress.id) != Some(&key) {
+						last.insert(progress.id.clone(), key);
+						report(format_args!("{line}\n"));
+					}
 				}
-			}
-		},
-	);
+			},
+		)
+		.await;
+		let _ = done.send(summary);
+	});
+	let summary = recv.recv()?;
 	if terminal {
 		report(format_args!("\r\x1b[K"));
 	}

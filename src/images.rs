@@ -22,13 +22,14 @@ use std::{
 	collections::{HashMap, HashSet},
 	path::{Path, PathBuf},
 	sync::{
-		Arc, Mutex,
+		Arc,
 		atomic::{AtomicU64, Ordering},
 		mpsc,
 	},
 	thread,
 	time::{Duration, Instant, SystemTime},
 };
+use tokio_util::sync::CancellationToken;
 const CPU_BUDGET: usize = 256 * 1024 * 1024;
 /// Distinct remote sources one document may fetch per revision. Past this the
 /// remainder wait as placeholders until the reader chooses to load them.
@@ -37,6 +38,7 @@ const REMOTE_LIMIT: &str = "Remote image limit reached (Load all)";
 static VERSION: AtomicU64 = AtomicU64::new(1);
 
 struct Job {
+	cancel: CancellationToken,
 	pdf: bool,
 	ticket: u64,
 	source: Source,
@@ -100,6 +102,8 @@ impl Loaded {
 }
 
 struct Entry {
+	cancel: CancellationToken,
+	target: Option<(u32, u32)>,
 	pdf: Option<markview_pdf::PreparedImage>,
 	ticket: u64,
 	aliases: Vec<String>,
@@ -111,6 +115,12 @@ struct Entry {
 	/// Fingerprint of the diagram theme these pixels were rendered with, so a
 	/// stylesheet change redraws a diagram instead of keeping its old colors.
 	theme: u64,
+}
+
+impl Drop for Entry {
+	fn drop(&mut self) {
+		self.cancel.cancel();
+	}
 }
 
 /// The faces a rasterizer resolves `source` with. Only a diagram is measured
@@ -129,12 +139,24 @@ fn rasterizer_fonts<'a>(
 	}
 }
 
+pub(crate) fn cache_directory() -> Option<PathBuf> {
+	cache::directory()
+}
+
 pub struct Images {
 	pub snapshot: ImageSnapshot,
 	/// Compress PDF resources on the workers instead of caching raw pixels.
 	pdf: bool,
 	entries: HashMap<Source, Entry>,
-	send: Option<mpsc::Sender<Job>>,
+	resident: HashMap<String, Arc<markview_core::image::Pixels>>,
+	demand: HashMap<String, markview_core::image::ImageDemand>,
+	done: mpsc::Sender<Finished>,
+	services: crate::services::Handle,
+	_owner: Option<Arc<crate::services::Services>>,
+	cache: Option<cache::Cache>,
+	offline: bool,
+	wake: markview_core::background::Wake,
+	pipelines: Arc<tokio::sync::Semaphore>,
 	recv: mpsc::Receiver<Finished>,
 	generation: u64,
 	document: PathBuf,
@@ -154,14 +176,28 @@ pub struct Images {
 }
 
 impl Images {
-	pub fn new(offline: bool, fonts: FontConfig) -> Self {
-		Self::build(offline, cache::directory(), fonts)
+	pub(crate) fn shared(
+		offline: bool,
+		fonts: FontConfig,
+		services: &Arc<crate::services::Services>,
+	) -> Self {
+		Self::with_services(
+			offline,
+			cache::directory(),
+			fonts,
+			services.handle.clone(),
+			Some(services.clone()),
+			Arc::new(|| {}),
+		)
 	}
-
-	pub fn for_pdf(offline: bool, fonts: FontConfig) -> Self {
+	pub(crate) fn shared_pdf(
+		offline: bool,
+		fonts: FontConfig,
+		services: &Arc<crate::services::Services>,
+	) -> Self {
 		Self {
 			pdf: true,
-			..Self::new(offline, fonts)
+			..Self::shared(offline, fonts, services)
 		}
 	}
 
@@ -182,102 +218,45 @@ impl Images {
 		Self::build(offline, root, fonts)
 	}
 
+	#[cfg(test)]
 	fn build(
 		offline: bool,
 		cache_root: Option<PathBuf>,
 		fonts: FontConfig,
 	) -> Self {
-		let (tx, rx) = mpsc::channel::<Job>();
-		let rx = Arc::new(Mutex::new(rx));
+		let owner = Arc::new(crate::services::Services::new(4));
+		Self::with_services(
+			offline,
+			cache_root,
+			fonts,
+			owner.handle.clone(),
+			Some(owner),
+			Arc::new(|| {}),
+		)
+	}
+
+	pub(crate) fn with_services(
+		offline: bool,
+		cache_root: Option<PathBuf>,
+		fonts: FontConfig,
+		services: crate::services::Handle,
+		owner: Option<Arc<crate::services::Services>>,
+		wake: markview_core::background::Wake,
+	) -> Self {
 		let (done, recv) = mpsc::channel();
-		let cache = cache_root.map(cache::Cache::new);
-		for i in 0..4 {
-			let rx = rx.clone();
-			let done = done.clone();
-			let cache = cache.clone();
-			thread::Builder::new()
-				.name(format!("markview-image-{i}"))
-				.spawn(move || {
-					loop {
-						// The channel owns its state; job processing happens outside this guard.
-						let Ok(job) = markview_core::sync::recover(
-							&rx,
-							rx.lock(),
-							"Image queue",
-							|_| {},
-						)
-						.recv() else {
-							break;
-						};
-						// A malformed file must not take the reader down with it.
-						let result = std::panic::catch_unwind(
-							std::panic::AssertUnwindSafe(|| {
-								let diagram =
-									job.diagram.as_ref().map(|request| {
-										DiagramFonts::get_for(
-											&request.config,
-											&request.han,
-											&request.families,
-											&request.generic_families,
-										)
-									});
-								let theme = diagram.as_ref().map_or_else(
-									|| job.theme.clone(),
-									|diagram| {
-										let metrics: Arc<
-											dyn mermaid_rs_renderer::TextMetrics,
-										> = diagram.clone();
-										Arc::new(
-											job.theme.with_metrics(metrics),
-										)
-									},
-								);
-								fetch(
-									&job.source,
-									offline,
-									cache.as_ref(),
-									&theme,
-								)
-								.and_then(|b| {
-									decode(
-										&b,
-										job.target,
-										rasterizer_fonts(
-											&job.source,
-											diagram.as_ref(),
-											&theme,
-										),
-										theme.generic_font_families(),
-									)
-									.and_then(|decoded| {
-										Loaded::new(decoded, job.pdf)
-									})
-								})
-							}),
-						)
-						.unwrap_or_else(|_| {
-							Err(anyhow::anyhow!("Image decoder failed"))
-						});
-						if done
-							.send(Finished {
-								ticket: job.ticket,
-								source: job.source,
-								generation: job.generation,
-								result,
-							})
-							.is_err()
-						{
-							break;
-						}
-					}
-				})
-				.expect("start image loader");
-		}
 		Self {
-			snapshot: Default::default(),
+			snapshot: ImageSnapshot::default(),
 			pdf: false,
 			entries: HashMap::new(),
-			send: Some(tx),
+			resident: HashMap::new(),
+			demand: HashMap::new(),
+			done,
+			services,
+			_owner: owner,
+			cache: cache_root.map(cache::Cache::new),
+			offline,
+			wake,
+			pipelines: Arc::new(tokio::sync::Semaphore::new(4)),
 			recv,
 			generation: 0,
 			document: PathBuf::new(),
@@ -347,10 +326,17 @@ impl Images {
 		let theme = self.theme_key;
 		if self.document != path {
 			self.entries.clear();
+			self.snapshot.pixels.replace(HashMap::new());
 			self.snapshot = Default::default();
+			self.resident.clear();
+			self.demand.clear();
 			self.generation += 1;
+			self.snapshot.generation = self.generation;
 			self.document = path.into();
 		}
+		self.snapshot
+			.pixels
+			.set_wake((!specs.is_empty()).then(|| self.wake.clone()));
 		let reload = self.revision != revision;
 		self.revision = revision;
 		if load_all {
@@ -368,7 +354,7 @@ impl Images {
 		// order, so the same document always defers the same images.
 		let mut remote_seen = 0usize;
 		let retained_pixels: HashMap<_, _> = {
-			let pixels = self.snapshot.pixels.decoded();
+			let pixels = &self.resident;
 			self.entries
 				.iter()
 				.filter_map(|(source, e)| {
@@ -395,6 +381,8 @@ impl Images {
 						remote && !load_all && remote_seen > MAX_REMOTE_SOURCES;
 					let e = self.entries.entry(source.clone()).or_insert_with(
 						|| Entry {
+							cancel: self.services.cancel.child_token(),
+							target: None,
 							pdf: None,
 							ticket: 0,
 							aliases: Vec::new(),
@@ -414,6 +402,11 @@ impl Images {
 						e.info.size = None;
 					}
 					if capped {
+						if e.busy {
+							e.cancel.cancel();
+							e.ticket = VERSION.fetch_add(1, Ordering::Relaxed);
+							e.busy = false;
+						}
 						e.info.error = Some(REMOTE_LIMIT.into());
 						e.info.size = None;
 					}
@@ -436,7 +429,7 @@ impl Images {
 		// A new spelling of a retained source shares its pixels immediately.
 		// Remove aliases no longer present so old snapshots cannot pin them.
 		{
-			let mut pixels = self.snapshot.pixels.decoded();
+			let pixels = &mut self.resident;
 			for (source, e) in &self.entries {
 				if let Some(p) = retained_pixels.get(source) {
 					for alias in &e.aliases {
@@ -446,12 +439,30 @@ impl Images {
 			}
 			pixels.retain(|alias, _| self.snapshot.entries.contains_key(alias));
 		}
+		self.publish_pixels();
 		self.schedule();
 	}
 
+	fn publish_pixels(&self) {
+		self.snapshot.pixels.replace(
+			self.resident
+				.iter()
+				.filter_map(|(alias, pixels)| {
+					self.snapshot.entries.get(alias).map(|info| {
+						((alias.clone(), info.version), pixels.clone())
+					})
+				})
+				.collect(),
+		);
+	}
+
 	fn schedule(&mut self) {
-		let demand = self.snapshot.pixels.demand().clone();
-		let pixels = self.snapshot.pixels.decoded();
+		if let Some(demand) = self.snapshot.pixels.take_demand(self.generation)
+		{
+			self.demand = demand;
+		}
+		let demand = &self.demand;
+		let pixels = &self.resident;
 		let theme = self.theme_key;
 		let svg_theme = self.svg_theme_key;
 		let mut running = self.entries.values().filter(|e| e.busy).count();
@@ -463,9 +474,6 @@ impl Images {
 				.any(|a| demand.contains_key(a))
 		});
 		for s in keys {
-			if running >= 4 {
-				break;
-			}
 			let e = self.entries.get_mut(&s).unwrap();
 			let requested = e
 				.aliases
@@ -492,12 +500,18 @@ impl Images {
 			// A failure the old theme caused — a drawing past the pixel
 			// limit, say — does not survive it, or the working theme that
 			// follows could never bring the diagram back. A job still in
-			// flight is covered too: it lands before the next schedule.
+			// flight is cancelled before the next theme is scheduled.
+			if e.busy && (stale || (e.svg && e.target != target)) {
+				e.cancel.cancel();
+				e.ticket = VERSION.fetch_add(1, Ordering::Relaxed);
+				e.busy = false;
+				running -= 1;
+			}
 			if stale && e.info.error.is_some() {
 				e.info.error = None;
 			}
-			if !e.busy
-				&& e.info.error.is_none()
+			if running < 4
+				&& !e.busy && e.info.error.is_none()
 				&& (stale
 					|| e.info.size.is_none()
 					|| resize || (requested.is_some_and(|d| d.needs_pixels)
@@ -506,18 +520,154 @@ impl Images {
 				e.ticket = VERSION.fetch_add(1, Ordering::Relaxed);
 				e.busy = true;
 				e.theme = source_theme;
+				e.target = if e.svg { target } else { None };
 				running += 1;
-				let _ = self.send.as_ref().unwrap().send(Job {
+				e.cancel.cancel();
+				e.cancel = self.services.cancel.child_token();
+				let job = Job {
+					cancel: e.cancel.clone(),
 					pdf: self.pdf,
 					ticket: e.ticket,
-					source: s,
+					source: s.clone(),
 					generation: self.generation,
-					target: if e.svg { target } else { None },
+					target: e.target,
 					theme: self.theme.clone(),
-					diagram: self.diagram.clone(),
-				});
+					diagram: matches!(s, Source::Diagram(_))
+						.then(|| self.diagram.clone())
+						.flatten(),
+				};
+				self.start(job);
 			}
 		}
+	}
+
+	fn start(&self, job: Job) {
+		let services = self.services.clone();
+		let done = self.done.clone();
+		let wake = self.wake.clone();
+		let cache = self.cache.clone();
+		let offline = self.offline;
+		let pipelines = self.pipelines.clone();
+		let ticket = job.ticket;
+		let generation = job.generation;
+		let source = job.source.clone();
+		let fallback_done = done.clone();
+		let fallback_source = source.clone();
+		let accepted = self.services.submit(async move {
+			use futures_util::FutureExt;
+			let operation = async {
+				let _pipeline = tokio::select! {
+					biased;
+					_ = job.cancel.cancelled() => anyhow::bail!("Cancelled"),
+					permit = pipelines.acquire_owned() => permit?,
+				};
+				let bytes = match &job.source {
+					Source::Diagram(_) => None,
+					Source::Http(url) => Some(
+						cache::fetch_http(
+							url,
+							offline,
+							cache.as_ref(),
+							&services,
+							&job.cancel,
+						)
+						.await?,
+					),
+					_ => {
+						let source = job.source.clone();
+						let theme = job.theme.clone();
+						Some(
+							tokio::task::spawn_blocking(move || {
+								fetch(&source, offline, None, &theme)
+							})
+							.await??,
+						)
+					}
+				};
+				let input_bytes = bytes.as_ref().map_or_else(
+					|| match &job.source {
+						Source::Diagram(code) => code.len(),
+						_ => 0,
+					},
+					Vec::len,
+				);
+				let cancel = job.cancel.clone();
+				services
+					.compute(input_bytes, &cancel, move || {
+						if job.cancel.is_cancelled() {
+							anyhow::bail!("Cancelled");
+						}
+						let diagram = job.diagram.as_ref().map(|request| {
+							DiagramFonts::get_for(
+								&request.config,
+								&request.han,
+								&request.families,
+								&request.generic_families,
+							)
+						});
+						let theme = diagram.as_ref().map_or_else(
+							|| job.theme.clone(),
+							|diagram| {
+								let metrics: Arc<
+									dyn mermaid_rs_renderer::TextMetrics,
+								> = diagram.clone();
+								Arc::new(job.theme.with_metrics(metrics))
+							},
+						);
+						if job.cancel.is_cancelled() {
+							anyhow::bail!("Cancelled");
+						}
+						let bytes = match bytes {
+							Some(bytes) => bytes,
+							None => fetch(&job.source, offline, None, &theme)?,
+						};
+						if job.cancel.is_cancelled() {
+							anyhow::bail!("Cancelled");
+						}
+						let decoded = decode(
+							&bytes,
+							job.target,
+							rasterizer_fonts(
+								&job.source,
+								diagram.as_ref(),
+								&theme,
+							),
+							theme.generic_font_families(),
+						)?;
+						if job.cancel.is_cancelled() {
+							anyhow::bail!("Cancelled");
+						}
+						Loaded::new(decoded, job.pdf)
+					})
+					.await
+			};
+			let result = std::panic::AssertUnwindSafe(operation)
+				.catch_unwind()
+				.await
+				.unwrap_or_else(|_| {
+					Err(anyhow::anyhow!("Image pipeline failed"))
+				});
+			let _ = done.send(Finished {
+				ticket,
+				source,
+				generation,
+				result,
+			});
+			wake();
+		});
+		if !accepted {
+			let _ = fallback_done.send(Finished {
+				ticket,
+				source: fallback_source,
+				generation,
+				result: Err(anyhow::anyhow!("Image service closed")),
+			});
+			(self.wake)();
+		}
+	}
+
+	pub(crate) fn poll_deadline(&self) -> Instant {
+		self.poll_at
 	}
 
 	pub fn poll(&mut self) -> bool {
@@ -542,24 +692,17 @@ impl Images {
 					e.raster = Some(decoded.raster);
 					e.pdf = decoded.pdf;
 					if let Some(incoming) = decoded.pixels {
-						let mut pixels = self.snapshot.pixels.decoded();
-						let demand = self.snapshot.pixels.demand();
+						let pixels = &mut self.resident;
+						let demand = &self.demand;
 						cache_pixels(
-							&mut pixels,
-							&e.aliases,
-							incoming,
-							&demand,
-							CPU_BUDGET,
+							pixels, &e.aliases, incoming, demand, CPU_BUDGET,
 						);
 					}
 				}
 				Err(error) => {
 					e.pdf = None;
 					e.info.error = Some(error.to_string());
-					self.snapshot
-						.pixels
-						.decoded()
-						.retain(|s, _| !e.aliases.contains(s));
+					self.resident.retain(|s, _| !e.aliases.contains(s));
 				}
 			}
 			for alias in &e.aliases {
@@ -567,11 +710,19 @@ impl Images {
 			}
 			changed = true;
 		}
+		if changed {
+			self.publish_pixels();
+		}
 		if Instant::now() >= self.poll_at {
 			self.poll_at = Instant::now() + Duration::from_millis(500);
 			for (s, e) in &mut self.entries {
 				let next = stamp(s);
-				if next != e.stamp && !e.busy {
+				if next != e.stamp {
+					if e.busy {
+						e.cancel.cancel();
+						e.ticket = VERSION.fetch_add(1, Ordering::Relaxed);
+						e.busy = false;
+					}
 					e.stamp = next;
 					e.info.error = None;
 					e.info.size = None;
@@ -621,7 +772,11 @@ impl Images {
 	/// a load already in flight for it cannot reappear as a current entry.
 	pub fn release(&mut self) {
 		self.entries.clear();
+		self.snapshot.pixels.replace(HashMap::new());
 		self.snapshot = Default::default();
+		self.resident.clear();
+		self.demand.clear();
 		self.generation += 1;
+		self.snapshot.generation = self.generation;
 	}
 }

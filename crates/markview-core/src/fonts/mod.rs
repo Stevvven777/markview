@@ -24,7 +24,6 @@ use parley::fontique::{
 	SourceCache,
 };
 use std::{
-	collections::HashSet,
 	fmt,
 	hash::{Hash, Hasher},
 	path::PathBuf,
@@ -152,11 +151,11 @@ fn collection(config: &FontConfig) -> Collection {
 /// `han` keeps only the families whose character map covers a Han ideograph,
 /// which is what makes one a useful fallback for a `[cjk]` font definition.
 /// Reading the maps loads every family's faces, so the answer is cached per
-/// configuration exactly as the collection itself is. Every name is stored for
-/// the process, so a caller can name one in a label that outlives the list.
-pub fn families(config: &FontConfig, han: bool) -> Arc<[&'static str]> {
+/// configuration exactly as the collection itself is. Names live as long as their
+/// owners and the bounded cache.
+pub fn families(config: &FontConfig, han: bool) -> Arc<[Arc<str>]> {
 	type Cache =
-		Mutex<Vec<((FontConfig, bool), Arc<OnceLock<Arc<[&'static str]>>>)>>;
+		Mutex<Vec<((FontConfig, bool), Arc<OnceLock<Arc<[Arc<str>]>>>)>>;
 	static CACHE: OnceLock<Cache> = OnceLock::new();
 	let cache_mutex = CACHE.get_or_init(|| Mutex::new(Vec::new()));
 	let slot = cached_slot(
@@ -170,10 +169,10 @@ pub fn families(config: &FontConfig, han: bool) -> Arc<[&'static str]> {
 	slot.get_or_init(|| build_families(config, han)).clone()
 }
 
-fn build_families(config: &FontConfig, han: bool) -> Arc<[&'static str]> {
+fn build_families(config: &FontConfig, han: bool) -> Arc<[Arc<str>]> {
 	let mut collection = collection(config);
-	let mut names: Vec<&'static str> =
-		collection.family_names().map(interned).collect();
+	let mut names: Vec<Arc<str>> =
+		collection.family_names().map(Arc::from).collect();
 	if han {
 		let mut source_cache = SourceCache::default();
 		names.retain(|name| {
@@ -188,23 +187,6 @@ fn build_families(config: &FontConfig, han: bool) -> Arc<[&'static str]> {
 	names.sort_unstable();
 	names.dedup();
 	names.into()
-}
-
-/// Stores `name` for the life of the process and returns it.
-///
-/// A chooser names a family in a label the interface draws every frame, so a
-/// name is kept once however many lists, roles or frames mention it: one small
-/// string per family the machine has, rather than one per option per frame.
-fn interned(name: &str) -> &'static str {
-	static NAMES: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
-	let names = NAMES.get_or_init(|| Mutex::new(HashSet::new()));
-	let mut names = names.lock().expect("font family names");
-	if let Some(stored) = names.get(name) {
-		return stored;
-	}
-	let stored: &'static str = Box::leak(name.to_owned().into_boxed_str());
-	names.insert(stored);
-	stored
 }
 
 /// The cache slot for `key`, retiring the least recently used entry past
@@ -324,6 +306,29 @@ pub(crate) fn poison<T: Send>(lock: &Mutex<T>) {
 mod tests {
 	use super::*;
 	use std::path::Path;
+
+	#[test]
+	fn family_names_are_reclaimed_after_owners_and_cache_retire() {
+		let config = FontConfig {
+			ignore_system_fonts: true,
+			directories: vec![
+				Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts"),
+			],
+			..Default::default()
+		};
+		let names = build_families(&config, false);
+		assert!(!names.is_empty());
+		let weak = Arc::downgrade(&names[0]);
+		let mut cache = Vec::new();
+		let held = cached_slot(&mut cache, 0, || names.clone());
+		drop(names);
+		for key in 1..=CACHE_CAP {
+			cached_slot(&mut cache, key, || Arc::<[Arc<str>]>::from([]));
+		}
+		assert!(weak.upgrade().is_some());
+		drop(held);
+		assert!(weak.upgrade().is_none());
+	}
 
 	/// A collection owns its font blobs, so the cache must not keep one copy
 	/// per revision forever; a repeated configuration still reuses its own.
@@ -480,8 +485,8 @@ mod tests {
 		};
 		let all = families(&config, false);
 		let han = families(&config, true);
-		assert!(all.contains(&"Noto Sans"), "{all:?}");
-		assert!(!han.contains(&"Noto Sans"), "{han:?}");
+		assert!(all.iter().any(|name| &**name == "Noto Sans"), "{all:?}");
+		assert!(!han.iter().any(|name| &**name == "Noto Sans"), "{han:?}");
 		assert!(han.iter().any(|name| name.contains("CJK")), "{han:?}");
 		// Both lists read in alphabetical order, and a Han family is a subset.
 		assert!(all.windows(2).all(|pair| pair[0] <= pair[1]));

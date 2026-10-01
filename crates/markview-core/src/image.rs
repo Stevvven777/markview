@@ -1,7 +1,7 @@
 //! Image semantics and immutable resource metadata. No I/O or GPU dependencies.
 use std::{
 	collections::HashMap,
-	sync::{Arc, Mutex, MutexGuard},
+	sync::{Arc, Mutex},
 };
 
 /// Prefix that marks an image source as a Mermaid diagram rather than a path
@@ -43,26 +43,77 @@ pub struct ImageInfo {
 	pub error: Option<String>,
 }
 
-/// Pixels and per-frame demand, shared by the loader, the layout snapshots and
-/// the renderer. Residency is independent of retained layout snapshots.
-#[derive(Debug, Default)]
+/// Versioned pixels and the latest complete frame, shared with rendering.
+#[derive(Default)]
 pub struct ImagePixels {
-	/// Decoded pixels by every alias of a source.
-	pub decoded: Mutex<HashMap<String, Arc<Pixels>>>,
-	/// Display size in physical pixels requested by the last painted frame,
-	/// by alias. Vector images are rasterized at this size.
-	pub demand: Mutex<HashMap<String, ImageDemand>>,
+	decoded: Mutex<HashMap<(String, u64), Arc<Pixels>>>,
+	demand: Mutex<Option<FrameDemand>>,
+	wake: Mutex<Option<crate::background::Wake>>,
 }
-
-impl ImagePixels {
-	/// Decoded pixels, rebuilt after an interrupted cache update.
-	pub fn decoded(&self) -> MutexGuard<'_, HashMap<String, Arc<Pixels>>> {
-		crate::sync::cache(&self.decoded, "Image pixels")
+#[derive(Debug)]
+struct FrameDemand {
+	generation: u64,
+	entries: HashMap<String, ImageDemand>,
+}
+impl std::fmt::Debug for ImagePixels {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("ImagePixels").finish_non_exhaustive()
 	}
-
-	/// Frame demand, republished after an interrupted update.
-	pub fn demand(&self) -> MutexGuard<'_, HashMap<String, ImageDemand>> {
+}
+impl ImagePixels {
+	pub fn set_wake(&self, wake: Option<crate::background::Wake>) {
+		*self.wake.lock().unwrap() = wake;
+	}
+	pub fn get(&self, alias: &str, version: u64) -> Option<Arc<Pixels>> {
+		let key = (alias.to_owned(), version);
+		crate::sync::cache(&self.decoded, "Image pixels")
+			.get(&key)
+			.cloned()
+	}
+	/// Moves the old map out of the lock before releasing its allocations.
+	pub fn replace(&self, pixels: HashMap<(String, u64), Arc<Pixels>>) {
+		let retired = std::mem::replace(
+			&mut *crate::sync::cache(&self.decoded, "Image pixels"),
+			pixels,
+		);
+		drop(retired);
+	}
+	pub fn insert(&self, alias: String, version: u64, pixels: Arc<Pixels>) {
+		let retired = crate::sync::cache(&self.decoded, "Image pixels")
+			.insert((alias, version), pixels);
+		drop(retired);
+	}
+	pub fn publish_demand(
+		&self,
+		generation: u64,
+		entries: HashMap<String, ImageDemand>,
+	) {
+		let retired = crate::sync::cache(&self.demand, "Image demand").replace(
+			FrameDemand {
+				generation,
+				entries,
+			},
+		);
+		drop(retired);
+		let wake = self.wake.lock().unwrap().clone();
+		if let Some(wake) = wake {
+			wake();
+		}
+	}
+	pub fn take_demand(
+		&self,
+		generation: u64,
+	) -> Option<HashMap<String, ImageDemand>> {
+		let frame = crate::sync::cache(&self.demand, "Image demand").take()?;
+		(frame.generation == generation).then_some(frame.entries)
+	}
+	/// A diagnostic copy; the scheduler consumes frames with `take_demand`.
+	pub fn demand(&self, generation: u64) -> HashMap<String, ImageDemand> {
 		crate::sync::cache(&self.demand, "Image demand")
+			.as_ref()
+			.filter(|frame| frame.generation == generation)
+			.map(|frame| frame.entries.clone())
+			.unwrap_or_default()
 	}
 }
 
@@ -84,9 +135,24 @@ impl ImageDemand {
 /// Immutable view of every image in one document revision.
 #[derive(Clone, Debug, Default)]
 pub struct ImageSnapshot {
+	pub generation: u64,
 	/// Metadata by alias, including the error for an unusable source.
 	pub entries: HashMap<String, ImageInfo>,
 	pub pixels: Arc<ImagePixels>,
+}
+
+impl ImageSnapshot {
+	/// A diagnostic view containing only pixels belonging to this snapshot.
+	pub fn decoded(&self) -> HashMap<String, Arc<Pixels>> {
+		self.entries
+			.iter()
+			.filter_map(|(alias, info)| {
+				self.pixels
+					.get(alias, info.version)
+					.map(|pixels| (alias.clone(), pixels))
+			})
+			.collect()
+	}
 }
 
 impl ImageSpec {
@@ -107,5 +173,59 @@ impl ImageSpec {
 		};
 		let scale = (available.max(1.) / w.max(1.)).min(1.);
 		((w * scale).min(available.max(1.)), h * scale)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	#[test]
+	fn snapshots_and_frames_cannot_cross_resource_generations() {
+		let pixels = Arc::new(ImagePixels::default());
+		let first = Arc::new(Pixels {
+			width: 1,
+			height: 1,
+			rgba: Arc::from([0; 4]),
+		});
+		let retired = Arc::downgrade(&first);
+		pixels.insert("same".into(), 1, first);
+		let old = ImageSnapshot {
+			generation: 1,
+			entries: HashMap::from([(
+				"same".into(),
+				ImageInfo {
+					version: 1,
+					..Default::default()
+				},
+			)]),
+			pixels: pixels.clone(),
+		};
+		assert_eq!(old.decoded().len(), 1);
+		pixels.replace(HashMap::from([(
+			("same".into(), 2),
+			Arc::new(Pixels {
+				width: 2,
+				height: 1,
+				rgba: Arc::from([0; 8]),
+			}),
+		)]));
+		assert!(old.decoded().is_empty());
+		assert!(retired.upgrade().is_none());
+		assert_eq!(pixels.get("same", 2).unwrap().width, 2);
+		let frame = |size| {
+			HashMap::from([(
+				"same".into(),
+				ImageDemand {
+					size,
+					needs_pixels: true,
+				},
+			)])
+		};
+		pixels.publish_demand(1, frame((1, 1)));
+		assert!(pixels.take_demand(2).is_none());
+		pixels.publish_demand(2, frame((2, 1)));
+		pixels.publish_demand(2, frame((4, 2)));
+		assert_eq!(pixels.take_demand(2).unwrap()["same"].size, (4, 2));
+		assert!(pixels.take_demand(2).is_none());
 	}
 }

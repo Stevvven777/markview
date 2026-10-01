@@ -6,10 +6,7 @@ use crate::{
 };
 use std::{
 	path::PathBuf,
-	sync::{
-		Arc, Condvar, Mutex,
-		atomic::{AtomicU32, AtomicU64, Ordering},
-	},
+	sync::{Arc, Condvar, Mutex, atomic::Ordering},
 	thread,
 	time::{Duration, Instant},
 };
@@ -55,27 +52,7 @@ pub struct Update {
 	pub counts: Option<markview_core::text::TextCounts>,
 }
 
-struct Inbox {
-	pending: Option<Request>,
-	stopped: bool,
-	/// Set when the last tab closes: drop the parsed document and its caches.
-	release: bool,
-}
-
-impl Inbox {
-	fn recover<'a>(
-		lock: &'a Mutex<Self>,
-		result: std::sync::LockResult<std::sync::MutexGuard<'a, Self>>,
-	) -> std::sync::MutexGuard<'a, Self> {
-		markview_core::sync::recover(lock, result, "Layout inbox", |state| {
-			state.pending = None;
-		})
-	}
-
-	fn lock(lock: &Mutex<Self>) -> std::sync::MutexGuard<'_, Self> {
-		Self::recover(lock, lock.lock())
-	}
-}
+type Inbox = crate::mailbox::Inbox<Request>;
 
 /// Publication decisions use elapsed layout time, so small but expensive
 /// documents can show completed blocks without waiting for a full viewport.
@@ -121,9 +98,9 @@ impl PrefixPublication {
 }
 
 pub struct Worker {
+	_services: Arc<crate::services::Services>,
 	inbox: Arc<(Mutex<Inbox>, Condvar)>,
-	version: Arc<AtomicU64>,
-	coverage: Arc<AtomicU32>,
+	control: Arc<crate::mailbox::Control>,
 	handle: Option<thread::JoinHandle<()>>,
 }
 impl Worker {
@@ -144,19 +121,30 @@ impl Worker {
 		done: impl Fn(Update) + Send + 'static,
 		parsed: impl Fn(PathBuf, u64, Arc<document::Document>) + Send + 'static,
 	) -> Self {
-		let inbox = Arc::new((
-			Mutex::new(Inbox {
-				pending: None,
-				stopped: false,
-				release: false,
-			}),
-			Condvar::new(),
-		));
+		Self::with_services_and_parsed(
+			Arc::new(crate::services::Services::new(4)),
+			offline,
+			fonts,
+			done,
+			parsed,
+		)
+	}
+	pub(crate) fn with_services_and_parsed(
+		services: Arc<crate::services::Services>,
+		offline: bool,
+		fonts: markview_core::fonts::FontConfig,
+		done: impl Fn(Update) + Send + 'static,
+		parsed: impl Fn(PathBuf, u64, Arc<document::Document>) + Send + 'static,
+	) -> Self {
+		let inbox = Arc::new((Mutex::new(Inbox::default()), Condvar::new()));
 		let thread_inbox = inbox.clone();
-		let version = Arc::new(AtomicU64::new(0));
-		let current = version.clone();
-		let coverage = Arc::new(AtomicU32::new(f32::INFINITY.to_bits()));
-		let target = coverage.clone();
+		let control = Arc::new(crate::mailbox::Control::default());
+		control
+			.coverage
+			.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
+		let current = control.clone();
+		let target = control.clone();
+		let io = services.handle.clone();
 		let handle = thread::Builder::new()
 			.name("markview-layout".into())
 			.stack_size(8 * 1024 * 1024)
@@ -165,9 +153,24 @@ impl Worker {
 				// renderer initialize on the main thread; every later shaper
 				// clones the resulting collection instead of scanning again.
 				crate::layout::TextShaper::warm_fonts(&fonts);
-				let mut engine = LayoutEngine::new();
-				let mut images =
-					crate::images::Images::new(offline, fonts.clone());
+				let wake: markview_core::background::Wake = Arc::new({
+					let inbox = thread_inbox.clone();
+					move || {
+						let (lock, signal) = &*inbox;
+						Inbox::lock(lock).background_ready = true;
+						signal.notify_one();
+					}
+				});
+				let mut engine =
+					LayoutEngine::with_executor(io.cpu.clone(), wake.clone());
+				let mut images = crate::images::Images::with_services(
+					offline,
+					crate::images::cache_directory(),
+					fonts.clone(),
+					io,
+					None,
+					wake,
+				);
 				let mut last: Option<Request> = None;
 				let mut completed_version = 0;
 				// Reads counts for the last content identity, reused by every
@@ -187,9 +190,14 @@ impl Worker {
 						let mut inbox = Inbox::lock(lock);
 						if inbox.pending.is_none()
 							&& !inbox.stopped && !inbox.release
+							&& !inbox.background_ready
 						{
-							let waited = wake
-								.wait_timeout(inbox, Duration::from_millis(50));
+							let waited = wake.wait_timeout(
+								inbox,
+								images
+									.poll_deadline()
+									.saturating_duration_since(Instant::now()),
+							);
 							inbox = Inbox::recover(
 								lock,
 								waited.map(|(guard, _)| guard).map_err(
@@ -204,6 +212,7 @@ impl Worker {
 						if inbox.stopped {
 							break;
 						}
+						inbox.background_ready = false;
 						let release = std::mem::take(&mut inbox.release);
 						(
 							if release { None } else { inbox.pending.take() },
@@ -279,10 +288,10 @@ impl Worker {
 										// parse instead of waiting for the
 										// whole file.
 										let prefix_start = Instant::now();
-										if current.load(Ordering::Relaxed)
-											== request.version && let Some(
-											prefix,
-										) =
+										if current
+											.sequence
+											.load(Ordering::Relaxed) == request
+											.version && let Some(prefix) =
 											document::parse_prefix(
 												&source,
 												PREFIX_BYTES,
@@ -312,7 +321,9 @@ impl Worker {
 											// the viewport, not the bound.
 											let layout_start = Instant::now();
 											let wanted = f32::from_bits(
-												target.load(Ordering::Relaxed),
+												target
+													.coverage
+													.load(Ordering::Relaxed),
 											);
 											let mut shown = None;
 											engine.layout_progressive(
@@ -369,7 +380,7 @@ impl Worker {
 								if cached.as_ref().is_some_and(
 									|(path, _, _)| path != &request.path,
 								) {
-									engine.clear_document_cache();
+									engine.release_document();
 								}
 								cached = Some((
 									request.path.clone(),
@@ -378,7 +389,7 @@ impl Worker {
 								));
 								doc
 							};
-							if current.load(Ordering::Relaxed)
+							if current.sequence.load(Ordering::Relaxed)
 								!= request.version
 							{
 								return Err("Superseded".into());
@@ -410,13 +421,17 @@ impl Worker {
 									&request.options,
 									&images.snapshot,
 									|prefix| {
-										if current.load(Ordering::Relaxed)
-											!= request.version
+										if current
+											.sequence
+											.load(Ordering::Relaxed) != request
+											.version
 										{
 											return false;
 										}
 										let wanted = f32::from_bits(
-											target.load(Ordering::Relaxed),
+											target
+												.coverage
+												.load(Ordering::Relaxed),
 										);
 										if request.version != completed_version
 											&& publication.publish(
@@ -457,7 +472,9 @@ impl Worker {
 								remote_deferred: images.deferred_remote(),
 							})
 						})());
-					if current.load(Ordering::Relaxed) == request.version {
+					if current.sequence.load(Ordering::Relaxed)
+						== request.version
+					{
 						if update.result.as_ref().is_some_and(|r| r.is_ok()) {
 							completed_version = request.version;
 						}
@@ -510,28 +527,39 @@ impl Worker {
 						done(update);
 					}
 				}
+				engine.release_document();
+				images.release();
 			})
 			.expect("start layout worker");
 		Self {
+			_services: services,
 			inbox,
-			version,
-			coverage,
+			control,
 			handle: Some(handle),
 		}
 	}
 	pub fn submit(&self, request: Request) {
-		self.coverage
+		self.control
+			.coverage
 			.store(request.coverage.to_bits(), Ordering::Relaxed);
-		self.version.store(request.version, Ordering::Relaxed);
+		self.control
+			.sequence
+			.store(request.version, Ordering::Relaxed);
 		let (lock, wake) = &*self.inbox;
-		Inbox::lock(lock).pending = Some(request);
+		let mut inbox = Inbox::lock(lock);
+		if inbox.stopped {
+			return;
+		}
+		inbox.pending = Some(request);
 		wake.notify_one();
 	}
 	pub fn prioritize(&self, coverage: f32) {
-		self.coverage.store(coverage.to_bits(), Ordering::Relaxed);
+		self.control
+			.coverage
+			.store(coverage.to_bits(), Ordering::Relaxed);
 	}
 	pub fn cancel(&self) {
-		self.version.store(0, Ordering::Relaxed);
+		self.control.sequence.store(0, Ordering::Relaxed);
 		let (lock, _) = &*self.inbox;
 		Inbox::lock(lock).pending = None;
 	}
@@ -544,11 +572,15 @@ impl Worker {
 		wake.notify_one();
 	}
 }
-impl Drop for Worker {
-	fn drop(&mut self) {
-		self.version.store(0, Ordering::Relaxed);
+impl Worker {
+	pub(crate) fn shutdown(&mut self) {
+		self.control.sequence.store(0, Ordering::Relaxed);
 		let (lock, wake) = &*self.inbox;
-		Inbox::lock(lock).stopped = true;
+		{
+			let mut inbox = Inbox::lock(lock);
+			inbox.stopped = true;
+			inbox.pending = None;
+		}
 		wake.notify_one();
 		if let Some(t) = self.handle.take()
 			&& t.join().is_err()
@@ -558,10 +590,20 @@ impl Drop for Worker {
 	}
 }
 
+impl Drop for Worker {
+	fn drop(&mut self) {
+		self.shutdown();
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use std::{fs, sync::mpsc, time::Duration};
+	use std::{
+		fs,
+		sync::{atomic::AtomicU64, mpsc},
+		time::Duration,
+	};
 	#[test]
 	fn poisoned_inbox_accepts_a_new_layout_and_shuts_down() {
 		let dir = tempfile::tempdir().unwrap();

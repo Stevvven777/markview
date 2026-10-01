@@ -116,7 +116,7 @@ impl<'a> Images<'a> {
 		if let Some(image) = self.cache.get(&key) {
 			return image.clone().ok_or_else(|| self.missing(src, version));
 		}
-		let pixels = self.snapshot.pixels.decoded().get(src).cloned();
+		let pixels = self.snapshot.pixels.get(src, version);
 		let image = pixels.map(|pixels| {
 			Image::from_rgba8(pixels.rgba.to_vec(), pixels.width, pixels.height)
 		});
@@ -147,23 +147,13 @@ mod tests {
 	use std::sync::Arc;
 
 	#[test]
-	fn poisoned_pixels_report_an_error_and_a_new_version_can_be_embedded() {
+	fn missing_pixels_report_an_error_and_a_new_version_can_be_embedded() {
 		let snapshot = ImageSnapshot::default();
-		std::thread::scope(|scope| {
-			assert!(
-				scope
-					.spawn(|| {
-						let _pixels = snapshot.pixels.decoded.lock().unwrap();
-						panic!("injected failure");
-					})
-					.join()
-					.is_err()
-			);
-		});
 		let mut images = Images::new(&snapshot, None);
 		assert!(images.get("image", 1).is_err());
-		snapshot.pixels.decoded().insert(
+		snapshot.pixels.insert(
 			"image".into(),
+			2,
 			Arc::new(Pixels {
 				width: 1,
 				height: 1,
@@ -171,6 +161,6 @@ mod tests {
 			}),
 		);
 		assert!(images.get("image", 2).is_ok());
-		assert!(!snapshot.pixels.decoded.is_poisoned());
+		assert!(images.get("image", 1).is_err());
 	}
 }

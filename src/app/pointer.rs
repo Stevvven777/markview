@@ -341,16 +341,11 @@ impl<P: super::SendEvent> App<P> {
 		// The pixels the renderer already holds cap the fitting, so the
 		// viewer never promises a sharper picture than exists. A picture
 		// still decoding fits its laid-out rect instead.
-		let pixels = self
-			.readers
-			.session
-			.snapshot
-			.images
-			.pixels
-			.decoded
-			.lock()
-			.unwrap()
+		let images = &self.readers.session.snapshot.images;
+		let pixels = images
+			.entries
 			.get(&src)
+			.and_then(|info| images.pixels.get(&src, info.version))
 			.map(|p| (p.width as f32, p.height as f32))
 			.unwrap_or((rect.w.max(1.), rect.h.max(1.)));
 		let scale = self.dimensions().2;
@@ -377,14 +372,11 @@ impl<P: super::SendEvent> App<P> {
 		let Some(viewer) = self.interaction.viewer.as_mut() else {
 			return;
 		};
-		if let Some(pixels) = self
-			.readers
-			.session
-			.snapshot
-			.images
-			.pixels
-			.decoded()
+		let images = &self.readers.session.snapshot.images;
+		if let Some(pixels) = images
+			.entries
 			.get(&viewer.src)
+			.and_then(|info| images.pixels.get(&viewer.src, info.version))
 		{
 			viewer.pixels = (pixels.width as f32, pixels.height as f32);
 		}

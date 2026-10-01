@@ -192,7 +192,7 @@ pub(super) fn style_controls(
 	}
 	for (label, icon, action, x, w) in headers {
 		out.push(Button {
-			label,
+			label: label.into(),
 			icon,
 			marker: None,
 			active: action == Command::SystemTheme && selected.is_none(),
@@ -239,11 +239,12 @@ pub(super) fn style_rows(
 		let y = list.row_rect(row).y + (ROW - CONTROL) / 2.0;
 		if e.error.is_none() || pos.is_some() {
 			out.push(Button {
-				label: if pos.is_some() {
+				label: (if pos.is_some() {
 					lang.styles_disable()
 				} else {
 					lang.styles_enable()
-				},
+				})
+				.into(),
 				icon: None,
 				marker: None,
 				active: pos.is_some(),
@@ -280,7 +281,7 @@ pub(super) fn style_rows(
 					continue;
 				}
 				out.push(Button {
-					label,
+					label: label.into(),
 					icon: Some(icon),
 					marker: None,
 					active: false,

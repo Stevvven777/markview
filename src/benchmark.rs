@@ -147,8 +147,16 @@ pub fn run(
 	let init = Instant::now();
 	let mut renderer = pollster::block_on(Renderer::new(None))?;
 	renderer.set_stylesheet(options.stylesheet.clone());
-	let mut engine = LayoutEngine::new();
-	let mut images = crate::images::Images::new(offline, options.fonts.clone());
+	let services = std::sync::Arc::new(crate::services::Services::new(4));
+	let mut engine = LayoutEngine::with_executor(
+		services.handle.cpu.clone(),
+		std::sync::Arc::new(|| {}),
+	);
+	let mut images = crate::images::Images::shared(
+		offline,
+		options.fonts.clone(),
+		&services,
+	);
 	engine.validate_stylesheet(&options.stylesheet)?;
 	crate::layout::TextShaper::warm_fonts(&options.fonts);
 	let texture = renderer.offscreen(width, height);

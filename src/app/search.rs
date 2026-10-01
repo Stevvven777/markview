@@ -11,10 +11,7 @@ use markview_core::{
 };
 use std::{
 	path::PathBuf,
-	sync::{
-		Arc, Condvar, Mutex,
-		atomic::{AtomicU64, Ordering},
-	},
+	sync::{Arc, Condvar, Mutex, atomic::Ordering},
 };
 
 pub(super) const HEIGHT: f32 = 44.0;
@@ -52,43 +49,20 @@ struct Request {
 	query: String,
 	options: SearchOptions,
 }
-#[derive(Default)]
-struct Inbox {
-	request: Option<Request>,
-	content_key: Option<(PathBuf, u64)>,
-	stopped: bool,
-}
-
-impl Inbox {
-	fn recover<'a>(
-		lock: &'a Mutex<Self>,
-		result: std::sync::LockResult<std::sync::MutexGuard<'a, Self>>,
-	) -> std::sync::MutexGuard<'a, Self> {
-		markview_core::sync::recover(lock, result, "Search inbox", |state| {
-			state.request = None;
-			state.content_key = None;
-		})
-	}
-
-	fn lock(lock: &Mutex<Self>) -> std::sync::MutexGuard<'_, Self> {
-		Self::recover(lock, lock.lock())
-	}
-}
+type Inbox = crate::mailbox::Inbox<Request, Option<(PathBuf, u64)>>;
 
 pub(super) struct Worker {
 	inbox: Arc<(Mutex<Inbox>, Condvar)>,
-	sequence: Arc<AtomicU64>,
-	index_generation: Arc<AtomicU64>,
+	control: Arc<crate::mailbox::Control>,
 	handle: Option<std::thread::JoinHandle<()>>,
 }
 impl Worker {
 	pub(super) fn new(done: impl Fn(Result) + Send + 'static) -> Self {
 		let inbox = Arc::new((Mutex::new(Inbox::default()), Condvar::new()));
-		let sequence = Arc::new(AtomicU64::new(0));
-		let index_generation = Arc::new(AtomicU64::new(0));
-		let index_serial = index_generation.clone();
+		let control = Arc::new(crate::mailbox::Control::default());
+		let index_serial = control.clone();
 		let shared = inbox.clone();
-		let serial = sequence.clone();
+		let serial = control.clone();
 		let handle = std::thread::Builder::new()
 			.name("markview-search".into())
 			.spawn(move || {
@@ -97,19 +71,29 @@ impl Worker {
 					let (request, index_version) = {
 						let (lock, wake) = &*shared;
 						let mut inbox = Inbox::lock(lock);
-						while inbox.request.is_none() && !inbox.stopped {
+						while inbox.pending.is_none()
+							&& !inbox.stopped && !inbox.release
+						{
 							inbox = Inbox::recover(lock, wake.wait(inbox));
 						}
 						if inbox.stopped {
 							break;
 						}
+						if std::mem::take(&mut inbox.release) {
+							cache = None;
+							if inbox.pending.is_none() {
+								continue;
+							}
+						}
 						(
-							inbox.request.take().unwrap(),
-							index_serial.load(Ordering::Relaxed),
+							inbox.pending.take().unwrap(),
+							index_serial.generation.load(Ordering::Relaxed),
 						)
 					};
-					let cancelled =
-						|| serial.load(Ordering::Relaxed) != request.sequence;
+					let cancelled = || {
+						serial.sequence.load(Ordering::Relaxed)
+							!= request.sequence
+					};
 					if cancelled() {
 						continue;
 					}
@@ -122,8 +106,9 @@ impl Worker {
 							match SearchIndex::new_cancellable(
 								&request.document,
 								|| {
-									index_serial.load(Ordering::Relaxed)
-										!= index_version
+									index_serial
+										.generation
+										.load(Ordering::Relaxed) != index_version
 								},
 							) {
 								Some(index) => index,
@@ -150,39 +135,61 @@ impl Worker {
 			.unwrap();
 		Self {
 			inbox,
-			sequence,
-			index_generation,
+			control,
 			handle: Some(handle),
 		}
 	}
 	pub(super) fn cancel(&self) -> u64 {
-		self.sequence.fetch_add(1, Ordering::Relaxed) + 1
+		self.control.sequence.fetch_add(1, Ordering::Relaxed) + 1
 	}
+	pub(super) fn release(&self) {
+		self.cancel();
+		self.control.generation.fetch_add(1, Ordering::Relaxed);
+		let (lock, wake) = &*self.inbox;
+		let mut inbox = Inbox::lock(lock);
+		inbox.pending = None;
+		inbox.control = None;
+		inbox.release = true;
+		wake.notify_one();
+	}
+
 	fn submit(&self, request: Request) {
 		let (lock, wake) = &*self.inbox;
 		let mut inbox = Inbox::lock(lock);
-		if inbox.content_key.as_ref().is_none_or(|(path, content)| {
+		if inbox.control.as_ref().is_none_or(|(path, content)| {
 			path != &request.path || *content != request.content
 		}) {
-			inbox.content_key = Some((request.path.clone(), request.content));
-			self.index_generation.fetch_add(1, Ordering::Relaxed);
+			inbox.control = Some((request.path.clone(), request.content));
+			self.control.generation.fetch_add(1, Ordering::Relaxed);
 		}
-		inbox.request = Some(request);
+		if inbox.stopped {
+			return;
+		}
+		inbox.pending = Some(request);
 		wake.notify_one();
 	}
 }
-impl Drop for Worker {
-	fn drop(&mut self) {
+impl Worker {
+	pub(super) fn shutdown(&mut self) {
 		self.cancel();
-		self.index_generation.fetch_add(1, Ordering::Relaxed);
+		self.control.generation.fetch_add(1, Ordering::Relaxed);
 		let (lock, wake) = &*self.inbox;
-		Inbox::lock(lock).stopped = true;
+		{
+			let mut inbox = Inbox::lock(lock);
+			inbox.stopped = true;
+			inbox.pending = None;
+		}
 		wake.notify_one();
 		if let Some(handle) = self.handle.take()
 			&& handle.join().is_err()
 		{
 			log::warn!("Search worker panicked");
 		}
+	}
+}
+impl Drop for Worker {
+	fn drop(&mut self) {
+		self.shutdown();
 	}
 }
 impl<P: SendEvent> App<P> {
@@ -502,7 +509,7 @@ impl<P: SendEvent> App<P> {
 			kind: super::chrome::components::ButtonKind::Quiet,
 			enabled: true,
 			rect: self.search_input_rect(),
-			label: lang.search_placeholder(),
+			label: (lang.search_placeholder()).into(),
 			icon: None,
 			marker: None,
 			active: false,
@@ -518,7 +525,7 @@ impl<P: SendEvent> App<P> {
 					w: [40.0, 52.0, 32.0, 32.0, 32.0][i],
 					h: 32.0,
 				},
-				label,
+				label: label.into(),
 				icon: match action {
 					Command::SearchPrevious => Some(super::chrome::icons::UP),
 					Command::SearchNext => Some(super::chrome::icons::DOWN),

@@ -205,7 +205,7 @@ mod tests {
 			.map(|index| {
 				let row = list.row_rect(index);
 				Button {
-					label: "Row",
+					label: ("Row").into(),
 					icon: None,
 					marker: None,
 					active: false,

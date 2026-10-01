@@ -69,7 +69,7 @@ fn banner_buttons(
 	let y = TOP + (BANNER - 22.0) / 2.0;
 	vec![
 		Button {
-			label: lang.notice_dismiss(),
+			label: (lang.notice_dismiss()).into(),
 			icon: None,
 			marker: None,
 			active: false,
@@ -84,7 +84,7 @@ fn banner_buttons(
 			},
 		},
 		Button {
-			label: lang.notice_load_all(),
+			label: (lang.notice_load_all()).into(),
 			icon: None,
 			marker: None,
 			active: false,

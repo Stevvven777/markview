@@ -845,6 +845,11 @@ fn previewing_recedes_the_styles_and_fonts_pages() {
 				style_entries: &entries,
 				style_scroll: interaction.styles_scroll,
 				fonts: crate::app::font_panel::View {
+					choices: {
+						let mut c = crate::app::font_panel::Choices::default();
+						c.refresh(&crate::test_support::fonts());
+						c
+					},
 					catalog: &catalog,
 					shown: shown.clone(),
 					jobs: &jobs,
@@ -932,6 +937,11 @@ fn the_fonts_page_draws_its_open_option_list() {
 		style_entries: &entries,
 		style_scroll: interaction.styles_scroll,
 		fonts: crate::app::font_panel::View {
+			choices: {
+				let mut c = crate::app::font_panel::Choices::default();
+				c.refresh(&crate::test_support::fonts());
+				c
+			},
 			catalog: &[],
 			shown: Vec::new(),
 			jobs: &jobs,
@@ -1018,6 +1028,11 @@ fn dismissed_pages_stop_drawing_and_answering_pointers() {
 			style_entries: &entries,
 			style_scroll: interaction.styles_scroll,
 			fonts: crate::app::font_panel::View {
+				choices: {
+					let mut c = crate::app::font_panel::Choices::default();
+					c.refresh(&crate::test_support::fonts());
+					c
+				},
 				catalog: &[],
 				shown: shown.clone(),
 				jobs: &jobs,
@@ -1321,6 +1336,12 @@ fn redesigned_chrome_frames() -> Result<()> {
 						style_entries: &entries,
 						style_scroll: interaction.styles_scroll,
 						fonts: crate::app::font_panel::View {
+							choices: {
+								let mut c =
+									crate::app::font_panel::Choices::default();
+								c.refresh(&crate::test_support::fonts());
+								c
+							},
 							catalog: &catalog,
 							shown,
 							jobs: &jobs,

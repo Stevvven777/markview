@@ -97,6 +97,15 @@ pub(crate) fn export_once(args: &PdfRequest) -> Result<ExportStats> {
 		.context("the export produced no output")
 }
 
+pub(crate) fn export_with_services(
+	args: &PdfRequest,
+	services: Arc<crate::services::Services>,
+) -> Result<ExportStats> {
+	Exporter::with_services(args, services)?
+		.export(false)?
+		.context("the export produced no output")
+}
+
 /// Rebuilds the PDF whenever the document changes, and whenever a local image
 /// it references changes under an unchanged document.
 fn watch(exporter: &mut Exporter, rx: mpsc::Receiver<()>) -> Result<()> {
@@ -163,6 +172,12 @@ struct Exporter {
 
 impl Exporter {
 	fn new(args: &PdfRequest) -> Result<Self> {
+		Self::with_services(args, Arc::new(crate::services::Services::new(4)))
+	}
+	fn with_services(
+		args: &PdfRequest,
+		services: Arc<crate::services::Services>,
+	) -> Result<Self> {
 		let output = args.output.clone();
 		let stylesheet = styled(args.options.stylesheet.clone(), &args.page);
 		let geometry = PageGeometry::from_style(stylesheet.page())?;
@@ -176,7 +191,10 @@ impl Exporter {
 			stylesheet,
 			..args.options.clone()
 		};
-		let mut engine = LayoutEngine::new();
+		let mut engine = LayoutEngine::with_executor(
+			services.handle.cpu.clone(),
+			std::sync::Arc::new(|| {}),
+		);
 		engine.validate_stylesheet(&options.stylesheet)?;
 		Ok(Self {
 			path: args.path.clone(),
@@ -186,7 +204,11 @@ impl Exporter {
 			metadata: args.metadata.clone(),
 			links: args.links,
 			engine,
-			images: Images::for_pdf(args.offline, args.options.fonts.clone()),
+			images: Images::shared_pdf(
+				args.offline,
+				args.options.fonts.clone(),
+				&services,
+			),
 			renderer: Renderer::default(),
 			source: None,
 			dirty: true,
@@ -404,7 +426,7 @@ mod tests {
 		let (_, output, mut exporter) = start(dir.path(), &source);
 		for force in [false, true] {
 			exporter.export(force).unwrap().unwrap();
-			assert!(exporter.images.snapshot.pixels.decoded().is_empty());
+			assert!(exporter.images.snapshot.decoded().is_empty());
 			assert_eq!(exporter.images.pdf_images().len(), 5);
 			let pdf = lopdf::Document::load(&output).unwrap();
 			assert_eq!(
@@ -433,7 +455,7 @@ mod tests {
 		let (path, output, mut exporter) =
 			start(dir.path(), "![first](a.png)\n\n![alias](./a.png)\n");
 		exporter.export(false).unwrap().unwrap();
-		assert!(exporter.images.snapshot.pixels.decoded().is_empty());
+		assert!(exporter.images.snapshot.decoded().is_empty());
 		let version = exporter.images.snapshot.entries["a.png"].version;
 		assert_eq!(
 			exporter.images.snapshot.entries["./a.png"].version,

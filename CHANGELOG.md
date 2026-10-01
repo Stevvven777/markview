@@ -38,6 +38,11 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Share one cancellable native download service and CPU budget across images and fonts, with owned progress events and transactional installation.
+- Version pixel lookups and frame demand, move eviction outside cache locks, and wake layout through a shared latest-request mailbox.
+- Bound background CPU work by queue size and retained inputs; cancel obsolete highlight epochs and wake owners after completion.
+- Own diagram face metrics under one lock and share reclaimable font names; reject chooser selections from retired catalogues.
+
 - Drive `layout_progressive` from the resumable pass, so the engine has one block loop instead of two and a cancelled prefix costs nothing to resume.
 - Split the font module into validation, directory scanning and diagram selection, so a front end reuses the parts it has and leaves the rest behind.
 - Put directory scanning behind a `font-directories` feature that is off by default, so a build for a host without a filesystem leaves every `std::fs` call out of the binary.
@@ -50,6 +55,9 @@ at the same level, without `[brackets]`.
 - Declare wgpu's `webgl` backend for `wasm32-unknown-unknown`, so `markview-render` builds for the Web; `winit` leaves its dependency tree.
 
 ### Fixed
+
+- Move image cache writes and eviction off the shared I/O runtime so disk work does not stall transfers or cancellation.
+- Cancel pending save selections during shutdown, keep highlight preparation linear, and finish queued file creation before cancellation cleanup.
 
 - Persist restoring the last font role to Default by removing its saved override.
 - Offer Han font choosers only for definitions resolved by the selected CJK variant.

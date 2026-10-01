@@ -43,9 +43,12 @@ pub(crate) enum Command {
 	/// The interface language; `None` follows the system again.
 	Language(Option<crate::lang::Lang>),
 	/// Pick the family a font role shapes with; `None` restores the
-	/// stylesheet's own candidate chain. The name is interned by
-	/// [`markview_core::fonts::families`], which is where a chooser gets it.
-	FontFamily(crate::settings::FontRole, Option<&'static str>),
+	/// stylesheet's own candidate chain. Selections address the catalogue
+	/// generation that supplied the chooser's shared name.
+	FontFamily(
+		crate::settings::FontRole,
+		Option<crate::app::font_panel::Selection>,
+	),
 	/// Open a control's option list on the option in force, or close it again.
 	ToggleDropdown(DropdownId, usize),
 	/// Open or close the export panel.

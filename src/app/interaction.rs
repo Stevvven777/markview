@@ -510,10 +510,18 @@ impl<P: super::SendEvent> App<P> {
 				self.redraw();
 				return;
 			}
-			Command::FontFamily(role, family) => {
-				self.preferences
-					.values
-					.set_font_family(role, family.map(str::to_owned));
+			Command::FontFamily(role, selection) => {
+				self.font_panel.refresh_choices(&self.fonts_config);
+				let family = if let Some(selection) = selection {
+					let Some(name) = self.font_panel.resolve(role, selection)
+					else {
+						return;
+					};
+					Some(name)
+				} else {
+					None
+				};
+				self.preferences.values.set_font_family(role, family);
 				self.setting_changed(Some(Setting::FontFamily));
 				// The stylesheet's own definitions are what the override
 				// replaces, so they are read again and every line is laid out
