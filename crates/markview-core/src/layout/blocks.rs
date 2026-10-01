@@ -853,6 +853,7 @@ impl BlockContext<'_> {
 								.copied()
 								.unwrap_or(item_x + dx + width);
 							node.push(TextCluster {
+								mixed_spacing: (0.0, 0.0),
 								range,
 								rect: Rect {
 									x,
