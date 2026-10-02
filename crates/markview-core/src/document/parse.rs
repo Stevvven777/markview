@@ -109,11 +109,10 @@ impl Reader<'_> {
 				&& source.start + len <= self.range(node).end
 			{
 				let end = source.start + len;
-				let raw = strip_blockquotes(
-					&self.source[source.start..end],
-					enclosing_quotes(self.source, source.start),
-				);
-				let (_, image) = html::svg(&raw).unwrap();
+				let markers = container_markers(child);
+				let raw =
+					HtmlSource::new(&self.source[source.start..end], &markers);
+				let (_, image) = html::svg(&raw.text).unwrap();
 				out.push(Inline {
 					kind: InlineKind::Image(image),
 					style: style.clone(),
@@ -372,20 +371,20 @@ impl Reader<'_> {
 		let mut end = begin + html::svg_len(&self.source[begin..])?;
 		let mut close = (start..children.len())
 			.find(|&i| self.range(children[i]).end >= end)?;
-		let quotes = enclosing_quotes(self.source, begin);
+		let markers = container_markers(node);
 		if begin > range.start {
 			let prefix =
-				strip_blockquotes(&self.source[range.start..begin], quotes);
+				HtmlSource::new(&self.source[range.start..begin], &markers);
 			out.extend(self.markdown_blocks_at(
-				&prefix,
+				&prefix.text,
 				depth,
 				range.start..begin,
 			));
 		}
 		let mut begin = begin;
 		loop {
-			let raw = strip_blockquotes(&self.source[begin..end], quotes);
-			let (_, image) = html::svg(&raw)?;
+			let raw = HtmlSource::new(&self.source[begin..end], &markers);
+			let (_, image) = html::svg(&raw.text)?;
 			let source = begin..end;
 			let kind = BlockKind::Paragraph(vec![Inline {
 				kind: InlineKind::Image(image),
@@ -405,7 +404,7 @@ impl Reader<'_> {
 			let mut rest = &self.source[end..tail_end];
 			loop {
 				let next =
-					without_quotes(rest.trim_start(), quotes).trim_start();
+					without_markers(rest.trim_start(), &markers).trim_start();
 				if next.len() == rest.len() {
 					break;
 				}
@@ -422,10 +421,10 @@ impl Reader<'_> {
 				close = next_close;
 				continue;
 			}
-			let tail = strip_blockquotes(&self.source[end..tail_end], quotes);
-			if !tail.trim().is_empty() {
+			let tail = HtmlSource::new(&self.source[end..tail_end], &markers);
+			if !tail.text.trim().is_empty() {
 				out.extend(self.markdown_blocks_at(
-					&tail,
+					&tail.text,
 					depth,
 					end..tail_end,
 				));

@@ -4,7 +4,7 @@ use markview_core::document::{
 
 #[test]
 fn svg_elements_are_atomic_images_with_original_source_ranges() {
-	for newline in ["\n", "\r\n"] {
+	for newline in ["\n", "\r", "\r\n"] {
 		let svg = [
 			"<svg width=\"120\" height=\"80\">",
 			"<!-- </svg> -->",
@@ -23,6 +23,10 @@ fn svg_elements_are_atomic_images_with_original_source_ranges() {
 			format!(
 				"- {}\n\n# after",
 				svg.replace(newline, &format!("{newline}  "))
+			),
+			format!(
+				"- > {}\n\n# after",
+				svg.replace(newline, &format!("{newline}  > "))
 			),
 		] {
 			let doc = parse(source.as_str());
@@ -63,6 +67,8 @@ fn svg_elements_are_atomic_images_with_original_source_ranges() {
 			assert!(xml.contains("xmlns=\"http://www.w3.org/2000/svg\""));
 			assert!(xml.contains("中文😀"));
 			assert!(!xml.contains("\n>"));
+			assert!(!xml.contains("\r>"));
+			assert!(!xml.contains("  >"));
 			let raw = &source[inline.source.clone()];
 			assert!(raw.starts_with("<svg"));
 			assert!(raw.ends_with("</svg>"));

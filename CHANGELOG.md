@@ -42,6 +42,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep inline SVG decoding and disclosure source navigation compatible with container-prefix and footnote parsing fixes.
 - Keep a covering font family when the requested weight is unavailable, selecting its closest available weight instead of skipping to the next candidate.
 - Start a paused wheel stream's new travel at packet arrival and decay speed across stalled frames, preventing jumps when rendering resumes (#3).
 - Compare canonical paths in single-instance regression tests, fixing Windows path assertions and macOS directory-notification timeouts.

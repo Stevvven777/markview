@@ -1298,6 +1298,7 @@ dependencies = [
  "log",
  "memmap2",
  "parley",
+ "percent-encoding",
  "ratex-layout",
  "ratex-parser",
  "ratex-types",
