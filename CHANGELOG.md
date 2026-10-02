@@ -31,6 +31,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Restore the high-resolution wheel stream's packet momentum dropped by the interaction refactor, so a Windows touchpad's inertia rides across the gaps between packets again (#3).
+- Spend the speed a paused wheel stream leaves behind, whose stale carry sent the page on the old way and made a reversal answer nothing (#3).
 - Make the syntax-highlight cache regression test independent of background worker scheduling.
 - Keep single-instance authentication tokens private, bound IPC requests and reject forwarding after the event loop closes.
 - Forward macOS desktop-opened documents before a secondary instance exits and register surviving independent windows when enabling single-instance mode.
