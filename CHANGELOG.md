@@ -46,6 +46,8 @@ at the same level, without `[brackets]`.
 - Keep single-instance authentication tokens private, bound IPC requests and reject forwarding after the event loop closes.
 - Forward macOS desktop-opened documents before a secondary instance exits and register surviving independent windows when enabling single-instance mode.
 
+- Keep `<details>` footnotes once at the document's end, including cross-disclosure references; defer incomplete disclosures and unstable note numbering in prefixes, and assign heading anchors in final reading order.
+- Give adjacent disclosures their own source ranges, retaining original offsets through multiline HTML tags inside lists and block quotes.
 - Complete syntax highlighting synchronously in layout differential fuzzing to avoid reporting background color updates as cache divergence.
 - Keep preceding blocks unchanged when an unused link reference definition is appended, with correct Comrak table source positions and consistent `<details>` body termination.
 - Pin Comrak to our front-matter line-count fix to prevent a `<details>` parsing panic on UTF-8 documents with lone carriage returns, and keep closing-tag ranges correct after HTML normalization.

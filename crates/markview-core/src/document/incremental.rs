@@ -139,6 +139,16 @@ pub fn parse_prefix(source: &Arc<str>, bytes: usize) -> Option<Document> {
 	// ending parses as a paragraph where the document's own line ends a list
 	// item.
 	let end = line_end(source, end);
+	if end < source.len()
+		&& source[end..].contains("[^")
+		&& source[..end]
+			.as_bytes()
+			.windows(8)
+			.any(|tag| tag.eq_ignore_ascii_case(b"<details"))
+	{
+		// Later references can reserve numbers before a disclosure snippet.
+		return None;
+	}
 	// Front matter is one block however many blank lines it holds, and comrak
 	// only recognizes it once the closing delimiter arrives. A cut inside it
 	// would parse the opening `---` as a thematic break, which the document
@@ -154,7 +164,12 @@ pub fn parse_prefix(source: &Arc<str>, bytes: usize) -> Option<Document> {
 	if ends_in_open_html(&source[..end]) {
 		return None;
 	}
-	let blocks = prefix_blocks(source, end);
+	let mut blocks = prefix_blocks(source, end);
+	if end < source.len() {
+		// Notes belong after all body content, including the unread suffix.
+		blocks
+			.retain(|block| !matches!(block.kind, BlockKind::Footnote { .. }));
+	}
 	Some(Document {
 		source: source.clone(),
 		content_id: content_identity(&blocks),
@@ -197,7 +212,7 @@ fn prefix_blocks(source: &str, end: usize) -> Vec<Block> {
 /// copy of it changes how the parser reads the prefix: comrak keeps a repeated
 /// footnote definition where a lone unreferenced one disappears, so the copy
 /// would add a block the document does not have.
-fn missing_definitions(source: &str, bare: &str) -> String {
+pub(super) fn missing_definitions(source: &str, bare: &str) -> String {
 	let all = definitions(source);
 	let present = definitions(bare);
 	if present.is_empty() {
@@ -511,6 +526,9 @@ fn front_matter_close(source: &str) -> Option<usize> {
 /// one does not matter, and a later ordinary line is inside the block the
 /// opener began. A `<` anywhere else is ordinary text.
 fn ends_in_open_html(source: &str) -> bool {
+	if crate::html::has_open_details(source) {
+		return true;
+	}
 	for range in line_ranges(source).iter().rev() {
 		let line = &source[range.clone()];
 		let indent = line.len() - line.trim_start_matches(' ').len();
@@ -587,33 +605,37 @@ fn shift(block: &mut Block, delta: isize) {
 	}
 }
 
-/// Re-assigns heading anchors across the spliced block list. An edit can add,
-/// remove or rename a heading, which changes the suffix every later heading
-/// with the same slug takes.
-fn relabel_headings(blocks: &mut [Block]) {
-	fn walk(blocks: &mut [Block], anchors: &mut Anchors) {
+/// Assigns heading anchors in final reading order, updating affected caches.
+pub(super) fn relabel_headings(blocks: &mut [Block]) {
+	fn walk(blocks: &mut [Block], anchors: &mut Anchors) -> bool {
+		let mut changed = false;
 		for block in blocks {
-			let mut relabeled = false;
-			match &mut block.kind {
+			let relabeled = match &mut block.kind {
 				BlockKind::Heading { text, anchor, .. } => {
 					let wanted = anchors.unique(&plain_text(text));
-					relabeled = *anchor != wanted;
+					let relabeled = *anchor != wanted;
 					*anchor = wanted;
+					relabeled
 				}
 				BlockKind::Quote { blocks, .. }
-				| BlockKind::Footnote { blocks, .. } => walk(blocks, anchors),
-				BlockKind::Details { blocks, .. } => walk(blocks, anchors),
+				| BlockKind::Footnote { blocks, .. }
+				| BlockKind::Details { blocks, .. }
+				| BlockKind::FrontMatter { blocks, .. } => walk(blocks, anchors),
 				BlockKind::List { items, .. } => {
+					let mut relabeled = false;
 					for item in items {
-						walk(&mut item.blocks, anchors);
+						relabeled |= walk(&mut item.blocks, anchors);
 					}
+					relabeled
 				}
-				_ => {}
-			}
+				_ => false,
+			};
 			if relabeled {
 				block.content_key = semantic_key(&block.kind);
 			}
+			changed |= relabeled;
 		}
+		changed
 	}
 	walk(blocks, &mut Anchors::default());
 }

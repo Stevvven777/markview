@@ -5,22 +5,31 @@ use comrak::{
 	nodes::{AstNode, ListType, NodeValue, TableAlignment},
 	parse_document,
 };
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{
+	borrow::Cow,
+	collections::{HashMap, HashSet},
+	ops::Range,
+	sync::Arc,
+};
 
 use super::{
-	Anchors, Block, BlockKind, CellAlign, Document, Inline, InlineKind,
-	ListItem, RichText, TextStyle, content_identity, fingerprint, front_matter,
+	Block, BlockKind, CellAlign, Document, Inline, InlineKind, ListItem,
+	RichText, TextStyle, content_identity, fingerprint, front_matter,
 	incremental, plain_text, semantic_key,
 };
 struct Reader<'s> {
 	source: &'s str,
 	lines: Vec<usize>,
 	footnotes: HashMap<String, u32>,
+	/// Definitions the full parse already owns; snippets only reference them.
+	document_footnotes: &'s HashSet<String>,
+	/// Definitions kept until every disclosure's references are known.
+	footnote_blocks: HashMap<String, Block>,
+	/// Appended definitions resolve references but never emit note bodies.
+	snippet_end: Option<usize>,
 	/// Digit columns every note reserves for its number; see
 	/// [`BlockKind::Footnote`].
 	footnote_column: u32,
-	/// Heading anchors already used by this document, in reading order.
-	anchors: Anchors,
 	/// How many `<details>` elements this document has already numbered.
 	details_ordinal: u32,
 	/// The document's reference and footnote definitions, which resolve inside
@@ -293,11 +302,10 @@ impl Reader<'_> {
 				NodeValue::Paragraph => BlockKind::Paragraph(self.rich(child)),
 				NodeValue::Heading(h) => {
 					let text = self.rich(child);
-					let anchor = self.anchors.unique(&plain_text(&text));
 					BlockKind::Heading {
 						level: h.level,
 						text,
-						anchor,
+						anchor: String::new(),
 					}
 				}
 				// The info string's first word is the language; trailing
@@ -343,11 +351,10 @@ impl Reader<'_> {
 					html::Block::Rule => BlockKind::Rule,
 					html::Block::Heading { level, text } => {
 						let text = html_rich(text, &source);
-						let anchor = self.anchors.unique(&plain_text(&text));
 						BlockKind::Heading {
 							level,
 							text,
-							anchor,
+							anchor: String::new(),
 						}
 					}
 					html::Block::Paragraph(text) => {
@@ -398,6 +405,16 @@ impl Reader<'_> {
 						.map(|r| r.children().map(|c| self.rich(c)).collect())
 						.collect(),
 				},
+				NodeValue::FootnoteDefinition(f)
+					if (self.snippet_end.is_none()
+						&& f.total_references == 0)
+						|| self.snippet_end.is_some_and(|end| {
+							source.start >= end
+								|| self.document_footnotes.contains(&f.name)
+						}) =>
+				{
+					return Child::Skip;
+				}
 				NodeValue::FootnoteDefinition(f) => BlockKind::Footnote {
 					label: self
 						.footnotes
@@ -417,12 +434,22 @@ impl Reader<'_> {
 			&self.source[source.clone()],
 		));
 		let content_key = semantic_key(&kind);
-		Child::Block(Block {
+		let block = Block {
 			id,
 			content_key,
 			source,
 			kind,
-		})
+		};
+		if let NodeValue::FootnoteDefinition(f) = &data.value {
+			// Snippet-only definitions also belong at the document's end.
+			self.footnote_blocks.insert(
+				f.name.split_whitespace().collect::<Vec<_>>().join(" "),
+				block,
+			);
+			Child::Skip
+		} else {
+			Child::Block(block)
+		}
 	}
 
 	/// Consumes a `<details>` element that starts at `children[start]`, when
@@ -453,20 +480,28 @@ impl Reader<'_> {
 				mut body,
 				mut rest,
 			} => {
-				let source = self.range(children[start]);
+				let html_source = self.range(children[start]);
+				let markers = container_markers(children[start]);
+				let original = HtmlSource::new(
+					&self.source[html_source.clone()],
+					&markers,
+				);
+				let mut at = 0;
 				loop {
+					let range =
+						html::inline_details_range(&original.text[at..])?;
+					let range = at + range.start..at + range.end;
+					at = range.end;
+					let range = original.range(range);
+					let source = html_source.start + range.start
+						..html_source.start + range.end;
 					let blocks = self.markdown_blocks(&body, depth + 1);
 					let rich = self.summary_rich(
 						summary.as_deref(),
 						depth + 1,
 						&source,
 					);
-					out.push(self.details_block(
-						open,
-						rich,
-						blocks,
-						source.clone(),
-					));
+					out.push(self.details_block(open, rich, blocks, source));
 					if rest.trim().is_empty() {
 						break;
 					}
@@ -498,13 +533,15 @@ impl Reader<'_> {
 					details_close(children, start, open_depth)?;
 				let start_source = self.range(children[start]);
 				let close_source = self.range(children[close]);
-				// The literal normalizes line endings, replaces NULs and loses
-				// container markers, so its byte offsets cannot index `source`.
-				let (_, source_tag) = html::close_tag(
+				let markers = container_markers(children[start]);
+				let original = HtmlSource::new(
 					&self.source[close_source.clone()],
-					close_depth,
+					&markers,
 				);
-				let tag_end = close_source.start + source_tag?.end;
+				let (_, source_tag) =
+					html::close_tag(&original.text, close_depth);
+				let tag_end =
+					close_source.start + original.range(source_tag?).end;
 				// The body is the source between the opener and the closing
 				// tag: a nested element that shares that closing block is
 				// parsed from the inside out, so none of its content is lost.
@@ -523,10 +560,8 @@ impl Reader<'_> {
 					// The literals around the body have already lost the
 					// enclosing quote markers, so the raw slice between them
 					// must lose the same ones or the body gains a quote.
-					let quotes =
-						enclosing_quotes(self.source, start_source.start);
 					(
-						strip_blockquotes(between, quotes),
+						HtmlSource::new(between, &markers).text.into_owned(),
 						h.literal[..tag.start].to_string(),
 						h.literal[tag.end..].to_string(),
 					)
@@ -552,8 +587,7 @@ impl Reader<'_> {
 		}
 	}
 
-	/// The block list `text` describes, parsed by the ordinary pipeline. The
-	/// shared anchors keep headings inside the snippet unique in the document.
+	/// The block list `text` describes, parsed by the ordinary pipeline.
 	fn markdown_blocks(&mut self, text: &str, depth: usize) -> Vec<Block> {
 		if text.trim().is_empty() {
 			return Vec::new();
@@ -566,11 +600,13 @@ impl Reader<'_> {
 		if !text.contains('[') {
 			return self.snippet(text, depth, None);
 		}
+		let definitions =
+			incremental::missing_definitions(self.definitions, text);
 		let mut joined =
-			String::with_capacity(text.len() + self.definitions.len() + 2);
+			String::with_capacity(text.len() + definitions.len() + 2);
 		joined.push_str(text);
 		joined.push_str("\n\n");
-		joined.push_str(self.definitions);
+		joined.push_str(&definitions);
 		let blocks = self.snippet(&joined, depth, Some(text));
 		// An unclosed fence or HTML block can swallow the appended
 		// definitions; then the bare snippet parses to what the full document
@@ -596,7 +632,10 @@ impl Reader<'_> {
 		bare: Option<&str>,
 	) -> Vec<Block> {
 		let arena = Arena::new();
-		let root = parse_document(&arena, text, &markdown_options());
+		let mut options = markdown_options();
+		// Another disclosure may reference a definition this snippet owns.
+		options.parse.leave_footnote_definitions = true;
+		let root = parse_document(&arena, text, &options);
 		let lines = line_starts(text);
 		if let Some(bare) = bare
 			&& root.descendants().any(|node| {
@@ -627,27 +666,36 @@ impl Reader<'_> {
 		}
 		// A note keeps the number the document gave it, so a reference inside
 		// a snippet and the note block outside it still agree.
+		let mut next_footnote =
+			self.footnotes.values().copied().max().unwrap_or(0) + 1;
 		for node in root.descendants() {
 			if let NodeValue::FootnoteReference(f) =
 				&mut node.data.borrow_mut().value
-				&& let Some(ix) = self.footnotes.get(&f.name)
 			{
-				f.ix = *ix;
+				f.ix = *self.footnotes.entry(f.name.clone()).or_insert_with(
+					|| {
+						let ix = next_footnote;
+						next_footnote += 1;
+						ix
+					},
+				);
 			}
 		}
 		let mut reader = Reader {
 			source: text,
 			lines,
 			footnotes: std::mem::take(&mut self.footnotes),
+			document_footnotes: self.document_footnotes,
+			footnote_blocks: std::mem::take(&mut self.footnote_blocks),
+			snippet_end: Some(bare.map_or(text.len(), str::len)),
 			footnote_column: self.footnote_column,
-			anchors: std::mem::take(&mut self.anchors),
 			details_ordinal: std::mem::take(&mut self.details_ordinal),
 			definitions: self.definitions,
 			limits: self.limits,
 		};
 		let blocks = reader.blocks(root, depth);
-		self.anchors = reader.anchors;
 		self.footnotes = reader.footnotes;
+		self.footnote_blocks = reader.footnote_blocks;
 		self.details_ordinal = reader.details_ordinal;
 		blocks
 	}
@@ -754,57 +802,95 @@ fn details_close<'a>(
 	None
 }
 
-/// How many block quotes enclose the block that starts at `at`: the `>` markers
-/// Comrak removed from the block's first line.
-fn enclosing_quotes(source: &str, at: usize) -> usize {
-	let at = at.min(source.len());
-	// The line owning `at` starts at the last line start at or before it. A
-	// lone carriage return ends a line as well, so scanning for `\n` would
-	// walk back over several lines and count their markers too.
-	let line = line_starts(source)
-		.into_iter()
-		.take_while(|start| *start <= at)
-		.last()
-		.unwrap_or(0);
-	source[line..at].matches('>').count()
+enum ContainerMarker {
+	Indent(usize),
+	Quote,
 }
 
-/// `text` with the markers of `depth` enclosing block quotes removed from every
-/// line, so reparsing it alone does not nest the body in a quote again.
-fn strip_blockquotes(text: &str, depth: usize) -> String {
-	if depth == 0 {
-		return text.to_string();
+/// Continuation prefixes in the order the AST's containers consume them.
+fn container_markers<'a>(node: &'a AstNode<'a>) -> Vec<ContainerMarker> {
+	let mut markers = Vec::new();
+	for parent in node.ancestors().skip(1) {
+		match &parent.data.borrow().value {
+			NodeValue::Item(list) => markers.push(ContainerMarker::Indent(
+				list.marker_offset + list.padding,
+			)),
+			NodeValue::TaskItem(_) => {
+				if let Some(list) = parent.parent()
+					&& let NodeValue::List(list) = &list.data.borrow().value
+				{
+					markers.push(ContainerMarker::Indent(
+						list.marker_offset + list.padding,
+					));
+				}
+			}
+			NodeValue::FootnoteDefinition(_) => {
+				markers.push(ContainerMarker::Indent(4))
+			}
+			NodeValue::BlockQuote | NodeValue::Alert(_) => {
+				markers.push(ContainerMarker::Quote)
+			}
+			_ => {}
+		}
 	}
-	let mut out = String::with_capacity(text.len());
-	let bytes = text.as_bytes();
-	let mut start = 0usize;
-	let mut i = 0usize;
-	while i < bytes.len() {
-		if !matches!(bytes[i], b'\n' | b'\r') {
-			i += 1;
+	markers.reverse();
+	markers
+}
+
+/// HTML without container prefixes, mapped to its original byte offsets.
+struct HtmlSource<'a> {
+	text: Cow<'a, str>,
+	lines: Vec<(usize, usize)>,
+}
+
+impl<'a> HtmlSource<'a> {
+	fn new(source: &'a str, markers: &[ContainerMarker]) -> Self {
+		if markers.is_empty() {
+			return Self {
+				text: Cow::Borrowed(source),
+				lines: Vec::new(),
+			};
+		}
+		let mut text = String::with_capacity(source.len());
+		let mut lines = Vec::new();
+		let mut at = 0;
+		for line in source.split_inclusive(['\r', '\n']) {
+			let body = without_markers(line, markers);
+			lines.push((text.len(), at + line.len() - body.len()));
+			text.push_str(body);
+			at += line.len();
+		}
+		Self {
+			text: Cow::Owned(text),
+			lines,
+		}
+	}
+
+	fn range(&self, range: Range<usize>) -> Range<usize> {
+		let original = |at| {
+			if self.lines.is_empty() {
+				return at;
+			}
+			let i = self.lines.partition_point(|(start, _)| *start <= at) - 1;
+			let (start, source_start) = self.lines[i];
+			source_start + at - start
+		};
+		original(range.start)..original(range.end)
+	}
+}
+
+/// One line with its enclosing list indentation and quote markers removed.
+fn without_markers<'a>(line: &'a str, markers: &[ContainerMarker]) -> &'a str {
+	let mut rest = line;
+	for marker in markers {
+		let indent = rest.len() - rest.trim_start_matches(' ').len();
+		if let ContainerMarker::Indent(width) = marker {
+			if indent < *width {
+				break;
+			}
+			rest = &rest[*width..];
 			continue;
 		}
-		out.push_str(without_quotes(&text[start..i], depth));
-		// The terminator is kept as it stands, so a lone `\r` still ends a
-		// line here exactly as it does for the parser.
-		if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
-			out.push_str("\r\n");
-			i += 2;
-		} else {
-			out.push(bytes[i] as char);
-			i += 1;
-		}
-		start = i;
-	}
-	out.push_str(without_quotes(&text[start..], depth));
-	out
-}
-
-/// One line with up to `depth` block quote markers removed.
-fn without_quotes(line: &str, mut depth: usize) -> &str {
-	let mut rest = line;
-	while depth > 0 {
-		let indent = rest.len() - rest.trim_start_matches(' ').len();
 		// Four spaces already mean code, not a marker.
 		if indent > 3 {
 			break;
@@ -816,7 +902,6 @@ fn without_quotes(line: &str, mut depth: usize) -> &str {
 			Some(b' ' | b'\t') => &after[1..],
 			_ => after,
 		};
-		depth -= 1;
 	}
 	rest
 }
@@ -860,6 +945,19 @@ pub fn parse(source: impl Into<Arc<str>>) -> Document {
 			_ => None,
 		})
 		.collect();
+	let document_footnotes: HashSet<String> = root
+		.descendants()
+		.filter_map(|node| {
+			if let NodeValue::FootnoteDefinition(note) =
+				&node.data.borrow().value
+				&& note.total_references > 0
+			{
+				Some(note.name.clone())
+			} else {
+				None
+			}
+		})
+		.collect();
 	let footnote_column = footnotes
 		.values()
 		.copied()
@@ -876,13 +974,51 @@ pub fn parse(source: impl Into<Arc<str>>) -> Document {
 		source: &source,
 		lines,
 		footnotes,
+		document_footnotes: &document_footnotes,
+		footnote_blocks: HashMap::new(),
+		snippet_end: None,
 		footnote_column,
-		anchors: Anchors::default(),
 		details_ordinal: 0,
 		definitions: &definitions,
 		limits: crate::limits::Limits::default(),
 	};
-	let blocks = reader.blocks(root, 0);
+	let mut blocks = reader.blocks(root, 0);
+	let column = reader
+		.footnotes
+		.values()
+		.copied()
+		.max()
+		.unwrap_or(1)
+		.to_string()
+		.len() as u32;
+	let mut notes: Vec<_> = reader
+		.footnote_blocks
+		.into_iter()
+		.filter(|(name, _)| {
+			reader.footnotes.contains_key(name)
+				|| document_footnotes.contains(name)
+		})
+		.collect();
+	notes.sort_by(|(left, _), (right, _)| {
+		(reader.footnotes.get(left), left)
+			.cmp(&(reader.footnotes.get(right), right))
+	});
+	for (name, mut note) in notes {
+		if let BlockKind::Footnote {
+			label,
+			column: note_column,
+			..
+		} = &mut note.kind
+		{
+			if let Some(number) = reader.footnotes.get(&name) {
+				*label = number.to_string();
+			}
+			*note_column = column;
+		}
+		note.content_key = semantic_key(&note.kind);
+		blocks.push(note);
+	}
+	incremental::relabel_headings(&mut blocks);
 	Document {
 		source,
 		content_id: content_identity(&blocks),

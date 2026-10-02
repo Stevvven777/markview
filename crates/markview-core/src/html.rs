@@ -143,6 +143,22 @@ pub fn details(source: &str) -> Details {
 	}
 }
 
+/// The original byte range of a complete element, without copying its body.
+pub fn inline_details_range(source: &str) -> Option<std::ops::Range<usize>> {
+	let text = source.trim_start();
+	let len = tag_len(text)?;
+	let (name, _, closing) = tag_parts(&text[..len])?;
+	if name != "details" || closing {
+		return None;
+	}
+	let rest = &text[len..];
+	let lead = summary_at(rest).map_or(rest, |(_, after)| after);
+	let (_, close) = close_tag(lead, 1);
+	let start = source.len() - text.len();
+	let end = source.len() - lead.len() + close?.end;
+	Some(start..end)
+}
+
 /// The name, remaining attributes and closing flag of one `<...>` tag.
 fn tag_parts(tag: &str) -> Option<(String, &str, bool)> {
 	let body = tag.strip_prefix('<')?.strip_suffix('>')?.trim();
@@ -243,6 +259,26 @@ pub fn close_tag(
 		}
 	}
 	(depth, None)
+}
+
+/// Whether the source leaves a `<details>` opener without a closing tag.
+pub fn has_open_details(source: &str) -> bool {
+	let mut depth = 0usize;
+	for (start, len) in tags(source) {
+		let Some((name, attrs, closing)) =
+			tag_parts(&source[start..start + len])
+		else {
+			continue;
+		};
+		if name == "details" && !attrs.trim_end().ends_with('/') {
+			depth = if closing {
+				depth.saturating_sub(1)
+			} else {
+				depth + 1
+			};
+		}
+	}
+	depth > 0
 }
 
 /// Whether an attribute is present, with or without a value. `open` is the one
