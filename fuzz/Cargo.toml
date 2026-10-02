@@ -138,3 +138,29 @@ path = "fuzz_targets/geometry.rs"
 test = false
 doc = false
 bench = false
+
+# G1: reference-definition resolution against an independent source scan
+# (Tier 3).
+[[bin]]
+name = "refdef"
+path = "fuzz_targets/refdef.rs"
+test = false
+doc = false
+bench = false
+
+# G1: a node's source range must cover text that belongs to it (Tier 3).
+[[bin]]
+name = "sourcepos_content"
+path = "fuzz_targets/sourcepos_content.rs"
+test = false
+doc = false
+bench = false
+
+# G1: the `<details>` element the tree built must enclose the tags the source
+# wrote (Tier 3).
+[[bin]]
+name = "details_structure"
+path = "fuzz_targets/details_structure.rs"
+test = false
+doc = false
+bench = false
