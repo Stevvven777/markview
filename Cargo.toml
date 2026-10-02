@@ -204,10 +204,10 @@ name = "markview"
 path = "src/main.rs"
 
 # Temporary until a release carries the fence-offset fix (upstream PR #836)
-# and the multiline inline source-position fix (upstream PR #855), plus our
-# front-matter line-count fix for lone carriage returns.
+# and the multiline inline source-position fix (upstream PR #855), plus the
+# front-matter line-count and table row source-position fixes.
 [patch.crates-io]
-comrak = { git = "https://github.com/szdytom/comrak", rev = "9a95985592ca847e7a32062e11ab3b1b1631460b" }
+comrak = { git = "https://github.com/szdytom/comrak", rev = "deac2f368b9ff8ed7714b3b7f8bbd3586383273c" }
 # Our fork adds `LayoutConfig::metrics`, which lets Markview measure diagram
 # labels with the faces its own stylesheet selected (upstream PR #151). The rev
 # below is the change based on v0.3.1, the release Markview's diagrams are

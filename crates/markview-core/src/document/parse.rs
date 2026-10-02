@@ -561,16 +561,17 @@ impl Reader<'_> {
 		// A snippet only holds part of the document, so a reference or note it
 		// uses may be defined outside it; parsing it together with the
 		// document's definitions resolves those, and only the blocks the
-		// snippet itself covers are kept.
-		if self.definitions.is_empty() || !text.contains('[') {
-			return self.snippet(text, depth);
+		// snippet itself covers are kept. Terminate it the same way even without
+		// definitions, so an unused definition cannot change its EOF ranges.
+		if !text.contains('[') {
+			return self.snippet(text, depth, None);
 		}
 		let mut joined =
 			String::with_capacity(text.len() + self.definitions.len() + 2);
 		joined.push_str(text);
 		joined.push_str("\n\n");
 		joined.push_str(self.definitions);
-		let blocks = self.snippet(&joined, depth);
+		let blocks = self.snippet(&joined, depth, Some(text));
 		// An unclosed fence or HTML block can swallow the appended
 		// definitions; then the bare snippet parses to what the full document
 		// puts there.
@@ -578,7 +579,7 @@ impl Reader<'_> {
 			.iter()
 			.any(|b| b.source.start < text.len() && b.source.end > text.len())
 		{
-			return self.snippet(text, depth);
+			return self.snippet(text, depth, None);
 		}
 		blocks
 			.into_iter()
@@ -586,10 +587,44 @@ impl Reader<'_> {
 			.collect()
 	}
 
-	/// `text` parsed on its own by the ordinary pipeline.
-	fn snippet(&mut self, text: &str, depth: usize) -> Vec<Block> {
+	/// `text` parsed by the ordinary pipeline, falling back to `bare` when a
+	/// literal block absorbs the appended bytes.
+	fn snippet(
+		&mut self,
+		text: &str,
+		depth: usize,
+		bare: Option<&str>,
+	) -> Vec<Block> {
 		let arena = Arena::new();
 		let root = parse_document(&arena, text, &markdown_options());
+		let lines = line_starts(text);
+		if let Some(bare) = bare
+			&& root.descendants().any(|node| {
+				let data = node.data.borrow();
+				let literal = match &data.value {
+					NodeValue::CodeBlock(_) => true,
+					NodeValue::HtmlBlock(h) => {
+						// Raw HTML can consume synthetic blank lines while its
+						// source position excludes them.
+						if h.block_type <= 5
+							&& text.ends_with("\n\n")
+							&& h.literal.ends_with("\n\n")
+						{
+							return true;
+						}
+						true
+					}
+					_ => false,
+				};
+				let position = |p: comrak::nodes::LineColumn| {
+					lines[p.line.saturating_sub(1)] + p.column
+				};
+				literal
+					&& position(data.sourcepos.start).saturating_sub(1)
+						< bare.len() && position(data.sourcepos.end) > bare.len()
+			}) {
+			return self.snippet(bare, depth, None);
+		}
 		// A note keeps the number the document gave it, so a reference inside
 		// a snippet and the note block outside it still agree.
 		for node in root.descendants() {
@@ -600,7 +635,6 @@ impl Reader<'_> {
 				f.ix = *ix;
 			}
 		}
-		let lines = line_starts(text);
 		let mut reader = Reader {
 			source: text,
 			lines,
@@ -632,7 +666,7 @@ impl Reader<'_> {
 		let mut out = RichText::new();
 		// The summary lives inside an HTML block, so the document never numbers
 		// the notes it references; parsing it alone keeps the two in step.
-		for block in self.snippet(text, depth) {
+		for block in self.snippet(text, depth, None) {
 			if let BlockKind::Paragraph(rich) = block.kind {
 				out.extend(rich);
 			}
