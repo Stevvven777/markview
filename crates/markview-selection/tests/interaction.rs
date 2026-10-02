@@ -673,6 +673,53 @@ fn a_wheel_packet_after_a_pause_follows_the_new_input() {
 }
 
 #[test]
+fn a_wheel_packet_after_a_frame_stall_starts_at_its_arrival() {
+	let start = Instant::now();
+	let bounds = ScrollBounds {
+		max: 20000.0,
+		complete: true,
+	};
+	for direction in [-1.0, 1.0] {
+		for packets in [1, 4] {
+			let mut scroll = ScrollState::default();
+			scroll.set(10000.0, bounds);
+			for frame in 0..=(packets - 1) * 5 + 1 {
+				let at = start + Duration::from_millis(frame * 8);
+				if frame % 5 == 0 {
+					scroll.coast_wheel_by(120.0 * direction, at);
+				}
+				scroll.advance(at, bounds);
+			}
+			let displayed = scroll.offset;
+			// No frames run during the pause. New travel starts when its
+			// packet arrives, even if the old stream still carries speed.
+			let arrival =
+				start + Duration::from_millis((packets - 1) * 40 + 240);
+			scroll.coast_wheel_by(300.0 * direction, arrival);
+			assert_eq!(scroll.target, Some(displayed + 300.0 * direction));
+			scroll.advance(arrival, bounds);
+			assert_eq!(scroll.offset, displayed);
+			scroll.advance(arrival + Duration::from_millis(8), bounds);
+			let travel = (scroll.offset - displayed) * direction;
+			assert!(
+				travel > 0.0 && travel <= 8000.0 * 0.0085,
+				"travel: {travel}"
+			);
+			for frame in 2..=400 {
+				scroll.advance(
+					arrival + Duration::from_millis(frame * 8),
+					bounds,
+				);
+			}
+			assert!(!scroll.animating());
+			assert!(
+				(scroll.offset - displayed - 300.0 * direction).abs() < 1.0
+			);
+		}
+	}
+}
+
+#[test]
 fn a_small_wheel_reversal_discards_unpaid_travel() {
 	let start = Instant::now();
 	let bounds = ScrollBounds {

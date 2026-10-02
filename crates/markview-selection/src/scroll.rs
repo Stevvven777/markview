@@ -260,6 +260,12 @@ impl ScrollState {
 		} else if let Some(gap) = gap.filter(|gap| *gap > PACKET_GAP) {
 			self.target = None;
 			if let Some(momentum) = self.momentum.as_mut() {
+				// Spend unrendered quiet time before bridging the speed. New
+				// travel starts at its arrival, not at the preceding frame.
+				let dt =
+					now.saturating_duration_since(momentum.at).as_secs_f32();
+				momentum.velocity *= (-dt / QUIET_DECAY).exp();
+				momentum.at = now;
 				// The silence's own distance is the fastest the hand can be
 				// believed to have gone, and nothing more.
 				let average = (delta / gap).abs();

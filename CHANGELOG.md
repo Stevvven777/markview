@@ -32,6 +32,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Start a paused wheel stream's new travel at packet arrival and decay speed across stalled frames, preventing jumps when rendering resumes (#3).
 - Compare canonical paths in single-instance regression tests, fixing Windows path assertions and macOS directory-notification timeouts.
 - Clear cancelled wheel momentum targets and start paused or reversed packet streams from the displayed position, preventing jumps and motion against new input.
 - Restore the high-resolution wheel stream's packet momentum dropped by the interaction refactor, so a Windows touchpad's inertia rides across the gaps between packets again (#3).
