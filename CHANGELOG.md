@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Add an opt-in single-instance setting that opens files from subsequent launches in tabs of the existing reader window.
+
 ### Changed
 
 - Link macOS app bundles and Linux AppImages in release downloads; list the Windows MSI before the portable ZIP and include macOS installation and quarantine instructions.
@@ -28,6 +32,8 @@ at the same level, without `[brackets]`.
 ### Fixed
 
 - Make the syntax-highlight cache regression test independent of background worker scheduling.
+- Keep single-instance authentication tokens private, bound IPC requests and reject forwarding after the event loop closes.
+- Forward macOS desktop-opened documents before a secondary instance exits and register surviving independent windows when enabling single-instance mode.
 
 - Preserve symlinked settings resources and fade loading/error feedback when previewing the document.
 

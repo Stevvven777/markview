@@ -36,6 +36,7 @@ pub(crate) enum Command {
 	Align,
 	Hyphens,
 	CodeWrap,
+	SingleInstance,
 	/// Step the reader's scroll-speed multiplier by whole steps.
 	ScrollSpeed(i8),
 	/// First-line paragraph indent in whole em units.
