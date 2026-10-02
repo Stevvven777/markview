@@ -24,8 +24,16 @@ shift
 	exit 2
 }
 
-"$@" &
+# Run the command in its own process group so the watchdog's signal reaches
+# every descendant: `bash -c 'heavy & wait'` otherwise leaves the heavy
+# grandchild alive after the direct child dies.
+setsid "$@" &
 child=$!
+
+# `setsid` detaches the command from this shell's group, so a signal aimed at
+# the shell (Ctrl+C) must be forwarded or the command outlives its watchdog.
+forward() { kill -TERM -"$child" 2>/dev/null || true; }
+trap forward TERM INT HUP
 
 # Resident bytes of the child and every descendant, so a fuzz target that
 # spawns workers (highlighting, image decode) is measured as a whole.
@@ -54,12 +62,11 @@ watch() {
 		if ((total > limit_kb)); then
 			printf 'rsscap: pid %s exceeded %s MiB (%s KiB), killing\n' \
 				"$child" "$limit_mb" "$total" >&2
-			# Signal the numeric pid only. `kill -TERM -$child` assumed the
-			# child led a process group, which it does not, so the fallback
-			# ran instead and the intended group kill never happened.
-			kill -TERM "$child" 2>/dev/null || true
+			# `setsid` makes `child` the group leader, so the negative pid
+			# signals the whole tree.
+			kill -TERM -"$child" 2>/dev/null || true
 			sleep 5
-			kill -KILL "$child" 2>/dev/null || true
+			kill -KILL -"$child" 2>/dev/null || true
 			return
 		fi
 		sleep 2
@@ -73,6 +80,9 @@ set +e
 wait "$child"
 status=$?
 set -e
-kill "$watcher" 2>/dev/null || true
+# Waiting for the watchdog, rather than killing it, lets its TERM/KILL sequence
+# finish: cutting it short at `sleep 5` would drop the group KILL and let a
+# descendant that ignores TERM outlive the wrapper. It exits on its own within
+# one poll interval once the child is gone.
 wait "$watcher" 2>/dev/null || true
 exit "$status"

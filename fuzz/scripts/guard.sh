@@ -18,13 +18,20 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root/fuzz"
 
-if ! cargo +nightly check -p mvfuzz 2>&1 | tee "${TMPDIR:-$root/artifacts/fuzz-next}/guard.log" | tail -5; then
+# The log directory is gitignored and absent on a fresh checkout, and `TMPDIR`
+# may point at a path that does not exist yet; `tee` would then fail and, with
+# `pipefail`, report a green build as a compile error.
+log_dir="${TMPDIR:-$root/artifacts/fuzz-next}"
+mkdir -p "$log_dir"
+log="$log_dir/guard.log"
+
+if ! cargo +nightly check -p mvfuzz 2>&1 | tee "$log" | tail -5; then
 	echo "guard.sh: the shared mvfuzz library does not compile." >&2
 	echo "guard.sh: every fuzz target is blocked until this is fixed." >&2
 	exit 1
 fi
 
-if grep -q '^error' "${TMPDIR:-$root/artifacts/fuzz-next}/guard.log"; then
+if grep -q '^error' "$log"; then
 	echo "guard.sh: mvfuzz reported errors; see the log above." >&2
 	exit 1
 fi

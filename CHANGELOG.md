@@ -46,6 +46,10 @@ at the same level, without `[brackets]`.
 - Keep single-instance authentication tokens private, bound IPC requests and reject forwarding after the event loop closes.
 - Forward macOS desktop-opened documents before a secondary instance exits and register surviving independent windows when enabling single-instance mode.
 
+- Run campaign blocks in libFuzzer fork mode with `-keep_seed`, so a known crash no longer ends the block before its time budget and the fork startup merge stays off the clock.
+- Signal the whole process group when `rsscap.sh` passes its RSS ceiling, so a heavy descendant cannot outlive the wrapper.
+- Block in `slot.sh --wait` until a slot frees instead of failing immediately like `--try`, and keep the holder record when a lock is opened.
+- Create the campaign artifact, slot and guard-log directories before they are first used, so a fresh checkout can start and check a campaign.
 - Match each reference text run to the reference span that contains it in the `refdef` oracle, so a link resolving to a destination its definition contradicts is caught.
 - Stop the `refdef` definition scan from reporting list-, quote- and raw-HTML-contained definitions as parser crashes, and never invent a definition row.
 - Preserve the order of explicit `mathprobe` probe sizes instead of duplicating and reversing them.

@@ -26,6 +26,14 @@ mkdir -p "$corpus"
 
 # A crash this target has already produced must not end the run: the campaign
 # is looking for something new, and libFuzzer re-derives known inputs fast.
+# `-ignore_crashes` and `-ignore_ooms` only take effect in fork mode, so
+# `-fork` is not optional here: without it the first known crash ends the
+# block. One worker is enough to fill the single pinned slot.
+#
+# `-keep_seed` skips fork mode's initial set-cover merge, which runs before
+# libFuzzer looks at `-max_total_time`: the accumulated `parse` corpus
+# (229k units) made a 5 s block run 18 minutes without it, while the same
+# block exits in 5.6 s with it.
 #
 # `-timeout` must clear the target's one-time warm-up, which libFuzzer counts
 # as an input: the three targets that call `pipeline::warmup` pay 45-75 s on a
@@ -36,6 +44,8 @@ mkdir -p "$corpus"
 # hang.
 timeout_s=${TIMEOUT_SECS:-$(( ${WARMUP_SECS:-90} * 3 + 60 ))}
 flags=(
+	-fork="${FORK_JOBS:-1}"
+	-keep_seed=1
 	-ignore_crashes=1
 	-ignore_ooms=1
 	-timeout="$timeout_s"

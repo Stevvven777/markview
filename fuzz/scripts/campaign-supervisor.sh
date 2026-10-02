@@ -22,6 +22,9 @@ cd "$root"
 hours=${1:-6}
 deadline=$(( $(date +%s) + hours * 3600 ))
 log="$root/artifacts/fuzz-next/supervisor.log"
+# `.slots` is gitignored, so a fresh checkout lacks it and every lock open in
+# `free_slots` would fail, reporting zero free slots for the whole window.
+mkdir -p "$root/artifacts/fuzz-next/.slots"
 
 # Priority order, most productive per slot-second first. `layout`,
 # `layout_diff` and `highlight` pay 45-75 s of warm-up per process, so they
@@ -48,7 +51,9 @@ idx=0
 free_slots() {
 	local n=0 i
 	for ((i = 0; i < 8; i++)); do
-		if (exec 9>"$root/artifacts/fuzz-next/.slots/slot$i.lock"; flock -n 9) 2>/dev/null; then
+		# Append rather than truncate: a held lock file records its holder for
+		# `slot.sh --list`, and opening with `>` would erase it.
+		if (exec 9>>"$root/artifacts/fuzz-next/.slots/slot$i.lock"; flock -n 9) 2>/dev/null; then
 			n=$((n + 1))
 		fi
 	done

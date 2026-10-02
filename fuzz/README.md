@@ -248,7 +248,9 @@ through:
 - `campaign.sh <target> <seconds>` — one bounded run: slot, pin, RSS ceiling,
   libFuzzer flags, and a self-contained record (command line, binary mtime,
   corpus state, exit summary, peak RSS) written next to the run's log. The
-  record root is `out` at the top of the script.
+  record root is `out` at the top of the script. Fuzzing runs in fork mode with
+  `-keep_seed`, so a crash libFuzzer reports mid-block does not end it and the
+  block still honours `-max_total_time` on an accumulated corpus.
 - `campaign-supervisor.sh <hours>` — a fill loop that keeps every slot busy
   from a priority-ordered rotation for the given window, then drains.
 - `guard.sh` — `cargo check -p mvfuzz` before a campaign starts (`--full` adds

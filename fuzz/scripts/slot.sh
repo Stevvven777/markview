@@ -58,23 +58,29 @@ case "${1:-}" in
 --wait | wait)
 	shift
 	[[ $# -gt 0 ]] || usage
-	for ((i = 0; i < SLOTS; i++)); do
-		# Hold the lock for the whole command: flock keeps the fd open over exec.
-		exec 9>"$lockdir/slot$i.lock"
-		if flock -n 9; then
-			printf 'slot%d cpu=%s\n' "$i" "${SLOT_CPU[$i]}" >&2
-			run_in_slot "$i" "$@"
-		fi
-		exec 9>&-
+	# `--wait` blocks until a slot frees up; scanning once and exiting 75 is
+	# `--try`'s contract. `SLOT_WAIT_SECS` spaces the scans so eight busy
+	# slots cost one short sleep per round instead of a busy spin.
+	while :; do
+		for ((i = 0; i < SLOTS; i++)); do
+			# Hold the lock for the whole command: flock keeps the fd open over
+			# exec. Append rather than truncate so a held slot keeps the holder
+			# record `--list` prints.
+			exec 9>>"$lockdir/slot$i.lock"
+			if flock -n 9; then
+				printf 'slot%d cpu=%s\n' "$i" "${SLOT_CPU[$i]}" >&2
+				run_in_slot "$i" "$@"
+			fi
+			exec 9>&-
+		done
+		sleep "${SLOT_WAIT_SECS:-5}"
 	done
-	echo "slot.sh: all $SLOTS slots busy" >&2
-	exit 75
 	;;
 --try | try)
 	shift
 	[[ $# -gt 0 ]] || usage
 	for ((i = 0; i < SLOTS; i++)); do
-		exec 9>"$lockdir/slot$i.lock"
+		exec 9>>"$lockdir/slot$i.lock"
 		if flock -n 9; then
 			printf 'slot%d cpu=%s\n' "$i" "${SLOT_CPU[$i]}" >&2
 			run_in_slot "$i" "$@"
