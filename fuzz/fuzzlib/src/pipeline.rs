@@ -61,6 +61,15 @@ pub fn options_for(md: &str) -> LayoutOptions {
 	}
 }
 
+/// Completes syntax colors before the first snapshot, so differential
+/// fingerprints compare the same highlight state regardless of scheduling.
+pub fn differential_engine() -> LayoutEngine {
+	LayoutEngine::with_executor(
+		Arc::new(markview_core::background::Direct),
+		Arc::new(|| {}),
+	)
+}
+
 /// One layout of a throwaway document, run once per process: the first
 /// layout pays for fontconfig's cold caches, which is a warm-up cost, not
 /// an input cost, so the layout-family targets call this before their

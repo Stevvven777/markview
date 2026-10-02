@@ -61,8 +61,11 @@ a tree against an independent scan of the same bytes.
   time, or a progressive layout disagreeing with a direct one. How: the same
   document is laid out twice by one engine and once by a fresh engine — all
   three snapshots must fingerprint equal, so a cache that changes the result is
-  itself a finding — and then laid out progressively, with a prefix snapshot
-  checked block by block (id, position, geometry) against the direct layout.
+  itself a finding. Syntax highlighting runs synchronously for these comparisons
+  because the fingerprints include paint; background colors arriving between
+  passes are an expected change. The document is then laid out progressively,
+  with a prefix snapshot checked block by block (id, position, geometry) against
+  the direct layout.
 - **`math`** — looks for an uncaught panic, an overflow, or non-finite box
   geometry on the ratex path. How: `MathEngine::layout` under budgets, with a
   LaTeX-aware mutator keeping the corpus inside macro territory, where the
