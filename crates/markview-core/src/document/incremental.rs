@@ -526,11 +526,13 @@ fn front_matter_close(source: &str) -> Option<usize> {
 /// one does not matter, and a later ordinary line is inside the block the
 /// opener began. A `<` anywhere else is ordinary text.
 fn ends_in_open_html(source: &str) -> bool {
-	if crate::html::has_open_details(source) {
+	// A `<details>` inside a code span or fence is literal text, not HTML.
+	let masked = mask_code(source);
+	if crate::html::has_open_details(&masked) {
 		return true;
 	}
-	for range in line_ranges(source).iter().rev() {
-		let line = &source[range.clone()];
+	for range in line_ranges(&masked).iter().rev() {
+		let line = &masked[range.clone()];
 		let indent = line.len() - line.trim_start_matches(' ').len();
 		if indent > 3 {
 			continue;
@@ -549,6 +551,95 @@ fn ends_in_open_html(source: &str) -> bool {
 		return crate::html::tag_len(rest).is_none();
 	}
 	false
+}
+
+/// `source` with the regions Markdown reads as literal code replaced by
+/// spaces, so a `<details>` inside a code span or fence is not counted as HTML.
+fn mask_code(source: &str) -> String {
+	let mut masked = String::with_capacity(source.len());
+	let mut fence: Option<(u8, usize)> = None;
+	for line in source.split_inclusive(['\r', '\n']) {
+		let content = line.trim_end_matches(['\r', '\n']);
+		let ending = &line[content.len()..];
+		let code = match fence {
+			Some((marker, length)) => {
+				let rest = content.trim_start_matches(' ');
+				let indent = content.len() - rest.len();
+				let run = rest.bytes().take_while(|b| *b == marker).count();
+				if indent <= 3 && run >= length && rest[run..].trim().is_empty()
+				{
+					fence = None;
+				}
+				true
+			}
+			None => match fence_open(content) {
+				Some(open) => {
+					fence = Some(open);
+					true
+				}
+				None => false,
+			},
+		};
+		if code {
+			masked.extend(std::iter::repeat_n(' ', content.len()));
+		} else {
+			mask_inline_code(content, &mut masked);
+		}
+		masked.push_str(ending);
+	}
+	masked
+}
+
+/// The marker and length of the code fence a line opens, if it opens one.
+fn fence_open(line: &str) -> Option<(u8, usize)> {
+	let rest = line.trim_start_matches(' ');
+	if line.len() - rest.len() > 3 {
+		return None;
+	}
+	let marker = *rest.as_bytes().first()?;
+	if !matches!(marker, b'`' | b'~') {
+		return None;
+	}
+	let length = rest.bytes().take_while(|b| *b == marker).count();
+	// A backtick fence's info string may not contain a backtick.
+	(length >= 3 && (marker == b'~' || !rest[length..].contains('`')))
+		.then_some((marker, length))
+}
+
+/// Replaces one line's code spans with spaces. Unclosed backticks stay as the
+/// literal text Markdown reads.
+fn mask_inline_code(line: &str, masked: &mut String) {
+	let bytes = line.as_bytes();
+	let mut at = 0;
+	while at < bytes.len() {
+		if bytes[at] != b'`' {
+			let c = line[at..].chars().next().unwrap();
+			masked.push(c);
+			at += c.len_utf8();
+			continue;
+		}
+		let open = bytes[at..].iter().take_while(|b| **b == b'`').count();
+		let mut close = None;
+		let mut scan = at + open;
+		while scan < bytes.len() {
+			let run = bytes[scan..].iter().take_while(|b| **b == b'`').count();
+			if run == open {
+				close = Some(scan + run);
+				break;
+			}
+			scan += run.max(1);
+		}
+		match close {
+			Some(end) => {
+				masked.extend(std::iter::repeat_n(' ', end - at));
+				at = end;
+			}
+			None => {
+				masked.push_str(&line[at..at + open]);
+				at += open;
+			}
+		}
+	}
 }
 
 fn shift_range(range: &mut Range<usize>, delta: isize) {

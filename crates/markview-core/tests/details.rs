@@ -403,3 +403,111 @@ fn a_prefix_defers_when_later_references_can_renumber_disclosure_notes() {
 		}
 	}
 }
+
+/// Collects every footnote reference number in reading order.
+fn footnote_refs(blocks: &[Block], out: &mut Vec<u32>) {
+	for block in blocks {
+		match &block.kind {
+			BlockKind::Paragraph(text) => {
+				out.extend(text.iter().filter_map(|inline| {
+					if let InlineKind::FootnoteRef(number) = inline.kind {
+						Some(number)
+					} else {
+						None
+					}
+				}))
+			}
+			BlockKind::Details { blocks, .. }
+			| BlockKind::Footnote { blocks, .. }
+			| BlockKind::Quote { blocks, .. } => footnote_refs(blocks, out),
+			_ => {}
+		}
+	}
+}
+
+#[test]
+fn case_folded_footnote_labels_share_one_number() {
+	// Comrak folds label case and keeps the later duplicate definition, so
+	// `[^n]` and `[^N]` are one note and the one inside the disclosure wins.
+	let sources = [
+		(
+			"Outside[^n]\n\n[^N]: First.\n\n<details>\n\nBody[^n]\n\n[^n]: Second.\n\n</details>\n",
+			"Second.",
+		),
+		("Outside[^n]\n\n[^N]: First.\n", "First."),
+		(
+			"Outside[^n]\n\n[^n]: First.\n\n<details>\n\nBody[^n]\n\n</details>\n",
+			"First.",
+		),
+	];
+	for (source, expected) in sources {
+		let doc = document::parse(source);
+		let notes: Vec<_> = doc
+			.blocks
+			.iter()
+			.filter(|block| matches!(block.kind, BlockKind::Footnote { .. }))
+			.collect();
+		assert_eq!(notes.len(), 1, "{source:?}");
+		let BlockKind::Footnote { label, blocks, .. } = &notes[0].kind else {
+			panic!("expected a note: {source:?}");
+		};
+		assert_eq!(label, "1", "{source:?}");
+		let BlockKind::Paragraph(text) = &blocks[0].kind else {
+			panic!("expected note text: {source:?}");
+		};
+		assert_eq!(document::plain_text(text), expected, "{source:?}");
+		let mut refs = Vec::new();
+		footnote_refs(&doc.blocks, &mut refs);
+		refs.sort_unstable();
+		refs.dedup();
+		assert_eq!(refs, [1], "{source:?}");
+		let reparsed = document::reparse(&doc, Arc::from(source));
+		assert_eq!(reparsed.content_id, doc.content_id, "{source:?}");
+	}
+}
+
+#[test]
+fn prefixes_ignore_details_inside_code() {
+	for (source, cut) in [
+		("Use `<details>` to expand.\n\nRest\n", "expand"),
+		("Use `<details>` to expand.\n", "expand"),
+		("```\n<details>\n```\n\nRest\n", "<details>"),
+	] {
+		let source: Arc<str> = Arc::from(source);
+		let full = document::parse(source.clone());
+		let cut = source.find(cut).unwrap();
+		let prefix =
+			document::parse_prefix(&source, cut).expect("code is not raw HTML");
+		assert_eq!(prefix.blocks, full.blocks[..prefix.blocks.len()]);
+		for cut in 1..source.len() {
+			if !source.is_char_boundary(cut) {
+				continue;
+			}
+			if let Some(prefix) = document::parse_prefix(&source, cut) {
+				assert_eq!(
+					prefix.blocks,
+					full.blocks[..prefix.blocks.len()],
+					"{source:?} cut={cut}"
+				);
+			}
+		}
+	}
+}
+
+#[test]
+fn a_prefix_inside_open_details_still_defers() {
+	let source: Arc<str> = Arc::from("<details>\n\nBody\n\nTail\n");
+	let cut = source.find("Body").unwrap() + "Body".len();
+	assert!(document::parse_prefix(&source, cut).is_none());
+
+	let closed: Arc<str> =
+		Arc::from("<details>\n\nBody\n\n</details>\n\nTail\n");
+	let cut = closed.find("</details>").unwrap() + "</details>".len();
+	assert!(document::parse_prefix(&closed, cut).is_some());
+
+	// A closed fence does not mask a real opener after it.
+	let fenced: Arc<str> =
+		Arc::from("```\n<details>\n```\n\n<details>\n\nBody\n");
+	let cut = fenced.rfind("Body").unwrap() + "Body".len();
+	assert!(document::parse_prefix(&fenced, cut).is_none());
+}

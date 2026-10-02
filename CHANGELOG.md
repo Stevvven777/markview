@@ -46,6 +46,8 @@ at the same level, without `[brackets]`.
 - Keep single-instance authentication tokens private, bound IPC requests and reject forwarding after the event loop closes.
 - Forward macOS desktop-opened documents before a secondary instance exits and register surviving independent windows when enabling single-instance mode.
 
+- Normalize footnote labels before numbering, so a disclosure body reusing a document label references the one note instead of allocating a second number.
+- Ignore `<details>` inside code spans and fenced code when deciding whether a prefix ends in an open HTML block, restoring the opening-viewport fast path.
 - Preserve paragraph source ranges before tables with CRLF line endings by updating the Comrak pin.
 - Keep indented code block source ranges stable across trailing blank lines by updating the Comrak pin.
 - Keep `<details>` footnotes once at the document's end, including cross-disclosure references; defer incomplete disclosures and unstable note numbering in prefixes, and assign heading anchors in final reading order.

@@ -410,7 +410,9 @@ impl Reader<'_> {
 						&& f.total_references == 0)
 						|| self.snippet_end.is_some_and(|end| {
 							source.start >= end
-								|| self.document_footnotes.contains(&f.name)
+								|| self
+									.document_footnotes
+									.contains(&note_key(&f.name))
 						}) =>
 				{
 					return Child::Skip;
@@ -418,7 +420,7 @@ impl Reader<'_> {
 				NodeValue::FootnoteDefinition(f) => BlockKind::Footnote {
 					label: self
 						.footnotes
-						.get(&f.name)
+						.get(&note_key(&f.name))
 						.map_or_else(|| f.name.clone(), u32::to_string),
 					column: self.footnote_column,
 					blocks: self.blocks(child, depth + 1),
@@ -442,10 +444,7 @@ impl Reader<'_> {
 		};
 		if let NodeValue::FootnoteDefinition(f) = &data.value {
 			// Snippet-only definitions also belong at the document's end.
-			self.footnote_blocks.insert(
-				f.name.split_whitespace().collect::<Vec<_>>().join(" "),
-				block,
-			);
+			self.footnote_blocks.insert(note_key(&f.name), block);
 			Child::Skip
 		} else {
 			Child::Block(block)
@@ -672,7 +671,7 @@ impl Reader<'_> {
 			if let NodeValue::FootnoteReference(f) =
 				&mut node.data.borrow_mut().value
 			{
-				f.ix = *self.footnotes.entry(f.name.clone()).or_insert_with(
+				f.ix = *self.footnotes.entry(note_key(&f.name)).or_insert_with(
 					|| {
 						let ix = next_footnote;
 						next_footnote += 1;
@@ -933,6 +932,15 @@ fn line_starts(source: &str) -> Vec<usize> {
 	lines
 }
 
+/// The identity of a footnote label: comrak matches labels case-insensitively
+/// and collapses whitespace, so every label map is keyed by this.
+fn note_key(name: &str) -> String {
+	name.split_whitespace()
+		.collect::<Vec<_>>()
+		.join(" ")
+		.to_lowercase()
+}
+
 pub fn parse(source: impl Into<Arc<str>>) -> Document {
 	let source = source.into();
 	let arena = Arena::new();
@@ -941,7 +949,7 @@ pub fn parse(source: impl Into<Arc<str>>) -> Document {
 	let footnotes: HashMap<String, u32> = root
 		.descendants()
 		.filter_map(|n| match &n.data.borrow().value {
-			NodeValue::FootnoteReference(f) => Some((f.name.clone(), f.ix)),
+			NodeValue::FootnoteReference(f) => Some((note_key(&f.name), f.ix)),
 			_ => None,
 		})
 		.collect();
@@ -952,7 +960,7 @@ pub fn parse(source: impl Into<Arc<str>>) -> Document {
 				&node.data.borrow().value
 				&& note.total_references > 0
 			{
-				Some(note.name.clone())
+				Some(note_key(&note.name))
 			} else {
 				None
 			}
