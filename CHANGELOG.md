@@ -31,6 +31,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Clear cancelled wheel momentum targets and start paused or reversed packet streams from the displayed position, preventing jumps and motion against new input.
 - Restore the high-resolution wheel stream's packet momentum dropped by the interaction refactor, so a Windows touchpad's inertia rides across the gaps between packets again (#3).
 - Spend the speed a paused wheel stream leaves behind, whose stale carry sent the page on the old way and made a reversal answer nothing (#3).
 - Make the syntax-highlight cache regression test independent of background worker scheduling.

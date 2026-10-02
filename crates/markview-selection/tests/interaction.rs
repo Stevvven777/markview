@@ -243,7 +243,8 @@ fn wheel_packet_after_a_pause_answers_a_reversal() {
 	// instead of carrying on downward past it.
 	at += Duration::from_millis(200);
 	scroll.coast_wheel_by(-300.0, at);
-	assert_eq!(scroll.target, Some(180.0));
+	let destination = (ridden - 300.0).max(0.0);
+	assert_eq!(scroll.target, Some(destination));
 	let mut frame = at;
 	for _ in 0..400 {
 		frame += Duration::from_millis(8);
@@ -253,21 +254,120 @@ fn wheel_packet_after_a_pause_answers_a_reversal() {
 		scroll.offset < ridden,
 		"the page should have turned, at {ridden}"
 	);
-	assert!((scroll.offset - 180.0).abs() < 1.0);
+	assert!((scroll.offset - destination).abs() < 1.0);
 	assert_eq!(scroll.target, None);
 }
 
 #[test]
-fn a_direct_scroll_stops_a_wheel_stream() {
+fn direct_and_eased_steps_take_over_from_a_wheel_stream() {
 	let start = Instant::now();
 	let bounds = ScrollBounds {
 		max: 4000.0,
 		complete: true,
 	};
+	for eased in [false, true] {
+		let mut scroll = ScrollState::default();
+		scroll.coast_wheel_by(120.0, start);
+		scroll.coast_wheel_by(120.0, start + Duration::from_millis(40));
+		scroll.advance(start + Duration::from_millis(48), bounds);
+		let displayed = scroll.offset;
+		assert!(scroll.animating());
+		if eased {
+			scroll.animate_by(10.0, start + Duration::from_millis(48));
+			scroll.advance(start + Duration::from_secs(1), bounds);
+		} else {
+			scroll.by(10.0, bounds);
+		}
+		assert_eq!(scroll.offset, displayed + 10.0);
+		assert!(!scroll.animating());
+		assert_eq!(scroll.target, None);
+	}
+}
+
+#[test]
+fn cancelling_a_wheel_stream_forgets_its_target_when_layout_grows() {
+	let start = Instant::now();
+	let prefix = ScrollBounds {
+		max: 100.0,
+		complete: false,
+	};
 	let mut scroll = ScrollState::default();
-	scroll.coast_wheel_by(-120.0, start + Duration::from_millis(40));
-	scroll.coast_wheel_by(-120.0, start + Duration::from_millis(80));
-	assert!(scroll.animating());
-	scroll.by(10.0, bounds);
+	scroll.coast_wheel_by(120.0, start);
+	scroll.coast_wheel_by(120.0, start + Duration::from_millis(40));
+	scroll.advance(start + Duration::from_millis(48), prefix);
+	let displayed = scroll.offset;
+	scroll.cancel();
 	assert!(!scroll.animating());
+	assert_eq!(scroll.target, None);
+	assert_eq!(scroll.deadline(start + Duration::from_millis(48)), None);
+	scroll.resolve(ScrollBounds {
+		max: 4000.0,
+		complete: true,
+	});
+	assert_eq!(scroll.offset, displayed);
+	// A direct request beyond an incomplete prefix still survives cancellation.
+	scroll.set(900.0, prefix);
+	scroll.cancel();
+	assert_eq!(scroll.target, Some(900.0));
+}
+
+#[test]
+fn a_wheel_packet_after_a_pause_follows_the_new_input() {
+	let start = Instant::now();
+	let bounds = ScrollBounds {
+		max: 4000.0,
+		complete: true,
+	};
+	for delta in [-10.0, 10.0] {
+		let mut scroll = ScrollState::default();
+		for frame in 0..=45 {
+			let at = start + Duration::from_millis(frame * 8);
+			if frame <= 15 && frame % 5 == 0 {
+				scroll.coast_wheel_by(120.0, at);
+			}
+			scroll.advance(at, bounds);
+		}
+		let displayed = scroll.offset;
+		assert!(displayed > 480.0 && scroll.animating());
+		scroll.coast_wheel_by(delta, start + Duration::from_millis(368));
+		assert_eq!(scroll.target, Some(displayed + delta));
+		for frame in 47..=300 {
+			let before = scroll.offset;
+			scroll.advance(start + Duration::from_millis(frame * 8), bounds);
+			assert!((scroll.offset - before) * delta >= 0.0);
+		}
+		assert!((scroll.offset - displayed - delta).abs() < 0.5);
+		assert!(!scroll.animating());
+	}
+}
+
+#[test]
+fn a_small_wheel_reversal_discards_unpaid_travel() {
+	let start = Instant::now();
+	let bounds = ScrollBounds {
+		max: 4000.0,
+		complete: true,
+	};
+	for direction in [-1.0, 1.0] {
+		// Reverse both before a stream has velocity and while it is moving.
+		for packets in [1, 2] {
+			let mut scroll = ScrollState::default();
+			scroll.set(1000.0, bounds);
+			for packet in 0..packets {
+				let at = start + Duration::from_millis(packet * 40);
+				scroll.coast_wheel_by(120.0 * direction, at);
+				for frame in 1..=5 {
+					scroll
+						.advance(at + Duration::from_millis(frame * 8), bounds);
+				}
+			}
+			let displayed = scroll.offset;
+			let at = start + Duration::from_millis(packets * 40);
+			let delta = -10.0 * direction;
+			scroll.coast_wheel_by(delta, at);
+			assert_eq!(scroll.target, Some(displayed + delta));
+			scroll.advance(at + Duration::from_millis(8), bounds);
+			assert!((scroll.offset - displayed) * delta > 0.0);
+		}
+	}
 }

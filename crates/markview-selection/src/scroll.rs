@@ -132,7 +132,9 @@ impl ScrollState {
 		}
 	}
 	pub fn cancel(&mut self) {
-		self.momentum = None;
+		if self.momentum.take().is_some() {
+			self.target = None;
+		}
 		if let Some(animation) = self.animation.take()
 			&& self.target == Some(animation.to)
 		{
@@ -167,6 +169,9 @@ impl ScrollState {
 		if delta == 0.0 {
 			return;
 		}
+		if self.momentum.is_some() {
+			self.cancel();
+		}
 		let base = self.target.filter(|v| v.is_finite()).unwrap_or(self.offset);
 		self.animate_to(
 			(f64::from(base) + f64::from(delta)).clamp(0.0, f64::from(f32::MAX))
@@ -191,6 +196,26 @@ impl ScrollState {
 		if delta == 0.0 {
 			return;
 		}
+		let gap = self
+			.momentum
+			.as_ref()
+			.map(|momentum| {
+				now.saturating_duration_since(momentum.packet).as_secs_f32()
+			})
+			.filter(|gap| *gap <= PACKET_GAP);
+		let reversing = self.momentum.as_ref().is_some_and(|momentum| {
+			let direction = if momentum.velocity == 0.0 {
+				self.target.unwrap_or(self.offset) - self.offset
+			} else {
+				momentum.velocity
+			};
+			delta * direction < 0.0
+		});
+		// A pause or reversal starts from the displayed offset, dropping both
+		// the stream's speed and the target its earlier packets left behind.
+		if self.momentum.is_some() && (gap.is_none() || reversing) {
+			self.cancel();
+		}
 		// The stream owns the displayed offset; an eased step in flight is
 		// distance the packets have already accounted for.
 		self.animation = None;
@@ -199,27 +224,13 @@ impl ScrollState {
 			.filter(|value| value.is_finite())
 			.unwrap_or(self.offset);
 		self.target = Some((base + delta).max(0.0));
-		let gap = self.momentum.as_ref().map(|momentum| {
-			now.saturating_duration_since(momentum.packet).as_secs_f32()
-		});
 		let momentum = self.momentum.get_or_insert(Momentum {
 			velocity: 0.0,
 			at: now,
 			packet: now,
 		});
-		// Only a packet that follows another packet says how fast the hand is
-		// moving; the first of a gesture is a distance to travel. A packet
-		// after a pause begins a new gesture too, and the speed the last one
-		// left behind is spent: kept, it would carry the page on the old
-		// way while the new gesture's packets answer nothing, which is how
-		// a reversal came to be ignored.
-		if let Some(gap) = gap.filter(|gap| *gap <= PACKET_GAP) {
-			// A packet against the stream's own speed is the hand reversing:
-			// the speed it reverses is spent, and the packet's own rate, not
-			// a blend with what it undoes, says how fast the page now moves.
-			if delta * momentum.velocity < 0.0 {
-				momentum.velocity = 0.0;
-			}
+		// Only nearby packets supply a rate; a reversal blends from zero.
+		if let Some(gap) = gap {
 			let rate = delta / gap.max(PACKET_MIN);
 			let weight = 1.0 - (-gap / PACKET_BLEND).exp();
 			momentum.velocity += (rate - momentum.velocity) * weight;
