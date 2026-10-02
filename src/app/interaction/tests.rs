@@ -514,11 +514,13 @@ fn a_fractional_line_wheel_coasts_on_windows_and_eases_elsewhere() {
 fn forwarded_files_open_tabs_and_reuse_existing_tabs() {
 	let (mut app, _) = reader(SOURCE, 400.0);
 	let first = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-		.join("tests/fixtures/ordinary-10k.md");
+		.join("tests/fixtures/../fixtures/ordinary-10k.md");
 	let second = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 		.join("tests/fixtures/code-10k.md");
 	app.handle_user_event(&StubLoop, Event::Activate(Some(first.clone())));
 	app.handle_user_event(&StubLoop, Event::Activate(Some(second.clone())));
+	let first = first.canonicalize().unwrap();
+	let second = second.canonicalize().unwrap();
 	assert_eq!(app.readers.session.path.as_ref(), Some(&second));
 	let count = app.readers.entries().len();
 	assert_eq!(count, 2);

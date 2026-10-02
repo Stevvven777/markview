@@ -343,11 +343,16 @@ mod tests {
 	#[test]
 	fn endpoint_keeps_its_token_out_of_directory_notifications() {
 		use notify::Watcher;
-		use std::os::unix::fs::PermissionsExt;
+		use std::os::unix::fs::{PermissionsExt, symlink};
 
-		let dir = tempfile::tempdir().unwrap();
+		let tmp = tempfile::tempdir().unwrap();
+		let directory = tmp.path().join("settings");
+		std::fs::create_dir(&directory).unwrap();
+		let directory = directory.canonicalize().unwrap();
+		let alias = tmp.path().join("alias");
+		symlink(&directory, &alias).unwrap();
 		std::fs::set_permissions(
-			dir.path(),
+			&directory,
 			std::fs::Permissions::from_mode(0o755),
 		)
 		.unwrap();
@@ -357,13 +362,13 @@ mod tests {
 		})
 		.unwrap();
 		watcher
-			.watch(dir.path(), notify::RecursiveMode::NonRecursive)
+			.watch(&directory, notify::RecursiveMode::NonRecursive)
 			.unwrap();
-		let lock = dir.path().join("instance.lock");
+		let lock = alias.join("instance.lock");
 		let Start::Primary(primary) = start(&lock, true, None).unwrap() else {
 			panic!()
 		};
-		let endpoint_path = lock.with_extension("json");
+		let endpoint_path = lock.with_extension("json").canonicalize().unwrap();
 		assert_eq!(
 			std::fs::metadata(&endpoint_path)
 				.unwrap()
