@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Expand the `fuzz/` harness with three document-structure oracles (reference resolution, source-range content, `<details>` structure), a structural PDF readback oracle, a LaTeX-aware `math` mutator, and pinned-slot campaign scripts.
 - Add WinGet package manifests, installation checks and stable-release update submissions for `szdytom.Markview`; keep releases moving while first-time registration is pending.
 - Add an opt-in single-instance setting that opens files from subsequent launches in tabs of the existing reader window.
 
