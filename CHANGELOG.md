@@ -62,6 +62,7 @@ at the same level, without `[brackets]`.
 - Complete syntax highlighting synchronously in layout differential fuzzing to avoid reporting background color updates as cache divergence.
 - Keep preceding blocks unchanged when an unused link reference definition is appended, with correct Comrak table source positions and consistent `<details>` body termination.
 - Pin Comrak to our front-matter line-count fix to prevent a `<details>` parsing panic on UTF-8 documents with lone carriage returns, and keep closing-tag ranges correct after HTML normalization.
+- Extract editor-independent scroll anchors, input ownership and versioned request cancellation into `@markview/scroll-sync`.
 - Render inline SVG as static host-decoded images and reject unsupported external SVG dependencies in browser resources.
 - Add per-instance shared font sets, an explicit font loading/cache package and optional WOFF/WOFF2 decoding in official WASM builds.
 - Add reusable viewer/editor/resource packages, a CodeMirror split editor with automatic source following, configurable TOC/layout and a built-package example.
@@ -69,6 +70,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep editor-to-preview scrolling continuous across wrapped image source and multiline SVG, including adjacent blank lines.
 - Parse adjacent SVG elements iteratively and preserve normalized code and math text extending beyond inline SVG boundaries.
 
 - Preserve Unicode source ranges in adjacent quoted disclosures, atomic image geometry and source navigation through horizontally panned content.
