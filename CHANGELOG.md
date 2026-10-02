@@ -21,6 +21,11 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Changed
+
+- Load the MVaaC SPA’s Noto fonts from version-pinned CDN URLs and keep tiny subset fonts in the regression harness only.
+- Show font download counts, received bytes or percentages and renderer/page preparation stages during MVaaC SPA startup.
+
 ### Added
 
 - Expand the `fuzz/` harness with three document-structure oracles (reference resolution, source-range content, `<details>` structure), a structural PDF readback oracle, a LaTeX-aware `math` mutator, and pinned-slot campaign scripts.
