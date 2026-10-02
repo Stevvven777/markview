@@ -46,6 +46,8 @@ at the same level, without `[brackets]`.
 - Keep single-instance authentication tokens private, bound IPC requests and reject forwarding after the event loop closes.
 - Forward macOS desktop-opened documents before a secondary instance exits and register surviving independent windows when enabling single-instance mode.
 
+- Preserve paragraph source ranges before tables with CRLF line endings by updating the Comrak pin.
+- Keep indented code block source ranges stable across trailing blank lines by updating the Comrak pin.
 - Keep `<details>` footnotes once at the document's end, including cross-disclosure references; defer incomplete disclosures and unstable note numbering in prefixes, and assign heading anchors in final reading order.
 - Give adjacent disclosures their own source ranges, retaining original offsets through multiline HTML tags inside lists and block quotes.
 - Complete syntax highlighting synchronously in layout differential fuzzing to avoid reporting background color updates as cache divergence.

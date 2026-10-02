@@ -334,7 +334,7 @@ checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 [[package]]
 name = "comrak"
 version = "0.55.0"
-source = "git+https://github.com/szdytom/comrak?rev=deac2f368b9ff8ed7714b3b7f8bbd3586383273c#deac2f368b9ff8ed7714b3b7f8bbd3586383273c"
+source = "git+https://github.com/szdytom/comrak?rev=2364fa73ae207ac46e842f372229315db212b44a#2364fa73ae207ac46e842f372229315db212b44a"
 dependencies = [
  "caseless",
  "entities",
