@@ -27,6 +27,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Make the syntax-highlight cache regression test independent of background worker scheduling.
+
 - Preserve symlinked settings resources and fade loading/error feedback when previewing the document.
 
 - Load settings styles and font catalogues in the background with immediate loading feedback, cached refreshes and retry controls.
