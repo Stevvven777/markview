@@ -209,14 +209,9 @@ fn generate(args: &[String]) -> Vec<Formula> {
 fn ramp(args: &[String], from: usize, default: &[usize]) -> Vec<usize> {
 	match args.get(from) {
 		None => default.to_vec(),
-		Some(first) => args[from..]
-			.iter()
-			.filter_map(|s| s.parse().ok())
-			.chain(std::iter::once(first.parse().unwrap_or(0)))
-			.collect::<Vec<usize>>()
-			.into_iter()
-			.rev()
-			.collect(),
+		// The parsed arguments keep the order they were written in; the
+		// default ramp is the only ordered preset.
+		Some(_) => args[from..].iter().filter_map(|s| s.parse().ok()).collect(),
 	}
 }
 
@@ -568,4 +563,36 @@ fn truncate(s: &str, n: usize) -> String {
 		end -= 1;
 	}
 	format!("{}…", &s[..end])
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// An explicit size list is one rung per argument, in the order given.
+	#[test]
+	fn explicit_ramp_keeps_argument_order() {
+		let args: Vec<String> = ["sqrt", "1", "2", "4"]
+			.iter()
+			.map(|s| (*s).to_string())
+			.collect();
+		assert_eq!(ramp(&args, 1, &[9, 8]), vec![1, 2, 4]);
+	}
+
+	/// With no explicit arguments the built-in ramp is returned untouched.
+	#[test]
+	fn default_ramp_is_unchanged() {
+		let args: Vec<String> = vec!["sqrt".to_string()];
+		assert_eq!(ramp(&args, 1, &[1, 2, 4, 8]), vec![1, 2, 4, 8]);
+	}
+
+	/// A malformed rung is dropped, not replaced with a zero or reordered.
+	#[test]
+	fn unparsable_arguments_are_dropped() {
+		let args: Vec<String> = ["sqrt", "2", "x", "8"]
+			.iter()
+			.map(|s| (*s).to_string())
+			.collect();
+		assert_eq!(ramp(&args, 1, &[9]), vec![2, 8]);
+	}
 }

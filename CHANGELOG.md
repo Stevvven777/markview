@@ -46,6 +46,9 @@ at the same level, without `[brackets]`.
 - Keep single-instance authentication tokens private, bound IPC requests and reject forwarding after the event loop closes.
 - Forward macOS desktop-opened documents before a secondary instance exits and register surviving independent windows when enabling single-instance mode.
 
+- Match each reference text run to the reference span that contains it in the `refdef` oracle, so a link resolving to a destination its definition contradicts is caught.
+- Stop the `refdef` definition scan from reporting list-, quote- and raw-HTML-contained definitions as parser crashes, and never invent a definition row.
+- Preserve the order of explicit `mathprobe` probe sizes instead of duplicating and reversing them.
 - Normalize footnote labels before numbering, so a disclosure body reusing a document label references the one note instead of allocating a second number.
 - Ignore `<details>` inside code spans and fenced code when deciding whether a prefix ends in an open HTML block, restoring the opening-viewport fast path.
 - Preserve paragraph source ranges before tables with CRLF line endings by updating the Comrak pin.
