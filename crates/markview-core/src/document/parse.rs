@@ -494,13 +494,21 @@ impl Reader<'_> {
 				lead,
 				depth: open_depth,
 			} => {
-				let (close, tag) = details_close(children, start, open_depth)?;
+				let (close, tag, close_depth) =
+					details_close(children, start, open_depth)?;
 				let start_source = self.range(children[start]);
 				let close_source = self.range(children[close]);
+				// The literal normalizes line endings, replaces NULs and loses
+				// container markers, so its byte offsets cannot index `source`.
+				let (_, source_tag) = html::close_tag(
+					&self.source[close_source.clone()],
+					close_depth,
+				);
+				let tag_end = close_source.start + source_tag?.end;
 				// The body is the source between the opener and the closing
 				// tag: a nested element that shares that closing block is
 				// parsed from the inside out, so none of its content is lost.
-				let (between, prefix, rest, tag_end) = {
+				let (between, prefix, rest) = {
 					let data = children[close].data.borrow();
 					let NodeValue::HtmlBlock(h) = &data.value else {
 						return None;
@@ -512,14 +520,6 @@ impl Reader<'_> {
 					if tag.end > h.literal.len() {
 						return None;
 					}
-					// `tag` is an offset inside the block's literal, which
-					// starts at the block's first non-blank character minus
-					// the literal's own leading spaces. `close_source`
-					// reports the former, so an indented closing tag would
-					// drag the element's range past the tag itself.
-					let first_line = h.literal.lines().next().unwrap_or("");
-					let indent =
-						first_line.len() - first_line.trim_start().len();
 					// The literals around the body have already lost the
 					// enclosing quote markers, so the raw slice between them
 					// must lose the same ones or the body gains a quote.
@@ -529,7 +529,6 @@ impl Reader<'_> {
 						strip_blockquotes(between, quotes),
 						h.literal[..tag.start].to_string(),
 						h.literal[tag.end..].to_string(),
-						close_source.start - indent + tag.end,
 					)
 				};
 				let mut body = lead;
@@ -696,7 +695,8 @@ enum Child {
 }
 
 /// The sibling where an opening element's `</details>` appears, as its index
-/// and the closing tag's byte range within that sibling's literal. Tags are
+/// and the closing tag's byte range within that sibling's literal, together
+/// with the depth entering that sibling. Tags are
 /// counted individually, so a block that carries several closing tags closes
 /// several elements. `depth` is how many elements the opening block already
 /// left open, so an inner opener there does not match the outer close. `None`
@@ -705,17 +705,17 @@ fn details_close<'a>(
 	children: &[&'a AstNode<'a>],
 	start: usize,
 	mut depth: usize,
-) -> Option<(usize, Range<usize>)> {
+) -> Option<(usize, Range<usize>, usize)> {
 	for (i, child) in children.iter().enumerate().skip(start + 1) {
 		let data = child.data.borrow();
 		let NodeValue::HtmlBlock(h) = &data.value else {
 			continue;
 		};
 		let (next, close) = html::close_tag(&h.literal, depth);
-		depth = next;
 		if let Some(range) = close {
-			return Some((i, range));
+			return Some((i, range, depth));
 		}
+		depth = next;
 	}
 	None
 }
