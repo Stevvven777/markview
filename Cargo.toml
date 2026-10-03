@@ -41,7 +41,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.1.10"
+version = "0.1.11"
 edition = "2024"
 # `krilla` sets the floor: the PDF backend needs newer standard-library items.
 rust-version = "1.92"

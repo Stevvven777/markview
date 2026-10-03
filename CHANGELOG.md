@@ -21,6 +21,17 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+## 0.1.11 - 2026-10-03
+
+**Highlights**:
+
+- Start a search with `/` and jump straight to the next match.
+- Refined touchpad and wheel scrolling, without stalls or lurches.
+- New setting to open files from a second launch in tabs of the existing window.
+- Correct CJK bold rendering in the reader and PDF export.
+- More predictable triple-click and drag selection.
+- Continued robustness and security hardening.
+
 ### Changed
 
 - Pin Comrak to upstream revision `4127507`, which includes all of Markview's merged parser fixes, in the reader and fuzz harness.
@@ -35,11 +46,8 @@ at the same level, without `[brackets]`.
 
 - Start an empty document search with `/` while reading, ignoring selected text and preserving literal slash input in text fields.
 - Expand the `fuzz/` harness with three document-structure oracles (reference resolution, source-range content, `<details>` structure), a structural PDF readback oracle, a LaTeX-aware `math` mutator, and pinned-slot campaign scripts.
-- Add WinGet package manifests, installation checks and stable-release update submissions for `szdytom.Markview`; keep releases moving while first-time registration is pending.
+- Prepare WinGet package manifests, installation checks and stable-release update submissions for `szdytom.Markview`; releases keep moving while first-time registration is pending.
 - Add an opt-in single-instance setting that opens files from subsequent launches in tabs of the existing reader window.
-
-### Changed
-
 - Link macOS app bundles and Linux AppImages in release downloads; list the Windows MSI before the portable ZIP and include macOS installation and quarantine instructions.
 
 ### Fixed
@@ -57,7 +65,6 @@ at the same level, without `[brackets]`.
 - Make the syntax-highlight cache regression test independent of background worker scheduling.
 - Keep single-instance authentication tokens private, bound IPC requests and reject forwarding after the event loop closes.
 - Forward macOS desktop-opened documents before a secondary instance exits and register surviving independent windows when enabling single-instance mode.
-
 - Run campaign blocks in libFuzzer fork mode with `-keep_seed`, so a known crash no longer ends the block before its time budget and the fork startup merge stays off the clock.
 - Signal the whole process group when `rsscap.sh` passes its RSS ceiling, so a heavy descendant cannot outlive the wrapper.
 - Block in `slot.sh --wait` until a slot frees instead of failing immediately like `--try`, and keep the holder record when a lock is opened.
@@ -75,14 +82,11 @@ at the same level, without `[brackets]`.
 - Keep preceding blocks unchanged when an unused link reference definition is appended, with correct Comrak table source positions and consistent `<details>` body termination.
 - Pin Comrak to our front-matter line-count fix to prevent a `<details>` parsing panic on UTF-8 documents with lone carriage returns, and keep closing-tag ranges correct after HTML normalization.
 - Unify the MVaaC demos into a reading/editing SPA with shared documents, an embedded component guide, file opening, downloads and a compact responsive workspace.
-
 - Extract editor-independent scroll anchors, input ownership and versioned request cancellation into `@markview/scroll-sync`.
 - Render inline SVG as static host-decoded images and reject unsupported external SVG dependencies in browser resources.
 - Add per-instance shared font sets, an explicit font loading/cache package and optional WOFF/WOFF2 decoding in official WASM builds.
 - Add reusable viewer/editor/resource packages, a CodeMirror split editor with automatic source following, configurable TOC/layout and a built-package example.
 - Add versioned MVaaC source geometry, complete TOC and a container-mounted viewer with progressive navigation and reading-position events.
-
-### Fixed
 
 - Center the MVaaC editor divider grip in horizontal and vertical layouts, including hosts with a global border-box reset.
 - Keep MVaaC disclosure summaries in their intended font and spacing by supplying their required 600 weight.
@@ -93,16 +97,12 @@ at the same level, without `[brackets]`.
 - Rebuild MVaaC editor scroll following around continuous, reversible position maps with shared endpoints and gesture ownership to prevent jumps and feedback.
 - Keep editor-to-preview scrolling continuous across wrapped image source and multiline SVG, including adjacent blank lines.
 - Parse adjacent SVG elements iteratively and preserve normalized code and math text extending beyond inline SVG boundaries.
-
 - Preserve Unicode source ranges in adjacent quoted disclosures, atomic image geometry and source navigation through horizontally panned content.
 - Retain source reading targets while progressive reflow has not yet published enough content to position them.
 - Preserve original source ranges inside HTML disclosures and code-line offsets across CRLF input.
 - Preserve symlinked settings resources and fade loading/error feedback when previewing the document.
-
 - Load settings styles and font catalogues in the background with immediate loading feedback, cached refreshes and retry controls.
-
 - Exclude automatic CJK/Latin spacing from the start and end of selection highlights.
-
 - Limit triple-click selection and dragging to the current paragraph or table cell inside lists, block quotes and other containers.
 - Preserve CJK bold in reader and PDF themes by treating the preferred Medium face as a minimum weight instead of an absolute override.
 - Ignore the pointer position reports the macOS backend repeats before every wheel event, which pulled an open list's highlight back to the hovered option between notches.
