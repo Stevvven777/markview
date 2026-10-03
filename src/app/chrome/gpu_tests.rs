@@ -430,7 +430,15 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 			tabs: &entries,
 			active_tab: 3.min(count - 1),
 			cursor: (150.0, 20.0),
-			width,
+			viewport: crate::app::frame::Layout::new(
+				crate::settings::WindowLayout::Windows,
+				false,
+				width,
+				300.0,
+				false,
+				false,
+			)
+			.tabs,
 		};
 		let viewport = bar.layout().viewport;
 		let tabs = bar.draw_tabs();
@@ -843,6 +851,14 @@ fn previewing_recedes_the_styles_and_fonts_pages() {
 					..Default::default()
 				};
 				let mut chrome = Chrome {
+					frame: crate::app::frame::Layout::new(
+						crate::settings::WindowLayout::Macos,
+						true,
+						width,
+						height,
+						false,
+						false,
+					),
 					input_draws: Vec::new(),
 					backend: None,
 					ui: &mut ui,
@@ -991,6 +1007,14 @@ fn the_fonts_page_draws_its_open_option_list() {
 	));
 	let chrome_tabs: Vec<ReaderTab> = Vec::new();
 	let mut chrome = Chrome {
+		frame: crate::app::frame::Layout::new(
+			crate::settings::WindowLayout::Macos,
+			true,
+			width,
+			height,
+			false,
+			false,
+		),
 		backend: None,
 		ui: &mut ui,
 		session: &session,
@@ -1083,6 +1107,14 @@ fn dismissed_pages_stop_drawing_and_answering_pointers() {
 		});
 		interaction.show_panel(PanelPage::Closed);
 		let mut chrome = Chrome {
+			frame: crate::app::frame::Layout::new(
+				crate::settings::WindowLayout::Macos,
+				true,
+				width,
+				height,
+				false,
+				false,
+			),
 			input_draws: Vec::new(),
 			backend: None,
 			ui: &mut ui,
@@ -1299,9 +1331,22 @@ fn redesigned_chrome_frames() -> Result<()> {
 					"loading",
 					"notice",
 					"confirmation",
+					"window-macos",
+					"window-windows",
+					"window-linux",
+					"window-linux-maximized",
+					"window-linux-maximize-hover",
+					"window-toolbar-hover",
+					"window-tab-hover",
+					"window-maximized",
+					"window-fullscreen",
+					"window-inactive",
 				] {
 					// Full DPI coverage for the forms; one scale suffices for the other states.
-					if scale != 1.25 && !matches!(page, "settings" | "export") {
+					if scale != 1.25
+						&& !matches!(page, "settings" | "export")
+						&& !page.starts_with("window-")
+					{
 						continue;
 					}
 					let mut interaction = InteractionState {
@@ -1439,7 +1484,42 @@ fn redesigned_chrome_frames() -> Result<()> {
 					} else {
 						crate::app::settings_load::Status::Loading
 					};
+					let mut frame = crate::app::frame::Layout::new(
+						if page.starts_with("window-linux") {
+							crate::settings::WindowLayout::Linux
+						} else if page.starts_with("window-")
+							&& page != "window-macos"
+						{
+							crate::settings::WindowLayout::Windows
+						} else {
+							crate::settings::WindowLayout::Macos
+						},
+						!page.starts_with("window-"),
+						width,
+						height,
+						page == "window-fullscreen",
+						page.ends_with("-maximized"),
+					);
+					frame.focused = page != "window-inactive";
+					if page == "window-linux-maximize-hover" {
+						frame.hover = Some(crate::app::frame::Caption::Expand);
+					}
+					if page == "window-toolbar-hover" {
+						interaction.cursor = (
+							frame.toolbar_x + frame.toolbar_button_size / 2.0,
+							TOP / 2.0,
+						);
+					} else if page == "window-tab-hover" {
+						let layout = crate::app::tab_strip::TabLayout::new(
+							frame.tabs,
+							&metrics.widths,
+							0.0,
+						);
+						let tab = layout.rects[1];
+						interaction.cursor = (tab.x + tab.w / 2.0, TOP / 2.0);
+					}
 					let mut chrome = Chrome {
+						frame,
 						input_draws: Vec::new(),
 						backend: None,
 						ui: &mut ui,
@@ -1502,7 +1582,7 @@ fn redesigned_chrome_frames() -> Result<()> {
 						overlay
 							.iter()
 							.filter(|draw| matches!(draw,
-                        Draw::Icon { y, .. } if *y == 10.0))
+                        Draw::Icon { x, y, size, .. } if *y + *size / 2.0 == TOP / 2.0 && *x >= frame.toolbar_x && *x < frame.toolbar_x + frame.toolbar_button_size * 4.0 + 12.0))
 							.count(),
 						expected,
 						"toolbar must stay visible on {page}"

@@ -1,5 +1,75 @@
 //! OS effects stay outside the reading core.
 
+#[cfg(windows)]
+pub(crate) mod window_frame;
+
+/// Move native traffic lights without replacing their system behavior.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+pub(crate) fn align_traffic_lights(window: &winit::window::Window) {
+	use objc2_app_kit::{NSView, NSWindowButton};
+	use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+	let RawWindowHandle::AppKit(handle) =
+		window.window_handle().unwrap().as_raw()
+	else {
+		unreachable!();
+	};
+	// SAFETY: `winit` supplies its live `NSView`; this call runs on the
+	// event-loop's main thread, and `window` keeps the view alive.
+	let view = unsafe { &*handle.ns_view.as_ptr().cast::<NSView>() };
+	let Some(native) = view.window() else {
+		return;
+	};
+	for kind in [
+		NSWindowButton::CloseButton,
+		NSWindowButton::MiniaturizeButton,
+		NSWindowButton::ZoomButton,
+	] {
+		let Some(button) = native.standardWindowButton(kind) else {
+			continue;
+		};
+		// SAFETY: The button and its parent are AppKit views accessed only
+		// on the main thread; the returned parent is retained for this call.
+		let Some(parent) = (unsafe { button.superview() }) else {
+			continue;
+		};
+		let mut rect = parent.convertRect_toView(button.frame(), Some(view));
+		let (top, bottom) = crate::app::frame::traffic_light_margins(
+			rect.size.height,
+			window.scale_factor(),
+		);
+		let y = if view.isFlipped() {
+			top
+		} else {
+			view.bounds().size.height - top - rect.size.height
+		};
+		if (rect.origin.y - y).abs() > 0.01 {
+			rect.origin.y = y;
+			button.setFrameOrigin(
+				parent.convertRect_fromView(rect, Some(view)).origin,
+			);
+			log::debug!(
+				"Traffic light {} margins: top {top:.2}, bottom {bottom:.2} logical px",
+				kind.0
+			);
+		}
+	}
+}
+
+/// Honor the desktop's titlebar double-click preference.
+#[cfg(target_os = "macos")]
+pub(crate) fn titlebar_double_click(window: &winit::window::Window) {
+	use objc2_foundation::{NSUserDefaults, ns_string};
+	let action = NSUserDefaults::standardUserDefaults()
+		.stringForKey(ns_string!("AppleActionOnDoubleClick"))
+		.map(|value| value.to_string());
+	match action.as_deref() {
+		Some("Minimize") => window.set_minimized(true),
+		Some("None") => {}
+		_ => window.set_maximized(!window.is_maximized()),
+	}
+}
+
 /// The `SystemParametersInfoW` action selector, under a shorter name.
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::SYSTEM_PARAMETERS_INFO_ACTION as SystemParametersInfoAction;
@@ -134,7 +204,7 @@ impl Clipboard {
 	}
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(any(windows, target_os = "macos"))))]
 mod tests {
 	#[cfg(not(any(windows, target_os = "macos")))]
 	use super::*;

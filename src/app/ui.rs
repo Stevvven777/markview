@@ -17,6 +17,7 @@ impl<P: super::SendEvent> App<P> {
 
 	pub(super) fn chrome(&mut self) -> Chrome<'_> {
 		let (width, height, _) = self.dimensions();
+		let frame = self.frame_layout();
 		let scrollbar = self.document_scrollbar();
 		let remote_notice = self.remote_notice();
 		// A warning is stored as the failure it is, not as text: it is raised
@@ -57,6 +58,7 @@ impl<P: super::SendEvent> App<P> {
 		Chrome {
 			input_draws: Vec::new(),
 			backend: self.renderer.as_ref().map(|renderer| renderer.backend),
+			frame,
 			ui: &mut self.ui,
 			session: &self.readers.session,
 			tabs: self.readers.entries(),

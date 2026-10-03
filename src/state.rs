@@ -28,6 +28,7 @@ pub(crate) enum Command {
 	SearchNext,
 	SearchClose,
 	FocusInput(TextField),
+	WindowLayout(crate::settings::WindowLayout),
 	Open,
 	Smaller,
 	Larger,

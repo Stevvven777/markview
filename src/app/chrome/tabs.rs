@@ -1,4 +1,3 @@
-use super::controls::toolbar_right_edge;
 use crate::app::tab_strip::{TabLayout, TabStrip};
 use crate::layout::{Draw, Paint, Rect, TextShaper};
 use crate::state::ReaderTab;
@@ -11,17 +10,14 @@ pub(in crate::app) struct TabBar<'a> {
 	pub(super) tabs: &'a [ReaderTab],
 	pub(super) active_tab: usize,
 	pub(super) cursor: (f32, f32),
-	pub(super) width: f32,
+	pub(super) viewport: Rect,
 }
 impl TabBar<'_> {
 	pub(in crate::app) fn layout(&mut self) -> TabLayout {
-		let right = toolbar_right_edge(self.width) - 4.0;
 		TabLayout::new(
 			Rect {
-				x: 10.0,
-				y: 4.0,
-				w: (right - 10.0).max(0.0),
-				h: 32.0,
+				h: self.viewport.h - 4.0,
+				..self.viewport
 			},
 			self.widths,
 			self.strip.scroll,

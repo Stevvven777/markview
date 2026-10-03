@@ -20,10 +20,11 @@ const MAX_CLIMB: usize = 2;
 
 pub(in crate::app) fn modal_rect(width: f32, height: f32) -> Rect {
 	let w = 560.0_f32.min((width - 32.0).max(0.0));
-	let h = 240.0_f32.min((height - 32.0).max(0.0));
+	let top = super::super::TOP + 8.0;
+	let h = 240.0_f32.min((height - top - 16.0).max(0.0));
 	Rect {
 		x: (width - w) / 2.0,
-		y: (height - h) / 2.0,
+		y: top + (height - top - h) / 2.0,
 		w,
 		h,
 	}
@@ -326,8 +327,10 @@ mod tests {
 			}),
 			..Default::default()
 		};
-		for (width, height) in [(600.0, 400.0), (1200.0, 800.0)] {
+		for (width, height) in [(500.0, 300.0), (600.0, 400.0), (1200.0, 800.0)]
+		{
 			let rect = modal_rect(width, height);
+			assert!(rect.y >= super::super::super::TOP + 8.0);
 			let buttons = modal_buttons(
 				&mut shaper,
 				&interaction,

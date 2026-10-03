@@ -31,6 +31,33 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 					self.args.height,
 				))
 				.with_min_inner_size(LogicalSize::new(500, 300));
+			#[cfg(target_os = "macos")]
+			{
+				use winit::platform::macos::WindowAttributesExtMacOS;
+				attributes = attributes
+					.with_titlebar_transparent(true)
+					.with_title_hidden(true)
+					.with_fullsize_content_view(true)
+					.with_titlebar_buttons_hidden(
+						self.frame.layout
+							!= crate::settings::WindowLayout::Macos,
+					)
+					.with_movable_by_window_background(false);
+			}
+			#[cfg(windows)]
+			{
+				use winit::platform::windows::{
+					CornerPreference, WindowAttributesExtWindows,
+				};
+				attributes = attributes
+					.with_decorations(false)
+					.with_undecorated_shadow(true)
+					.with_corner_preference(CornerPreference::Round);
+			}
+			#[cfg(target_os = "linux")]
+			{
+				attributes = attributes.with_decorations(false);
+			}
 			// The Wayland application ID. Desktops match it against the
 			// installed `markview.desktop` to find the window icon, and the
 			// X11 backend reads the same name for `WM_CLASS`.
@@ -42,6 +69,19 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 				attributes = attributes.with_window_icon(Some(icon));
 			}
 			let window = Arc::new(event_loop.create_window(attributes)?);
+			#[cfg(windows)]
+			{
+				let proxy = self.proxy.clone();
+				self.native_frame =
+					Some(crate::platform::window_frame::NativeFrame::new(
+						&window,
+						self.frame.layout,
+						move || {
+							proxy.send(Event::FrameFeedback);
+						},
+					)?);
+			}
+			self.frame.focused = window.has_focus();
 			if self.args.mode == Mode::Window
 				&& self.args.theme.is_none()
 				&& self.args.style.is_none()
@@ -123,6 +163,8 @@ impl<P: super::SendEvent> App<P> {
 				self.search_tick();
 				self.redraw();
 			}
+			#[cfg(windows)]
+			Event::FrameFeedback => self.redraw(),
 			Event::StylesChanged => {
 				self.reload_styles();
 				self.redraw();

@@ -250,6 +250,8 @@ impl<P: super::SendEvent> App<P> {
 			} else {
 				CursorIcon::Default
 			}
+		} else if let Some(cursor) = self.frame_cursor() {
+			cursor
 		} else if self.button_at_cursor()
 			|| self.tab_at_cursor().is_some()
 			|| hover.is_some()

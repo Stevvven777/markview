@@ -4,6 +4,7 @@ mod controls;
 mod export;
 use super::font_panel::view as fonts;
 mod footer;
+mod frame;
 #[cfg(test)]
 mod gpu_tests;
 pub(super) mod icons;
@@ -23,7 +24,7 @@ use crate::{
 	},
 };
 pub(super) use components::panel_rect;
-use controls::{draw_controls, toolbar_controls};
+use controls::{draw_controls, toolbar_controls_at};
 use fonts::draw_fonts;
 use footer::draw_footer;
 use markview_core::{
@@ -198,6 +199,7 @@ pub(super) struct Chrome<'a> {
 	pub(super) style_scroll: f32,
 	pub(super) resource_load: Option<&'a super::settings_load::Load>,
 	pub(super) fonts: super::font_panel::View<'a>,
+	pub(super) frame: super::frame::Layout,
 	pub(super) width: f32,
 	pub(super) height: f32,
 	pub(super) scrollbar: Option<Scrollbar>,
@@ -359,8 +361,8 @@ impl Chrome<'_> {
 			));
 			buttons
 		} else {
-			let mut buttons = toolbar_controls(
-				width,
+			let mut buttons = toolbar_controls_at(
+				self.frame,
 				self.interaction.outline_open,
 				self.settings.lang(),
 			);
@@ -441,10 +443,10 @@ impl Chrome<'_> {
 			),
 		];
 		out.extend(self.tab_bar().draw_tabs());
-		out.extend(controls::draw_toolbar(
+		out.extend(controls::draw_toolbar_at(
 			self.ui,
 			self.interaction,
-			width,
+			self.frame,
 			self.settings.lang(),
 		));
 		if let Some(deferred) = self.remote_notice {
@@ -664,6 +666,7 @@ impl Chrome<'_> {
 				(width, height),
 			));
 		}
+		out.extend(frame::draw(self.frame));
 		out
 	}
 
@@ -787,7 +790,7 @@ impl Chrome<'_> {
 			tabs: self.tabs,
 			active_tab: self.active_tab,
 			cursor: self.interaction.cursor,
-			width: self.width,
+			viewport: self.frame.tabs,
 		}
 	}
 

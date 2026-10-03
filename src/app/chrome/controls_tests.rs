@@ -2,6 +2,110 @@ use super::*;
 use crate::app::TOP;
 use crate::lang::Lang;
 use crate::state::{PanelPage, PanelTab};
+
+#[test]
+fn platform_toolbars_keep_hover_targets_and_caption_groups_separate() {
+	let mut ui = crate::test_support::shaper();
+	for width in [500.0, 820.0, 1200.0] {
+		for style in [
+			WindowLayout::Macos,
+			WindowLayout::Windows,
+			WindowLayout::Linux,
+		] {
+			for fullscreen in [false, true] {
+				let frame =
+					Layout::new(style, false, width, 300.0, fullscreen, false);
+				let buttons = toolbar_controls_at(frame, false, Lang::En);
+				let first = &buttons[0];
+				let interaction = InteractionState {
+					cursor: (first.rect.x + first.rect.w / 2.0, TOP / 2.0),
+					..Default::default()
+				};
+				let draws =
+					draw_toolbar_at(&mut ui, &interaction, frame, Lang::En);
+				assert!(draws.iter().any(|draw| matches!(draw,
+					Draw::Rect(rect, crate::layout::Paint::Styled(Condition::Button, C::HoverBackground)) if (rect.x, rect.y, rect.w, rect.h) == (first.rect.x, first.rect.y, first.rect.w, first.rect.h))));
+				let icons: Vec<_> = draws
+					.iter()
+					.filter_map(|draw| match draw {
+						Draw::Icon { x, y, size, .. } => Some((*x, *y, *size)),
+						_ => None,
+					})
+					.collect();
+				assert_eq!(icons.len(), buttons.len());
+				for (b, &(x, y, size)) in buttons.iter().zip(&icons) {
+					assert_eq!(
+						size,
+						if style == WindowLayout::Macos {
+							20.0
+						} else {
+							18.0
+						}
+					);
+					assert_eq!(x + size / 2.0, b.rect.x + b.rect.w / 2.0);
+					assert_eq!(y + size / 2.0, TOP / 2.0);
+					assert!(b.rect.intersect(frame.tabs).is_none());
+					if !fullscreen {
+						assert!(frame.captions().iter().all(|(_, caption)| {
+							caption.intersect(b.rect).is_none()
+						}));
+					}
+				}
+				let captions = super::super::frame::draw(frame);
+				assert!(
+					!captions
+						.iter()
+						.any(|draw| matches!(draw, Draw::Rect(_, _)))
+				);
+				if style != WindowLayout::Macos && !fullscreen {
+					let mut controls: Vec<_> =
+						buttons.iter().map(|b| b.rect).collect();
+					controls.extend(frame.captions().map(|(_, rect)| rect));
+					for pair in controls.windows(2) {
+						assert_eq!(pair[0].w, first.rect.w);
+						assert_eq!(pair[1].w, first.rect.w);
+						assert_eq!(pair[0].y, pair[1].y);
+						assert_eq!(pair[0].h, pair[1].h);
+						assert_eq!(
+							pair[1].x - pair[0].x - pair[0].w,
+							CONTROL_GAP
+						);
+					}
+				}
+			}
+		}
+	}
+}
+
+#[test]
+fn appearance_exposes_all_window_layouts_and_marks_the_saved_choice() {
+	let mut shaper = crate::test_support::shaper();
+	for selected in [
+		WindowLayout::System,
+		WindowLayout::Macos,
+		WindowLayout::Windows,
+		WindowLayout::Linux,
+	] {
+		let settings = ReaderSettings {
+			window_layout: selected,
+			..Default::default()
+		};
+		let form = form(&mut shaper, &settings, 0.0, 500.0, 300.0);
+		for layout in [
+			WindowLayout::System,
+			WindowLayout::Macos,
+			WindowLayout::Windows,
+			WindowLayout::Linux,
+		] {
+			let button = form
+				.buttons
+				.iter()
+				.find(|b| b.action == Command::WindowLayout(layout))
+				.unwrap();
+			assert_eq!(button.active, selected == layout);
+		}
+	}
+}
 #[test]
 fn panel_exposes_first_line_indent_presets() {
 	let mut shaper = crate::test_support::shaper();

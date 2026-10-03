@@ -1,6 +1,7 @@
 //! Transactional configuration reads, merging and durable writes.
 use super::{
-	ExportSettings, FontDefOverride, ReaderSettings, Setting, default_cjk_type,
+	ExportSettings, FontDefOverride, ReaderSettings, Setting, WindowLayout,
+	default_cjk_type,
 };
 use crate::lang::Lang;
 use crate::render::Theme;
@@ -65,6 +66,8 @@ impl SettingsWarning {
 #[serde(default)]
 struct Config {
 	version: u32,
+	#[serde(rename = "window-layout")]
+	window_layout: WindowLayout,
 	/// Absent means "follow the system theme"; only a user choice is stored.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	style: Option<Vec<String>>,
@@ -107,6 +110,7 @@ impl Default for Config {
 		let settings = ReaderSettings::default();
 		Self {
 			version: 1,
+			window_layout: settings.window_layout,
 			theme: None,
 			language: None,
 			style: None,
@@ -152,6 +156,7 @@ impl Config {
 			})
 			.unwrap_or_default();
 		ReaderSettings {
+			window_layout: self.window_layout,
 			theme,
 			style,
 			fontdef_overrides: self.fontdef_overrides.clone(),
@@ -382,6 +387,7 @@ impl SettingsStore {
 			}
 			None => {
 				self.pending = vec![
+					Setting::WindowLayout,
 					Setting::Theme,
 					Setting::FontSize,
 					Setting::Width,
@@ -429,6 +435,7 @@ impl SettingsStore {
 		self.saved_export.validate()?;
 		let config = Config {
 			version: 1,
+			window_layout: self.saved.window_layout,
 			theme: None,
 			style: self.saved.style.clone(),
 			fontdef_overrides: self.saved.fontdef_overrides.clone(),
