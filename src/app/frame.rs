@@ -3,7 +3,10 @@ use super::{App, TOP};
 use crate::{layout::Rect, settings::WindowLayout};
 use markview_selection::Selection;
 use std::time::{Duration, Instant};
-use winit::window::{CursorIcon, Fullscreen, ResizeDirection};
+use winit::{
+	event::{ElementState, MouseButton, WindowEvent},
+	window::{CursorIcon, ResizeDirection},
+};
 
 pub(super) const CONTROL_SIZE: f32 = 32.0;
 pub(super) const CONTROL_GAP: f32 = 4.0;
@@ -233,10 +236,6 @@ impl<P: super::SendEvent> App<P> {
 			.as_ref()
 			.is_some_and(|w| w.fullscreen().is_some());
 		let maximized = self.window.as_ref().is_some_and(|w| w.is_maximized());
-		#[cfg(windows)]
-		if let Some(native) = &self.native_frame {
-			native.set_fullscreen(fullscreen);
-		}
 		let mut layout = Layout::new(
 			self.frame.layout,
 			cfg!(target_os = "macos")
@@ -246,20 +245,8 @@ impl<P: super::SendEvent> App<P> {
 			fullscreen,
 			maximized,
 		);
-		let tabs = super::tab_strip::TabLayout::new(
-			layout.tabs,
-			&self.tab_metrics.widths,
-			self.tab_strip.scroll,
-		);
-		let tab_end = tabs
-			.rects
-			.last()
-			.map_or(layout.tabs.x, |rect| rect.x + rect.w);
+		let tab_end = self.tab_metrics.end(layout.tabs, self.tab_strip.scroll);
 		layout = layout.with_tab_end(tab_end);
-		#[cfg(windows)]
-		if let Some(native) = &self.native_frame {
-			native.set_tab_end(tab_end);
-		}
 		layout.focused = self.frame.focused;
 		layout.hover = self.frame.hover;
 		layout.pressed = self.frame.pressed;
@@ -272,6 +259,73 @@ impl<P: super::SendEvent> App<P> {
 			}
 		}
 		layout
+	}
+	#[cfg(windows)]
+	pub(super) fn sync_native_frame(&self) {
+		if let Some(native) = &self.native_frame {
+			let layout = self.frame_layout();
+			native.set_fullscreen(layout.fullscreen);
+			native.set_tab_end(
+				self.tab_metrics.end(layout.tabs, self.tab_strip.scroll),
+			);
+		}
+	}
+	/// Window input precedes viewer, text-field and document input.
+	pub(super) fn frame_event(
+		&mut self,
+		event_loop: &impl super::window::Loop,
+		event: &WindowEvent,
+	) -> bool {
+		if matches!(
+			event,
+			WindowEvent::CursorMoved { .. }
+				| WindowEvent::CursorLeft { .. }
+				| WindowEvent::MouseInput { .. }
+		) && self.gestures.suppress_mouse()
+		{
+			return true;
+		}
+		match event {
+			WindowEvent::CursorMoved { position, .. } => {
+				let scale = self.dimensions().2;
+				let hover = self.frame_layout().caption_at(
+					position.x as f32 / scale,
+					position.y as f32 / scale,
+				);
+				if self.frame.hover != hover {
+					self.frame.hover = hover;
+					self.redraw();
+				}
+			}
+			WindowEvent::CursorLeft { .. } => self.frame.hover = None,
+			WindowEvent::MouseInput {
+				button: MouseButton::Left,
+				state: ElementState::Pressed,
+				..
+			} => return self.frame_press(),
+			WindowEvent::MouseInput {
+				button: MouseButton::Left,
+				state: ElementState::Released,
+				..
+			} => return self.frame_release(event_loop),
+			WindowEvent::MouseInput {
+				button: MouseButton::Right,
+				state: ElementState::Pressed,
+				..
+			} => {
+				let (x, y) = self.interaction.cursor;
+				if self.frame_layout().draggable(x, y) {
+					if let Some(window) = &self.window {
+						window.show_window_menu(
+							winit::dpi::LogicalPosition::new(x, y),
+						);
+					}
+					return true;
+				}
+			}
+			_ => {}
+		}
+		false
 	}
 	fn clear_frame_gesture(&mut self) {
 		self.cancel_gestures();
@@ -341,34 +395,11 @@ impl<P: super::SendEvent> App<P> {
 			return false;
 		};
 		let (x, y) = self.interaction.cursor;
-		if self.frame_layout().caption_at(x, y) == Some(caption)
-			&& self.activate_caption(caption)
-		{
-			event_loop.exit();
+		if self.frame_layout().caption_at(x, y) == Some(caption) {
+			event_loop.window_action(self.window.as_deref(), caption);
 		}
 		self.redraw();
 		true
-	}
-	/// Returns whether the caption action requests application exit.
-	pub(super) fn activate_caption(&mut self, caption: Caption) -> bool {
-		if caption == Caption::Close {
-			return true;
-		}
-		if let Some(w) = &self.window {
-			match caption {
-				Caption::Minimize => w.set_minimized(true),
-				Caption::Expand if cfg!(target_os = "macos") => {
-					w.set_fullscreen(
-						w.fullscreen()
-							.is_none()
-							.then_some(Fullscreen::Borderless(None)),
-					);
-				}
-				Caption::Expand => w.set_maximized(!w.is_maximized()),
-				Caption::Close => unreachable!(),
-			}
-		}
-		false
 	}
 	pub(super) fn frame_cursor(&self) -> Option<CursorIcon> {
 		self.frame_layout()

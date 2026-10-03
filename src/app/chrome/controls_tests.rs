@@ -78,31 +78,41 @@ fn platform_toolbars_keep_hover_targets_and_caption_groups_separate() {
 }
 
 #[test]
-fn appearance_exposes_all_window_layouts_and_marks_the_saved_choice() {
+fn window_layout_dropdown_exposes_all_layouts_and_marks_the_saved_choice() {
 	let mut shaper = crate::test_support::shaper();
-	for selected in [
+	let layouts = [
 		WindowLayout::System,
 		WindowLayout::Macos,
 		WindowLayout::Windows,
 		WindowLayout::Linux,
-	] {
+	];
+	for (index, selected) in layouts.into_iter().enumerate() {
 		let settings = ReaderSettings {
 			window_layout: selected,
 			..Default::default()
 		};
-		let form = form(&mut shaper, &settings, 0.0, 500.0, 300.0);
-		for layout in [
-			WindowLayout::System,
-			WindowLayout::Macos,
-			WindowLayout::Windows,
-			WindowLayout::Linux,
-		] {
-			let button = form
-				.buttons
-				.iter()
-				.find(|b| b.action == Command::WindowLayout(layout))
-				.unwrap();
-			assert_eq!(button.active, selected == layout);
+		let scroll = form(&mut shaper, &settings, 0.0, 500.0, 300.0)
+			.reveal(Command::ToggleDropdown(DropdownId::WindowLayout, index));
+		let form = form(&mut shaper, &settings, scroll, 500.0, 300.0);
+		assert!(form.buttons.iter().any(|button| {
+			button.action
+				== Command::ToggleDropdown(DropdownId::WindowLayout, index)
+		}));
+		let menu = form
+			.menu(
+				&mut crate::state::Dropdown::new(
+					DropdownId::WindowLayout,
+					index,
+				),
+				(500.0, 300.0),
+			)
+			.unwrap();
+		assert_eq!(menu.options, layouts.len());
+		assert_eq!(menu.chosen(), Some(Command::WindowLayout(selected)));
+		for (button, layout) in menu.buttons.iter().zip(&layouts[menu.offset..])
+		{
+			assert_eq!(button.action, Command::WindowLayout(*layout));
+			assert_eq!(button.active, selected == *layout);
 		}
 	}
 }

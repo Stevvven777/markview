@@ -33,13 +33,15 @@ at the same level, without `[brackets]`.
 - Default text layout edges to cap-height/baseline, allowing line heights and page breaks to follow the new typography policy.
 - Balance macOS traffic-light margins and deepen light and builtin tab-strip backgrounds, matching inactive tabs to the strip.
 - Strengthen light-theme hover feedback, unify right-side toolbar and window-button spacing without a separator, and add Linux chevron and diamond controls.
+- Choose window layout from a dropdown, matching the language selector.
+- Share caption input routing across viewer and reader modes, keep layout queries free of native-window mutations, and cache tab-strip extents.
 
 ### Fixed
 
 - Keep custom window controls interactive above the image viewer and support caption-button taps without triggering covered controls.
 - Make unused tab-strip space draggable on Windows and Wayland, sharing tab bounds with native Windows caption hit testing.
 - Disable unused Adwaita window decorations so Wayland does not parse desktop button layouts or warn about `icon` buttons.
-- Show the pointer cursor over custom window buttons while preserving drag and resize cursors.
+- Show the pointer cursor over custom window buttons, including Windows maximize-hover Snap Layouts, while preserving drag and resize cursors.
 
 - Invalidate MVaaC cached geometry when stylesheet selection changes font definitions, including when restoring the default theme.
 - Raise inline code beside Chinese text by 0.08em (#6), join mixed-font code backgrounds, and keep vertical background padding independent of line height.

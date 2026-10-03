@@ -371,6 +371,7 @@ impl Viewer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DropdownId {
 	Language,
+	WindowLayout,
 	/// One font role's family chooser.
 	Font(crate::settings::FontRole),
 }

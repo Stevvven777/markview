@@ -6,12 +6,16 @@ use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Default)]
 pub(super) struct TabMetrics {
+	span: super::tab_strip::TabSpan,
 	sheet: Option<Arc<Stylesheet>>,
 	order: Vec<PathBuf>,
 	measured: HashMap<PathBuf, (f32, f32)>,
 	pub widths: Vec<(f32, f32)>,
 }
 impl TabMetrics {
+	pub fn end(&self, viewport: crate::layout::Rect, scroll: f32) -> f32 {
+		self.span.end(viewport, scroll)
+	}
 	pub fn sync(&mut self, ui: &mut TextShaper, tabs: &[ReaderTab]) {
 		if self
 			.sheet
@@ -20,6 +24,7 @@ impl TabMetrics {
 		{
 			self.order.clear();
 			self.widths.clear();
+			self.span = Default::default();
 			self.measured.clear();
 			self.sheet = Some(ui.stylesheet.clone());
 		}
@@ -60,6 +65,7 @@ impl TabMetrics {
 			self.widths.push(widths);
 		}
 		ui.appearance = old;
+		self.span = super::tab_strip::TabSpan::new(&self.widths);
 	}
 }
 pub(super) fn tab_appearance(ui: &TextShaper) -> TextAppearance {

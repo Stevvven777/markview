@@ -60,17 +60,39 @@ pub(super) struct TabLayout {
 	pub max_scroll: f32,
 	pub scroll: f32,
 }
+
+#[derive(Default)]
+pub(super) struct TabSpan {
+	natural: f32,
+	minimum: f32,
+	gaps: f32,
+}
+impl TabSpan {
+	pub fn new(widths: &[(f32, f32)]) -> Self {
+		Self {
+			natural: widths.iter().map(|(w, _)| w).sum(),
+			minimum: widths.iter().map(|(_, w)| w).sum(),
+			gaps: widths.len().saturating_sub(1) as f32 * GAP,
+		}
+	}
+	fn fit(&self, width: f32, scroll: f32) -> (f32, f32, f32, f32) {
+		let shrink = ((self.natural + self.gaps - width)
+			/ (self.natural - self.minimum).max(1.0))
+		.clamp(0.0, 1.0);
+		let total =
+			self.natural - (self.natural - self.minimum) * shrink + self.gaps;
+		let max_scroll = (total - width).max(0.0);
+		(shrink, total, max_scroll, scroll.clamp(0.0, max_scroll))
+	}
+	pub fn end(&self, viewport: Rect, scroll: f32) -> f32 {
+		let (_, total, _, scroll) = self.fit(viewport.w, scroll);
+		viewport.x + total - scroll
+	}
+}
 impl TabLayout {
 	pub fn new(viewport: Rect, widths: &[(f32, f32)], scroll: f32) -> Self {
-		let gaps = widths.len().saturating_sub(1) as f32 * GAP;
-		let natural = widths.iter().map(|(w, _)| w).sum::<f32>();
-		let minimum = widths.iter().map(|(_, w)| w).sum::<f32>();
-		let shrink = ((natural + gaps - viewport.w)
-			/ (natural - minimum).max(1.0))
-		.clamp(0.0, 1.0);
-		let total = natural - (natural - minimum) * shrink + gaps;
-		let max_scroll = (total - viewport.w).max(0.0);
-		let scroll = scroll.clamp(0.0, max_scroll);
+		let (shrink, _, max_scroll, scroll) =
+			TabSpan::new(widths).fit(viewport.w, scroll);
 		let mut x = viewport.x - scroll;
 		let rects = widths
 			.iter()

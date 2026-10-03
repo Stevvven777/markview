@@ -69,22 +69,26 @@ fn rows(settings: &ReaderSettings) -> Vec<Row> {
 			),
 		)
 		.value(format!("{:.2}×", settings.scroll_speed)),
-		Row::new(
-			t.settings_window_layout(),
-			choices(
-				&[
-					(
-						t.settings_language_system(),
-						Command::WindowLayout(WindowLayout::System),
-					),
-					("macOS", Command::WindowLayout(WindowLayout::Macos)),
-					("Windows", Command::WindowLayout(WindowLayout::Windows)),
-					("Linux", Command::WindowLayout(WindowLayout::Linux)),
-				],
-				Some(Command::WindowLayout(settings.window_layout)),
-			),
-		)
-		.section(t.section_next_launch()),
+		Row::new(t.settings_window_layout(), vec![])
+			.menu(
+				DropdownId::WindowLayout,
+				choices(
+					&[
+						(
+							t.settings_language_system(),
+							Command::WindowLayout(WindowLayout::System),
+						),
+						("macOS", Command::WindowLayout(WindowLayout::Macos)),
+						(
+							"Windows",
+							Command::WindowLayout(WindowLayout::Windows),
+						),
+						("Linux", Command::WindowLayout(WindowLayout::Linux)),
+					],
+					Some(Command::WindowLayout(settings.window_layout)),
+				),
+			)
+			.section(t.section_next_launch()),
 		Row::new(
 			t.settings_single_instance(),
 			vec![action(

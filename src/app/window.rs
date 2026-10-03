@@ -9,10 +9,10 @@ use winit::{
 	event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
 	event_loop::ActiveEventLoop,
 	keyboard::{Key, NamedKey},
-	window::{CursorIcon, WindowId},
+	window::{CursorIcon, Fullscreen, Window, WindowId},
 };
 
-use super::{App, TOP};
+use super::{App, TOP, frame::Caption};
 
 /// What the app asks of the loop it runs under.
 ///
@@ -21,6 +21,24 @@ use super::{App, TOP};
 /// handlers below name this rather than the concrete type.
 pub(super) trait Loop {
 	fn exit(&self);
+	fn window_action(&self, window: Option<&Window>, caption: Caption) {
+		if caption == Caption::Close {
+			self.exit();
+		} else if let Some(window) = window {
+			match caption {
+				Caption::Minimize => window.set_minimized(true),
+				Caption::Expand if cfg!(target_os = "macos") => window
+					.set_fullscreen(
+						window
+							.fullscreen()
+							.is_none()
+							.then_some(Fullscreen::Borderless(None)),
+					),
+				Caption::Expand => window.set_maximized(!window.is_maximized()),
+				Caption::Close => unreachable!(),
+			}
+		}
+	}
 }
 impl Loop for ActiveEventLoop {
 	fn exit(&self) {
@@ -35,7 +53,7 @@ impl<P: super::SendEvent> App<P> {
 		_: WindowId,
 		event: WindowEvent,
 	) {
-		if self.viewer_event(event_loop, &event) {
+		if self.frame_event(event_loop, &event) || self.viewer_event(&event) {
 			return;
 		}
 		if self.interaction.modal.is_none()
@@ -74,17 +92,13 @@ impl<P: super::SendEvent> App<P> {
 		}
 		match event {
 			WindowEvent::Touch(touch) => {
-				if self.handle_touch(touch) {
-					event_loop.exit();
+				if let Some(caption) = self.handle_touch(touch) {
+					event_loop.window_action(self.window.as_deref(), caption);
 				}
 			}
 			WindowEvent::PinchGesture { .. } => {
 				// TODO: implement viewport zoom without changing the document layout.
 			}
-			WindowEvent::CursorMoved { .. }
-			| WindowEvent::CursorLeft { .. }
-			| WindowEvent::MouseInput { .. }
-				if self.gestures.suppress_mouse() => {}
 			WindowEvent::CloseRequested => event_loop.exit(),
 			WindowEvent::Moved(_) => self.frame.last_click = None,
 			WindowEvent::Resized(PhysicalSize { width, height }) => {
@@ -135,8 +149,6 @@ impl<P: super::SendEvent> App<P> {
 					let old = self.interaction.cursor;
 					let was_button = self.button_at_cursor();
 					self.interaction.cursor = point;
-					self.frame.hover =
-						self.frame_layout().caption_at(point.0, point.1);
 					if let Some((_, (px, py))) =
 						self.interaction.pressed_image.as_ref()
 						&& (point.0 - px).hypot(point.1 - py) > 3.
@@ -160,7 +172,6 @@ impl<P: super::SendEvent> App<P> {
 				}
 			}
 			WindowEvent::CursorLeft { .. } => {
-				self.frame.hover = None;
 				if self.tab_strip.drag.is_none()
 					&& self.interaction.scrollbar.is_none()
 					&& self.interaction.panel_grab.is_none()
@@ -181,22 +192,6 @@ impl<P: super::SendEvent> App<P> {
 					w.set_cursor(CursorIcon::Default);
 				}
 				self.redraw();
-			}
-			WindowEvent::MouseInput {
-				button: MouseButton::Right,
-				state: ElementState::Pressed,
-				..
-			} if self.frame_layout().draggable(
-				self.interaction.cursor.0,
-				self.interaction.cursor.1,
-			) =>
-			{
-				if let Some(window) = &self.window {
-					window.show_window_menu(winit::dpi::LogicalPosition::new(
-						self.interaction.cursor.0,
-						self.interaction.cursor.1,
-					));
-				}
 			}
 			WindowEvent::MouseInput {
 				button: MouseButton::Middle,
@@ -220,9 +215,6 @@ impl<P: super::SendEvent> App<P> {
 				state: ElementState::Pressed,
 				..
 			} => {
-				if self.frame_press() {
-					return;
-				}
 				self.cancel_gestures();
 				self.tab_strip.cancel_drag();
 				self.interaction.focus_visible = false;
@@ -397,9 +389,6 @@ impl<P: super::SendEvent> App<P> {
 				state: ElementState::Released,
 				..
 			} => {
-				if self.frame_release(event_loop) {
-					return;
-				}
 				self.tab_strip.cancel_drag();
 				let pressed_image = self.interaction.pressed_image.take();
 				let was_pressed = self.interaction.pressed.is_some();
@@ -707,57 +696,16 @@ impl<P: super::SendEvent> App<P> {
 			event_loop.exit();
 		}
 	}
-	/// Window controls remain above the viewer; page controls stay covered.
-	fn viewer_event(
-		&mut self,
-		event_loop: &impl Loop,
-		event: &WindowEvent,
-	) -> bool {
+	/// The viewer captures input after window controls.
+	fn viewer_event(&mut self, event: &WindowEvent) -> bool {
 		if self.interaction.viewer.is_none() {
 			return false;
 		}
-		match event {
-			WindowEvent::Touch(_) => return false,
-			WindowEvent::CursorMoved { .. }
-			| WindowEvent::CursorLeft { .. }
-			| WindowEvent::MouseInput { .. }
-				if self.gestures.suppress_mouse() =>
-			{
-				return true;
-			}
-			WindowEvent::MouseInput {
-				button: MouseButton::Left,
-				state: ElementState::Pressed,
-				..
-			} if self.frame_press() => return true,
-			WindowEvent::MouseInput {
-				button: MouseButton::Left,
-				state: ElementState::Released,
-				..
-			} if self.frame_release(event_loop) => return true,
-			WindowEvent::MouseInput {
-				button: MouseButton::Right,
-				state: ElementState::Pressed,
-				..
-			} if self.frame_layout().draggable(
-				self.interaction.cursor.0,
-				self.interaction.cursor.1,
-			) =>
-			{
-				return false;
-			}
-			_ => {}
+		if matches!(event, WindowEvent::Touch(_)) {
+			return false;
 		}
 		self.refresh_viewer();
 		let (width, height, scale) = self.dimensions();
-		if let WindowEvent::CursorMoved { position, .. } = event {
-			self.frame.hover = self.frame_layout().caption_at(
-				position.x as f32 / scale,
-				position.y as f32 / scale,
-			);
-		} else if matches!(event, WindowEvent::CursorLeft { .. }) {
-			self.frame.hover = None;
-		}
 		let viewer = self.interaction.viewer.as_mut().unwrap();
 		match event {
 			WindowEvent::CursorMoved { position, .. } => {

@@ -2,6 +2,45 @@ use super::*;
 use crate::app::tab_metrics::TabMetrics;
 
 #[test]
+fn cached_tab_end_follows_scroll_theme_and_document_changes() {
+	let mut ui = crate::test_support::shaper();
+	let mut metrics = TabMetrics::default();
+	let mut tabs: Vec<_> = (0..20)
+		.map(|i| ReaderTab::new(format!("中文文档{i}.md").into()))
+		.collect();
+	for count in [20, 2, 1, 0] {
+		tabs.truncate(count);
+		for size in [1.0, 1.5] {
+			let sheet = markview_core::style::Stylesheet::parse(&format!(
+				"format_version=2\nversion=1\n[[rule]]\nwhen=['ui','toolbar']\nsize={size}"
+			))
+			.unwrap();
+			ui.set_stylesheet(std::sync::Arc::new(sheet));
+			metrics.sync(&mut ui, &tabs);
+			for width in [150.0, 500.5, 1200.0] {
+				for scroll in [-10.0, 0.0, 25.5, 10000.0] {
+					let viewport = Rect {
+						x: 10.0,
+						y: 4.0,
+						w: width,
+						h: 36.0,
+					};
+					let layout =
+						TabLayout::new(viewport, &metrics.widths, scroll);
+					let end = layout
+						.rects
+						.last()
+						.map_or(viewport.x, |rect| rect.x + rect.w);
+					assert!(
+						(metrics.end(viewport, scroll) - end).abs() < 0.001
+					);
+				}
+			}
+		}
+	}
+}
+
+#[test]
 fn live_tab_style_switch_preserves_widths_scroll_and_hit_targets() {
 	let mut ui = crate::test_support::shaper();
 	let tabs: Vec<_> = (0..30)

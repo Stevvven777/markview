@@ -195,8 +195,11 @@ impl<P: super::SendEvent> App<P> {
 		Surface::Document
 	}
 
-	/// Returns whether a completed caption tap requests application exit.
-	pub(super) fn handle_touch(&mut self, touch: Touch) -> bool {
+	/// Returns the window action requested by a completed caption tap.
+	pub(super) fn handle_touch(
+		&mut self,
+		touch: Touch,
+	) -> Option<super::frame::Caption> {
 		let scale = self.dimensions().2;
 		let point = (
 			touch.location.x as f32 / scale,
@@ -206,13 +209,13 @@ impl<P: super::SendEvent> App<P> {
 		if touch.phase != TouchPhase::Started
 			&& !self.gestures.gesture.contacts.contains_key(&id)
 		{
-			return false;
+			return None;
 		}
 		self.gestures.mouse_after =
 			Some(Instant::now() + Duration::from_millis(500));
 		self.interaction.cursor = point;
 		self.frame.pressed = None;
-		let mut close = false;
+		let mut caption_action = None;
 		if touch.phase == TouchPhase::Started {
 			self.gestures.motion = None;
 			self.gestures.coasting = false;
@@ -254,7 +257,7 @@ impl<P: super::SendEvent> App<P> {
 					if capture.tap == self.touch_tap() {
 						match capture.tap {
 							Some(Tap::Caption(caption)) => {
-								close = self.activate_caption(caption);
+								caption_action = Some(caption);
 							}
 							Some(Tap::Command(command)) => self.action(command),
 							Some(Tap::Link(link)) => {
@@ -300,7 +303,7 @@ impl<P: super::SendEvent> App<P> {
 		}
 		self.refresh_hover();
 		self.redraw();
-		close
+		caption_action
 	}
 
 	/// Pixel scrolling already carries the OS speed and, on macOS, momentum.

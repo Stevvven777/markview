@@ -42,6 +42,8 @@ impl<P: super::SendEvent> App<P> {
 		// frame must not leave a deadline that wakes the loop forever.
 		self.prewarm_at = None;
 		let overlay = self.overlay();
+		#[cfg(windows)]
+		self.sync_native_frame();
 		let (width, _, scale) = self.dimensions();
 		let view = View {
 			selection: self.interaction.selection,

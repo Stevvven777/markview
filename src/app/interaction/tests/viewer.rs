@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::frame::Caption;
 use crate::layout::{Draw, Rect};
 use markview_core::image::{ImageInfo, ImageSnapshot, Pixels};
 use winit::event::{Ime, MouseScrollDelta, TouchPhase};
@@ -97,16 +98,26 @@ fn viewer_image(app: &mut App<StubProxy>) -> (Rect, u64) {
 }
 
 #[derive(Default)]
-struct CaptionLoop(std::cell::Cell<usize>);
+struct CaptionLoop(std::cell::Cell<usize>, std::cell::RefCell<Vec<Caption>>);
 impl Loop for CaptionLoop {
 	fn exit(&self) {
 		self.0.set(self.0.get() + 1);
+	}
+	fn window_action(
+		&self,
+		_: Option<&winit::window::Window>,
+		caption: Caption,
+	) {
+		self.1.borrow_mut().push(caption);
+		if caption == Caption::Close {
+			self.exit();
+		}
 	}
 }
 
 #[test]
 fn window_controls_remain_above_the_image_viewer() {
-	use crate::{app::frame::Caption, settings::WindowLayout};
+	use crate::settings::WindowLayout;
 	for style in [
 		WindowLayout::Macos,
 		WindowLayout::Windows,
@@ -116,6 +127,18 @@ fn window_controls_remain_above_the_image_viewer() {
 		app.frame.layout = style;
 		open(&mut app);
 		let layout = app.frame_layout();
+		let actions = CaptionLoop::default();
+		let release = |app: &mut App<StubProxy>| {
+			app.handle_window_event(
+				&actions,
+				WindowId::dummy(),
+				WindowEvent::MouseInput {
+					device_id: DeviceId::dummy(),
+					button: MouseButton::Left,
+					state: ElementState::Released,
+				},
+			);
+		};
 		let content = (400., 300.);
 		for (caption, rect) in layout.captions() {
 			let at = (rect.x + rect.w / 2., rect.y + rect.h / 2.);
@@ -132,8 +155,16 @@ fn window_controls_remain_above_the_image_viewer() {
 			assert_eq!(app.frame.pressed, Some(caption));
 			assert!(app.interaction.viewer.as_ref().unwrap().grab.is_none());
 			move_to(&mut app, content);
-			button(&mut app, MouseButton::Left, ElementState::Released);
+			let before = actions.1.borrow().len();
+			release(&mut app);
+			assert_eq!(actions.1.borrow().len(), before);
 			assert!(app.frame.pressed.is_none());
+			assert!(app.interaction.viewer.is_some());
+			move_to(&mut app, at);
+			button(&mut app, MouseButton::Left, ElementState::Pressed);
+			release(&mut app);
+			assert_eq!(actions.1.borrow().len(), before + 1);
+			assert_eq!(actions.1.borrow().last(), Some(&caption));
 			assert!(app.interaction.viewer.is_some());
 		}
 		let at = (layout.drag.x + layout.drag.w / 2., 20.);
@@ -149,28 +180,7 @@ fn window_controls_remain_above_the_image_viewer() {
 		);
 		button(&mut app, MouseButton::Left, ElementState::Released);
 		assert!(app.interaction.viewer.is_some());
-		let (_, close) = layout
-			.captions()
-			.into_iter()
-			.find(|(c, _)| *c == Caption::Close)
-			.unwrap();
-		move_to(&mut app, (close.x + close.w / 2., close.y + close.h / 2.));
-		if layout.native_buttons {
-			continue;
-		}
-		button(&mut app, MouseButton::Left, ElementState::Pressed);
-		let exit = CaptionLoop::default();
-		app.handle_window_event(
-			&exit,
-			WindowId::dummy(),
-			WindowEvent::MouseInput {
-				device_id: DeviceId::dummy(),
-				button: MouseButton::Left,
-				state: ElementState::Released,
-			},
-		);
-		assert_eq!(exit.0.get(), 1);
-		assert!(app.interaction.viewer.is_some());
+		assert_eq!(actions.0.get(), usize::from(!layout.native_buttons));
 	}
 }
 
@@ -213,17 +223,22 @@ fn caption_taps_do_not_reach_covered_controls_or_activate_after_a_drag() {
 			for (caption, rect) in layout.captions() {
 				let at = (rect.x + rect.w / 2., rect.y + rect.h / 2.);
 				let before = exit.0.get();
+				let before_actions = exit.1.borrow().len();
 				send(&mut app, TouchPhase::Started, at);
 				assert_eq!(app.frame.pressed, Some(caption));
 				send(&mut app, TouchPhase::Cancelled, at);
 				assert!(app.frame.pressed.is_none());
 				assert_eq!(exit.0.get(), before);
+				assert_eq!(exit.1.borrow().len(), before_actions);
 				send(&mut app, TouchPhase::Started, at);
 				send(&mut app, TouchPhase::Moved, (at.0, at.1 + 40.));
 				send(&mut app, TouchPhase::Ended, at);
 				assert_eq!(exit.0.get(), before);
+				assert_eq!(exit.1.borrow().len(), before_actions);
 				send(&mut app, TouchPhase::Started, at);
 				send(&mut app, TouchPhase::Ended, at);
+				assert_eq!(exit.1.borrow().len(), before_actions + 1);
+				assert_eq!(exit.1.borrow().last(), Some(&caption));
 				assert_eq!(
 					exit.0.get(),
 					before + usize::from(caption == Caption::Close)

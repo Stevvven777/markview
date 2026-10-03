@@ -193,6 +193,14 @@ unsafe extern "system" fn subclass(
 				HTCLIENT
 			} as LRESULT;
 		}
+		WM_SETCURSOR if lparam as u16 as u32 == HTMAXBUTTON => {
+			// SAFETY: The shared system cursor needs no cleanup; the callback
+			// runs on the window thread and retains no pointers.
+			unsafe {
+				SetCursor(LoadCursorW(ptr::null_mut(), IDC_HAND));
+			}
+			return 1;
+		}
 		WM_NCMOUSEMOVE => {
 			state.feedback(wparam == HTMAXBUTTON as usize, state.pressed.get());
 			let mut tracking = TRACKMOUSEEVENT {
@@ -312,6 +320,20 @@ mod tests {
 		assert_eq!(hit(layout.toolbar_x + 16.0, 20.0), HTCLIENT);
 		let (_, expand) = layout.captions()[1];
 		assert_eq!(hit(expand.x + expand.w / 2.0, 20.0), HTMAXBUTTON);
+		// SAFETY: The window and its hook are alive on this thread, and the
+		// shared cursor remains valid without cleanup.
+		unsafe {
+			assert_eq!(
+				SendMessageW(
+					native.hwnd,
+					WM_SETCURSOR,
+					native.hwnd as usize,
+					((WM_MOUSEMOVE << 16) | HTMAXBUTTON) as LPARAM
+				),
+				1
+			);
+			assert_eq!(GetCursor(), LoadCursorW(ptr::null_mut(), IDC_HAND));
+		}
 		assert_eq!(hit(1.0, 1.0), HTTOPLEFT);
 		native.set_tab_end(layout.toolbar_x + 100.0);
 		assert_eq!(hit(200.0, 20.0), HTCLIENT);

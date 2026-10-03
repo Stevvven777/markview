@@ -230,6 +230,36 @@ fn an_open_option_is_a_button_the_pointer_can_hit() {
 }
 
 #[test]
+fn window_layout_commits_from_keyboard_and_pointer_for_next_launch() {
+	use crate::settings::WindowLayout;
+	let mut app = app_with_panel();
+	let initial = app.frame.layout;
+	app.readers.session.path = Some("/tmp/layout.md".into());
+	app.action(Command::ToggleDropdown(DropdownId::WindowLayout, 0));
+	app.key_pressed(&Key::Named(NamedKey::ArrowDown));
+	assert_eq!(
+		highlighted(&mut app),
+		Command::WindowLayout(WindowLayout::Macos)
+	);
+	app.key_pressed(&Key::Named(NamedKey::Enter));
+	assert_eq!(app.preferences.values.window_layout, WindowLayout::Macos);
+	assert_eq!(app.frame.layout, initial);
+	assert!(app.readers.session.requested_options.is_none());
+	assert!(app.interaction.dropdown.is_none());
+	assert_eq!(
+		app.interaction.focus,
+		Some(Command::ToggleDropdown(DropdownId::WindowLayout, 1))
+	);
+	app.action(Command::ToggleDropdown(DropdownId::WindowLayout, 1));
+	let at =
+		option_centre(&mut app, Command::WindowLayout(WindowLayout::Linux));
+	click(&mut app, at.0, at.1);
+	assert_eq!(app.preferences.values.window_layout, WindowLayout::Linux);
+	assert!(app.interaction.dropdown.is_none());
+	assert_eq!(app.frame.layout, initial);
+}
+
+#[test]
 fn arrows_move_the_highlight_and_enter_commits_it() {
 	let mut app = app_with_panel();
 	app.action(Command::ToggleDropdown(DropdownId::Language, 0));

@@ -119,6 +119,7 @@ impl<P: super::SendEvent> App<P> {
 			Command::WindowLayout(layout) => {
 				self.preferences.values.window_layout = layout;
 				self.setting_changed(Some(Setting::WindowLayout));
+				self.close_dropdown();
 				self.redraw();
 				return;
 			}
