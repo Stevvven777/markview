@@ -1,0 +1,11 @@
+format_version = 2
+version = 1
+targets = ["ui"]
+
+[meta]
+name = "Classic Tabs"
+description = "Rectangular reader tabs with an accent underline"
+
+[[rule]]
+when = ["ui", "toolbar"]
+tab_style = "classic"

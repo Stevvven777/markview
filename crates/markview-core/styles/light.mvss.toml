@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 3
+version = 5
 
 [meta]
 name = "Light"
@@ -99,9 +99,9 @@ thumb_hover = "#275D91"
 
 [[rule]]
 when = ["ui"]
-color = "#283343"
+color = "#263445"
 background = "#EEF2F7"
-muted = "#5D6C80"
+muted = "#526175"
 accent = "#275D91"
 border_color = "#D5DDE7"
 error = "#AB303D"
@@ -114,7 +114,7 @@ background = "#FFFFFF"
 
 [[rule]]
 when = ["ui", "toolbar"]
-background = "#EEF2F7"
+background = "#E0E7F0"
 
 [[rule]]
 when = ["ui", "statusbar"]
@@ -123,7 +123,7 @@ background = "#EEF2F7"
 [[rule]]
 when = ["ui", "button"]
 background = "#FFFFFF"
-hover_background = "#DFE8F2"
+hover_background = "#D4DDE9"
 active_background = "#D3E2F3"
 disabled_color = "#5D6C80"
 focus_color = "#275D91"

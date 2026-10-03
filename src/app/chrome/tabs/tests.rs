@@ -2,6 +2,67 @@ use super::*;
 use crate::app::tab_metrics::TabMetrics;
 
 #[test]
+fn live_tab_style_switch_preserves_widths_scroll_and_hit_targets() {
+	let mut ui = crate::test_support::shaper();
+	let tabs: Vec<_> = (0..30)
+		.map(|i| ReaderTab::new(format!("document{i}.md").into()))
+		.collect();
+	let mut metrics = TabMetrics::default();
+	metrics.sync(&mut ui, &tabs);
+	let widths = metrics.widths.clone();
+	let strip = TabStrip {
+		scroll: 25.0,
+		..Default::default()
+	};
+	let mut bar = TabBar {
+		ui: &mut ui,
+		strip: &strip,
+		widths: &widths,
+		tabs: &tabs,
+		active_tab: 1,
+		cursor: (0.0, 0.0),
+		viewport: crate::app::frame::Layout::new(
+			crate::settings::WindowLayout::Windows,
+			false,
+			500.0,
+			300.0,
+			false,
+			false,
+		)
+		.tabs,
+	};
+	let original = bar.layout();
+	for (style, height) in [("classic", 32.0), ("connected", 36.0)] {
+		let mut sheet = (*bar.ui.stylesheet).clone();
+		sheet.merge(&markview_core::style::Stylesheet::parse(&format!(
+			"format_version=2\nversion=1\n[[rule]]\nwhen=['ui','toolbar']\ntab_style='{style}'"
+		)).unwrap());
+		bar.ui.set_stylesheet(std::sync::Arc::new(sheet));
+		let layout = bar.layout();
+		assert_eq!(layout.scroll, original.scroll);
+		for (rect, before) in layout.rects.iter().zip(&original.rects) {
+			assert_eq!((rect.x, rect.w, rect.h), (before.x, before.w, height));
+		}
+		let active = layout.rects[1];
+		assert_eq!(layout.hit(active.x + active.w / 2.0, 20.0), Some(1));
+		assert_eq!(layout.hit(active.x + active.w - 16.0, 20.0), Some(1));
+		let draws = bar.draw_tabs();
+		let Draw::Clipped { draws, .. } = &draws[0] else {
+			panic!("tab clip missing")
+		};
+		let underline = draws.iter().any(|draw| {
+			matches!(
+				draw,
+				Draw::Rect(_, Paint::Styled(Condition::Toolbar, C::Accent))
+			)
+		});
+		assert_eq!(underline, style == "classic");
+	}
+	metrics.sync(bar.ui, &tabs);
+	assert_eq!(metrics.widths, widths);
+}
+
+#[test]
 fn compact_labels_keep_two_whole_graphemes_and_fit_the_measured_space() {
 	let mut ui = crate::test_support::shaper();
 	ui.appearance = crate::app::tab_metrics::tab_appearance(&ui);

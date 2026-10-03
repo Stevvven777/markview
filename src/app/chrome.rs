@@ -426,15 +426,6 @@ impl Chrome<'_> {
 			Draw::Rect(
 				Rect {
 					x: 0.0,
-					y: TOP - 1.0,
-					w: width,
-					h: 1.0,
-				},
-				Paint::Styled(Condition::Toolbar, C::BorderColor),
-			),
-			Draw::Rect(
-				Rect {
-					x: 0.0,
 					y: height - BOTTOM,
 					w: width,
 					h: BOTTOM,
@@ -442,6 +433,19 @@ impl Chrome<'_> {
 				Paint::Styled(Condition::Toolbar, C::Background),
 			),
 		];
+		if self.ui.stylesheet.tab_style()
+			== markview_core::style::TabStyle::Classic
+		{
+			out.push(Draw::Rect(
+				Rect {
+					x: 0.0,
+					y: TOP - 1.0,
+					w: width,
+					h: 1.0,
+				},
+				Paint::Styled(Condition::Toolbar, C::BorderColor),
+			));
+		}
 		out.extend(self.tab_bar().draw_tabs());
 		out.extend(controls::draw_toolbar_at(
 			self.ui,
