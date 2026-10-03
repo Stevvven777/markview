@@ -165,6 +165,37 @@ impl Layout {
 	pub fn draggable(self, x: f32, y: f32) -> bool {
 		!self.fullscreen && self.drag.contains(x, y)
 	}
+	/// The unused tab-strip space belongs to the window caption.
+	pub fn with_tab_end(mut self, end: f32) -> Self {
+		let start = end.clamp(self.tabs.x, self.drag.x.max(self.tabs.x));
+		self.drag.x = start;
+		self.drag.w = (self.toolbar_x - start).max(0.0);
+		self
+	}
+	pub fn cursor_at(self, x: f32, y: f32) -> Option<CursorIcon> {
+		#[cfg(target_os = "linux")]
+		if let Some(direction) = self.resize_at(x, y) {
+			return Some(match direction {
+				ResizeDirection::North | ResizeDirection::South => {
+					CursorIcon::NsResize
+				}
+				ResizeDirection::East | ResizeDirection::West => {
+					CursorIcon::EwResize
+				}
+				ResizeDirection::NorthEast | ResizeDirection::SouthWest => {
+					CursorIcon::NeswResize
+				}
+				ResizeDirection::NorthWest | ResizeDirection::SouthEast => {
+					CursorIcon::NwseResize
+				}
+			});
+		}
+		if self.caption_at(x, y).is_some() {
+			Some(CursorIcon::Pointer)
+		} else {
+			self.draggable(x, y).then_some(CursorIcon::Default)
+		}
+	}
 	#[cfg_attr(target_os = "macos", allow(dead_code))]
 	pub fn resize_at(self, x: f32, y: f32) -> Option<ResizeDirection> {
 		if self.maximized
@@ -215,6 +246,20 @@ impl<P: super::SendEvent> App<P> {
 			fullscreen,
 			maximized,
 		);
+		let tabs = super::tab_strip::TabLayout::new(
+			layout.tabs,
+			&self.tab_metrics.widths,
+			self.tab_strip.scroll,
+		);
+		let tab_end = tabs
+			.rects
+			.last()
+			.map_or(layout.tabs.x, |rect| rect.x + rect.w);
+		layout = layout.with_tab_end(tab_end);
+		#[cfg(windows)]
+		if let Some(native) = &self.native_frame {
+			native.set_tab_end(tab_end);
+		}
 		layout.focused = self.frame.focused;
 		layout.hover = self.frame.hover;
 		layout.pressed = self.frame.pressed;
@@ -241,6 +286,7 @@ impl<P: super::SendEvent> App<P> {
 	pub(super) fn frame_press(&mut self) -> bool {
 		// A new press cancels a caption release swallowed outside the window.
 		self.frame.pressed = None;
+		self.tab_metrics.sync(&mut self.ui, self.readers.entries());
 		let (x, y) = self.interaction.cursor;
 		let layout = self.frame_layout();
 		#[cfg(target_os = "linux")]
@@ -317,38 +363,87 @@ impl<P: super::SendEvent> App<P> {
 		true
 	}
 	pub(super) fn frame_cursor(&self) -> Option<CursorIcon> {
-		#[cfg(target_os = "linux")]
-		if let Some(direction) = self
-			.frame_layout()
-			.resize_at(self.interaction.cursor.0, self.interaction.cursor.1)
-		{
-			return Some(match direction {
-				ResizeDirection::North | ResizeDirection::South => {
-					CursorIcon::NsResize
-				}
-				ResizeDirection::East | ResizeDirection::West => {
-					CursorIcon::EwResize
-				}
-				ResizeDirection::NorthEast | ResizeDirection::SouthWest => {
-					CursorIcon::NeswResize
-				}
-				ResizeDirection::NorthWest | ResizeDirection::SouthEast => {
-					CursorIcon::NwseResize
-				}
-			});
-		}
-		(self.frame.hover.is_some()
-			|| self.frame_layout().draggable(
-				self.interaction.cursor.0,
-				self.interaction.cursor.1,
-			))
-		.then_some(CursorIcon::Default)
+		self.frame_layout()
+			.cursor_at(self.interaction.cursor.0, self.interaction.cursor.1)
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	#[test]
+	fn caption_buttons_use_a_hand_and_dragging_keeps_the_default_cursor() {
+		for style in [
+			WindowLayout::Macos,
+			WindowLayout::Windows,
+			WindowLayout::Linux,
+		] {
+			let layout = Layout::new(style, false, 800.0, 500.0, false, false);
+			for (_, rect) in layout.captions() {
+				assert_eq!(
+					layout.cursor_at(rect.x + rect.w / 2.0, 20.0),
+					Some(CursorIcon::Pointer)
+				);
+			}
+			assert_eq!(
+				layout.cursor_at(layout.drag.x + 10.0, 20.0),
+				Some(CursorIcon::Default)
+			);
+			assert_eq!(layout.cursor_at(200.0, 100.0), None);
+			let full = Layout::new(style, false, 800.0, 500.0, true, false);
+			assert_eq!(full.cursor_at(740.0, 20.0), None);
+		}
+	}
+	#[test]
+	fn unused_tab_strip_is_draggable_without_stealing_tabs_or_controls() {
+		for style in [
+			WindowLayout::Macos,
+			WindowLayout::Windows,
+			WindowLayout::Linux,
+		] {
+			for width in [500.0, 800.0, 1200.0] {
+				let base =
+					Layout::new(style, false, width, 300.0, false, false);
+				for widths in
+					[vec![], vec![(100.0, 60.0)], vec![(240.0, 80.0); 20]]
+				{
+					let tabs = super::super::tab_strip::TabLayout::new(
+						base.tabs, &widths, 0.0,
+					);
+					let end = tabs
+						.rects
+						.last()
+						.map_or(base.tabs.x, |rect| rect.x + rect.w);
+					let layout = base.with_tab_end(end);
+					assert!(
+						layout.draggable(
+							layout.drag.x + layout.drag.w / 2.0,
+							20.0
+						)
+					);
+					assert!(!layout.draggable(layout.toolbar_x + 16.0, 20.0));
+					assert!(!layout.draggable(layout.drag.x + 1.0, TOP + 1.0));
+					for rect in &tabs.rects {
+						if let Some(visible) = rect.intersect(tabs.viewport) {
+							assert!(
+								!layout.draggable(
+									visible.x + visible.w / 2.0,
+									20.0
+								)
+							);
+						}
+					}
+					if widths.len() <= 1 {
+						assert!(layout.draggable(end + 1.0, 20.0));
+					}
+					let full =
+						Layout::new(style, false, width, 300.0, true, false)
+							.with_tab_end(end);
+					assert!(!full.draggable(full.drag.x + 1.0, 20.0));
+				}
+			}
+		}
+	}
 	#[test]
 	fn traffic_light_margins_follow_the_requested_ratio_at_each_dpi() {
 		for height in [12.0, 14.0, 16.0, 18.0, 20.0] {
