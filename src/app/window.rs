@@ -766,6 +766,14 @@ impl<P: super::SendEvent> App<P> {
 			return true;
 		}
 		match key {
+			Key::Character(c)
+				if c == "/"
+					&& !self.interaction.modifiers.control_key()
+					&& !self.interaction.modifiers.super_key()
+					&& !self.interaction.modifiers.alt_key() =>
+			{
+				self.open_new_search();
+			}
 			Key::Named(NamedKey::ArrowDown)
 				if self.interaction.outline_owns_input() =>
 			{
