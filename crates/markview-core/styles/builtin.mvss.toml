@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui", "pdf"]
-version = 4
+version = 5
 
 [[fontdef]]
 id = "serif"
@@ -846,7 +846,7 @@ background = "#FFFFFF"
 
 [[rule]]
 when = ["ui", "toolbar"]
-background = "#F4F5F7"
+background = "#E5E7EB"
 
 [[rule]]
 when = ["ui", "statusbar"]
@@ -855,7 +855,7 @@ background = "#F4F5F7"
 [[rule]]
 when = ["ui", "button"]
 background = "#FFFFFF"
-hover_background = "#E2E8F1"
+hover_background = "#D4DDE9"
 active_background = "#DFE7FA"
 disabled_color = "#626C79"
 focus_color = "#2856D8"

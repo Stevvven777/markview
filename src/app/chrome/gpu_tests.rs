@@ -387,15 +387,31 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 	let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
 		.join("artifacts/tab-bar");
 	std::fs::create_dir_all(&directory)?;
-	for (count, scroll, dragging, dark, filename) in [
-		(3, 0.0, false, false, "normal.png"),
-		(5, 0.0, false, false, "compressed.png"),
-		(30, 25.0, false, false, "overflow.png"),
-		(30, 125.0, true, true, "drag-dark.png"),
+	for (count, active_tab, scroll, dragging, dark, filename) in [
+		(1, 0, 0.0, false, false, "single.png"),
+		(3, 0, 0.0, false, false, "first.png"),
+		(3, 1, 0.0, false, false, "normal.png"),
+		(3, 2, 0.0, false, false, "last.png"),
+		(3, 1, 0.0, false, true, "normal-dark.png"),
+		(5, 1, 0.0, false, false, "compressed.png"),
+		(30, 1, 25.0, false, false, "overflow.png"),
+		(30, 3, 125.0, true, true, "drag-dark.png"),
+		(3, 1, 0.0, false, false, "classic-normal.png"),
+		(3, 1, 0.0, false, true, "classic-dark.png"),
+		(30, 1, 25.0, false, false, "classic-overflow.png"),
+		(30, 3, 125.0, true, true, "classic-drag-dark.png"),
 	] {
+		let classic = filename.starts_with("classic-");
+		let mut sheet =
+			(*markview_core::style::Stylesheet::bundled(dark)).clone();
+		if classic {
+			sheet.merge(&markview_core::style::Stylesheet::parse(
+				include_str!("../../../examples/classic-tabs.mvss.toml"),
+			)?);
+		}
 		let settings = ReaderSettings {
 			theme: if dark { Theme::Dark } else { Theme::Light },
-			stylesheet: markview_core::style::Stylesheet::bundled(dark),
+			stylesheet: std::sync::Arc::new(sheet),
 			..Default::default()
 		};
 		renderer.set_stylesheet(settings.stylesheet.clone());
@@ -422,14 +438,14 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 			}),
 			..Default::default()
 		};
-		let width = if count == 3 { 800.0 } else { 500.0 };
+		let width = if count <= 3 { 800.0 } else { 500.0 };
 		let mut bar = tabs::TabBar {
 			ui: &mut ui,
 			strip: &strip,
 			widths: &metrics.widths,
 			tabs: &entries,
-			active_tab: 3.min(count - 1),
-			cursor: (150.0, 20.0),
+			active_tab,
+			cursor: if dragging { (150.0, 20.0) } else { (0.0, 0.0) },
 			viewport: crate::app::frame::Layout::new(
 				crate::settings::WindowLayout::Windows,
 				false,
@@ -440,7 +456,18 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 			)
 			.tabs,
 		};
-		let viewport = bar.layout().viewport;
+		let layout = bar.layout();
+		let padding = if !classic && layout.max_scroll == 0.0 {
+			9.0
+		} else {
+			0.0
+		};
+		let viewport = Rect {
+			x: layout.viewport.x - padding,
+			w: layout.viewport.w + padding * 2.0,
+			..layout.viewport
+		};
+		let active = layout.rects[bar.active_tab];
 		let tabs = bar.draw_tabs();
 		let background = Draw::Rect(
 			Rect {
@@ -500,7 +527,7 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 			renderer.save_png(&target, &output)?;
 			images.push(image::open(output)?.to_rgba8());
 		}
-		for y in 5..45 {
+		for y in 0..50 {
 			for x in 0..view.width {
 				if x < (viewport.x * view.scale).floor() as u32
 					|| x >= ((viewport.x + viewport.w) * view.scale).ceil()
@@ -510,6 +537,79 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 						images[0].get_pixel(x, y),
 						images[1].get_pixel(x, y),
 						"tab escaped its clip at {x},{y}: {filename}"
+					);
+				}
+			}
+		}
+		if count <= 3 {
+			let image = &images[1];
+			if classic {
+				let accent = settings
+					.stylesheet
+					.paint(Paint::Styled(Condition::Toolbar, C::Accent))
+					.map(|channel| (channel * 255.0).round() as u8);
+				let x = ((active.x + active.w / 2.0) * view.scale) as u32;
+				let y = ((active.y + active.h - 1.0) * view.scale) as u32;
+				assert_eq!(
+					image.get_pixel(x, y).0,
+					accent,
+					"classic underline: {filename}"
+				);
+				let y = (38.0 * view.scale) as u32;
+				assert_eq!(
+					image.get_pixel(x, y),
+					images[0].get_pixel(x, y),
+					"classic tab must remain separate from the page: {filename}"
+				);
+				continue;
+			}
+			let page = image.get_pixel(view.width / 2, 65);
+			for (index, rect) in layout.rects.iter().enumerate() {
+				if index == active_tab {
+					continue;
+				}
+				let x = ((rect.x + rect.w / 2.0) * view.scale) as u32;
+				let y = (35.0 * view.scale) as u32;
+				assert_eq!(
+					image.get_pixel(x, y),
+					images[0].get_pixel(x, y),
+					"inactive tab must blend into the toolbar: {filename}"
+				);
+			}
+			// The lower tab and its joins have the page color, even at `125%` DPI.
+			for y in 46..55 {
+				for x in ((active.x + 12.0) * view.scale).ceil() as u32
+					..((active.x + active.w - 12.0) * view.scale).floor() as u32
+				{
+					assert_eq!(
+						image.get_pixel(x, y),
+						page,
+						"tab/page seam at {x},{y}: {filename}"
+					);
+				}
+			}
+			for edge in [active.x + 12.0, active.x + active.w - 12.0] {
+				for y in 39..46 {
+					for x in (edge * view.scale).floor() as u32 - 1
+						..=(edge * view.scale).ceil() as u32 + 1
+					{
+						assert_eq!(
+							image.get_pixel(x, y),
+							page,
+							"tab edge seam at {x},{y}: {filename}"
+						);
+					}
+				}
+			}
+			// The rounded body and concave joins form one opaque surface.
+			for y in 43..50 {
+				for x in (active.x * view.scale).ceil() as u32 + 1
+					..((active.x + active.w) * view.scale).floor() as u32 - 1
+				{
+					assert_eq!(
+						image.get_pixel(x, y),
+						page,
+						"shared curve seam at {x},{y}: {filename}"
 					);
 				}
 			}

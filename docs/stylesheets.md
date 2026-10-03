@@ -214,7 +214,26 @@ A document may open with `---` fenced YAML front matter. It is drawn as a collap
 
 `page` accepts only `background`. The furniture conditions accept the text fields, so a page number can be smaller or greyer than the header text beside it.
 
-Special properties include `theme` on `["code_block"]` alone (`theme = "none"` disables syntax colors and uses the code block text color), scrollbar colors and thicknesses on `["scrollbar"]`, `muted`/`accent`/`error`/`shadow`/`scrim` on `["ui"]`, `accent` on `["task_marker"]`, and `hover_background`/`active_background`/`disabled_color`/`focus_color` on `["ui", "button"]`. The UI theme controls appearance, not widget layout or dimensions.
+Special properties include `theme` on `["code_block"]` alone (`theme = "none"` disables syntax colors and uses the code block text color), scrollbar colors and thicknesses on `["scrollbar"]`, `muted`/`accent`/`error`/`shadow`/`scrim` on `["ui"]`, `accent` on `["task_marker"]`, and `hover_background`/`active_background`/`disabled_color`/`focus_color` on `["ui", "button"]`. UI properties control appearance; `tab_style` also selects the toolbar's tab silhouette and matching hit geometry.
+
+### Reader tab style
+
+Set `tab_style` on a toolbar rule to choose `"connected"` (the default rounded tabs joined to the page) or `"classic"` (rectangular tabs with an accent underline and separators). Existing themes that omit it keep connected tabs. Add the field to an existing toolbar rule rather than duplicating its `when` set:
+
+```toml
+[[rule]]
+when = ["ui", "toolbar"]
+tab_style = "classic"
+```
+
+The [Classic Tabs overlay](../examples/classic-tabs.mvss.toml) changes only this property. Install it and select it ahead of a reader theme, or enable it in **Settings → Styles…**:
+
+```sh
+markview ss install examples/classic-tabs.mvss.toml
+markview document.md --style classic-tabs --style light
+```
+
+Disable the overlay or change its value to `"connected"` to restore rounded tabs. Selected stylesheet edits reload live, preserving open tabs, their order and scroll position without reflowing the document. Colors still come from the selected themes: connected active tabs use the page background; classic active tabs use the panel background and toolbar accent. The choice applies independently of the system window-control layout and does not affect PDF or PNG document exports.
 
 Colors are sRGB `#RRGGBB` or `#RRGGBBAA`; `body.background` must be opaque. Sizes and spacing are positive or non-negative finite values. `size` is relative to the reader's base size, `line_height` is a multiple of the condition's size, block spacing and padding use base-size units, and an inline code chip's padding scales with the text around it. Border width and radius use logical pixels. Unknown conditions, fields, types, and enum values are errors.
 

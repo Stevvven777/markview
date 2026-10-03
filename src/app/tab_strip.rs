@@ -2,6 +2,8 @@
 use crate::layout::Rect;
 use std::time::Instant;
 
+pub(super) const GAP: f32 = 2.0;
+
 #[derive(Default)]
 pub(super) struct TabStrip {
 	pub scroll: f32,
@@ -60,7 +62,7 @@ pub(super) struct TabLayout {
 }
 impl TabLayout {
 	pub fn new(viewport: Rect, widths: &[(f32, f32)], scroll: f32) -> Self {
-		let gaps = widths.len().saturating_sub(1) as f32 * 2.0;
+		let gaps = widths.len().saturating_sub(1) as f32 * GAP;
 		let natural = widths.iter().map(|(w, _)| w).sum::<f32>();
 		let minimum = widths.iter().map(|(_, w)| w).sum::<f32>();
 		let shrink = ((natural + gaps - viewport.w)
@@ -75,7 +77,7 @@ impl TabLayout {
 			.map(|(natural, minimum)| {
 				let w = natural - (natural - minimum) * shrink;
 				let rect = Rect { x, w, ..viewport };
-				x += w + 2.0;
+				x += w + GAP;
 				rect
 			})
 			.collect();
