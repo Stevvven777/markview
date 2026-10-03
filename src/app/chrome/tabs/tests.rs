@@ -32,7 +32,15 @@ fn measured_tabs_fit_minimum_window_and_styles_invalidate_widths() {
 		tabs: &tabs,
 		active_tab: 0,
 		cursor: (0.0, 0.0),
-		width: 500.0,
+		viewport: crate::app::frame::Layout::new(
+			crate::settings::WindowLayout::Windows,
+			false,
+			500.0,
+			300.0,
+			false,
+			false,
+		)
+		.tabs,
 	};
 	let layout = bar.layout();
 	assert!(layout.max_scroll > 0.0);

@@ -83,11 +83,17 @@ fn open(app: &mut App<StubProxy>) {
 	assert!(app.interaction.viewer.is_some(), "a click opens the viewer");
 }
 
-fn viewer_rect(app: &mut App<StubProxy>) -> Rect {
-	match app.overlay().last().unwrap() {
-		Draw::Image { rect, .. } => *rect,
-		_ => panic!("the viewer image is the topmost draw"),
-	}
+fn viewer_image(app: &mut App<StubProxy>) -> (Rect, u64) {
+	let source = app.interaction.viewer.as_ref().unwrap().src.clone();
+	app.overlay()
+		.into_iter()
+		.find_map(|draw| match draw {
+			Draw::Image {
+				src, rect, version, ..
+			} if src == source => Some((rect, version)),
+			_ => None,
+		})
+		.expect("the viewer image is drawn")
 }
 
 #[test]
@@ -165,7 +171,8 @@ fn viewer_captures_search_input_and_middle_clicks() {
 	);
 	event(&mut app, WindowEvent::Ime(Ime::Commit("changed".into())));
 	assert_eq!(app.readers.session.search.input.text(), "query");
-	move_to(&mut app, (60., 15.));
+	let tab = app.tab_layout().rects[0];
+	move_to(&mut app, (tab.x + tab.w / 2., tab.y + tab.h / 2.));
 	assert!(app.tab_at_cursor().is_some());
 	button(&mut app, MouseButton::Middle, ElementState::Pressed);
 	assert_eq!(app.readers.entries().len(), 1);
@@ -229,31 +236,35 @@ fn viewer_focus_loss_cancels_the_drag_and_ignores_an_orphan_release() {
 
 #[test]
 fn decoding_refreshes_the_viewer_dimensions_and_texture_version() {
-	let mut app = image_reader("![](a.png)", "a.png", false);
-	open(&mut app);
-	let placeholder = viewer_rect(&mut app);
-	assert_ne!(placeholder.w, placeholder.h);
-	app.readers.session.snapshot.images.pixels.insert(
-		"a.png".into(),
-		2,
-		Arc::new(Pixels {
-			width: 400,
-			height: 400,
-			rgba: vec![255; 400 * 400 * 4].into(),
-		}),
-	);
-	app.readers.session.snapshot.images.entries.insert(
-		"a.png".into(),
-		ImageInfo {
-			version: 2,
-			size: Some((400, 400)),
-			error: None,
-		},
-	);
-	let rect = viewer_rect(&mut app);
-	assert_eq!((rect.w, rect.h), (400., 400.));
-	assert!(matches!(
-		app.overlay().last(),
-		Some(Draw::Image { version: 2, .. })
-	));
+	for layout in [
+		crate::settings::WindowLayout::Macos,
+		crate::settings::WindowLayout::Windows,
+		crate::settings::WindowLayout::Linux,
+	] {
+		let mut app = image_reader("![](a.png)", "a.png", false);
+		app.frame.layout = layout;
+		open(&mut app);
+		let (placeholder, _) = viewer_image(&mut app);
+		assert_ne!(placeholder.w, placeholder.h);
+		app.readers.session.snapshot.images.pixels.insert(
+			"a.png".into(),
+			2,
+			Arc::new(Pixels {
+				width: 400,
+				height: 400,
+				rgba: vec![255; 400 * 400 * 4].into(),
+			}),
+		);
+		app.readers.session.snapshot.images.entries.insert(
+			"a.png".into(),
+			ImageInfo {
+				version: 2,
+				size: Some((400, 400)),
+				error: None,
+			},
+		);
+		let (rect, version) = viewer_image(&mut app);
+		assert_eq!((rect.w, rect.h), (400., 400.));
+		assert_eq!(version, 2);
+	}
 }

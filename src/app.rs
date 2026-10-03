@@ -5,6 +5,7 @@ mod dropdown;
 mod export;
 pub(crate) mod font_panel;
 mod fonts_command;
+pub(crate) mod frame;
 mod gestures;
 mod icon;
 mod interaction;
@@ -70,6 +71,8 @@ pub fn run() -> Result<()> {
 
 enum Event {
 	SettingsLoaded(Box<settings_load::Completion>),
+	#[cfg(windows)]
+	FrameFeedback,
 	Ready(Box<Update>),
 	SearchReady(search::Result),
 	Parsed {
@@ -196,6 +199,9 @@ fn register_font_dir(
 }
 
 struct App<P = EventLoopProxy<Event>> {
+	frame: frame::State,
+	#[cfg(windows)]
+	native_frame: Option<crate::platform::window_frame::NativeFrame>,
 	interaction: InteractionState,
 	gestures: gestures::GestureState,
 	readers: tabs::Tabs,
@@ -314,6 +320,9 @@ impl<P: SendEvent> App<P> {
 		});
 
 		Self {
+			frame: frame::State::new(preferences.values.window_layout),
+			#[cfg(windows)]
+			native_frame: None,
 			interaction: InteractionState::default(),
 			gestures: gestures::GestureState::default(),
 			readers: tabs::Tabs::default(),

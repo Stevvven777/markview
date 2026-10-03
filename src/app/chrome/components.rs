@@ -272,7 +272,16 @@ pub(in crate::app) fn draw_button(
 	b: &Button,
 	panel: bool,
 ) -> Vec<Draw> {
-	draw_button_edges(ui, interaction, b, panel, [true, true])
+	draw_button_edges(ui, interaction, b, panel, [true, true], 20.0)
+}
+
+pub(super) fn draw_icon_button(
+	ui: &mut TextShaper,
+	interaction: &InteractionState,
+	b: &Button,
+	size: f32,
+) -> Vec<Draw> {
+	draw_button_edges(ui, interaction, b, false, [true, true], size)
 }
 
 /// Draws a segment with shared edges owned by the focused or selected neighbor.
@@ -301,7 +310,7 @@ pub(in crate::app) fn draw_segmented_button(
 	let right = i + 1 == buttons.len()
 		|| !joined(b, &buttons[i + 1])
 		|| priority(b) >= priority(&buttons[i + 1]);
-	draw_button_edges(ui, interaction, b, true, [left, right])
+	draw_button_edges(ui, interaction, b, true, [left, right], 20.0)
 }
 
 fn draw_button_edges(
@@ -310,6 +319,7 @@ fn draw_button_edges(
 	b: &Button,
 	panel: bool,
 	edges: [bool; 2],
+	icon_size: f32,
 ) -> Vec<Draw> {
 	let hovered = b.enabled
 		&& b.rect.contains(interaction.cursor.0, interaction.cursor.1);
@@ -380,9 +390,9 @@ fn draw_button_edges(
 		out.push(Draw::Icon {
 			paths,
 			paint: Paint::Styled(Condition::Button, color),
-			x: b.rect.x + (b.rect.w - 20.0) / 2.0,
-			y: b.rect.y + (b.rect.h - 20.0) / 2.0,
-			size: 20.0,
+			x: b.rect.x + (b.rect.w - icon_size) / 2.0,
+			y: b.rect.y + (b.rect.h - icon_size) / 2.0,
+			size: icon_size,
 		});
 	} else {
 		let room = if b.marker.is_some() {

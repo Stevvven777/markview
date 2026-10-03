@@ -14,8 +14,32 @@ pub const SCROLL_SPEED_MIN: f32 = 0.5;
 pub const SCROLL_SPEED_MAX: f32 = 2.0;
 pub const SCROLL_SPEED_STEP: f32 = 0.25;
 
+/// Window chrome preference, applied when the next window is created.
+#[derive(
+	Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowLayout {
+	#[default]
+	System,
+	Macos,
+	Windows,
+	Linux,
+}
+impl WindowLayout {
+	pub fn resolved(self) -> Self {
+		match self {
+			Self::System if cfg!(target_os = "macos") => Self::Macos,
+			Self::System if cfg!(target_os = "linux") => Self::Linux,
+			Self::System => Self::Windows,
+			layout => layout,
+		}
+	}
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReaderSettings {
+	pub window_layout: WindowLayout,
 	pub theme: Theme,
 	pub style: Option<Vec<String>>,
 	/// The interface language; absent means "follow the system", so a locale
@@ -44,6 +68,7 @@ pub struct ReaderSettings {
 impl Default for ReaderSettings {
 	fn default() -> Self {
 		Self {
+			window_layout: WindowLayout::System,
 			theme: Theme::default(),
 			style: None,
 			lang: None,
@@ -111,6 +136,7 @@ impl FontRole {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
+	WindowLayout,
 	Theme,
 	FontSize,
 	Width,
@@ -302,6 +328,7 @@ impl ReaderSettings {
 
 	pub fn copy_field(&mut self, other: &Self, field: Setting) {
 		match field {
+			Setting::WindowLayout => self.window_layout = other.window_layout,
 			Setting::Theme => {
 				self.theme = other.theme;
 				self.style = other.style.clone();

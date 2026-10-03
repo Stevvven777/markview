@@ -116,6 +116,12 @@ impl<P: super::SendEvent> App<P> {
 				self.redraw();
 				return;
 			}
+			Command::WindowLayout(layout) => {
+				self.preferences.values.window_layout = layout;
+				self.setting_changed(Some(Setting::WindowLayout));
+				self.redraw();
+				return;
+			}
 			Command::SelectTab(index) => {
 				self.select_tab(index);
 				return;

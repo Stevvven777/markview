@@ -75,6 +75,7 @@ impl Preferences {
 			settings.codeblock_wrap = true;
 		}
 		let explicit = ReaderSettings {
+			window_layout: settings.window_layout,
 			fontdef_overrides: settings.fontdef_overrides.clone(),
 			style: args.style.clone().or_else(|| {
 				args.theme.map(|t| {

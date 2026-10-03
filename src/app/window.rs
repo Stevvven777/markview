@@ -82,6 +82,7 @@ impl<P: super::SendEvent> App<P> {
 			| WindowEvent::MouseInput { .. }
 				if self.gestures.suppress_mouse() => {}
 			WindowEvent::CloseRequested => event_loop.exit(),
+			WindowEvent::Moved(_) => self.frame.last_click = None,
 			WindowEvent::Resized(PhysicalSize { width, height }) => {
 				self.cancel_gestures();
 				self.tab_strip.reveal_active = true;
@@ -130,6 +131,8 @@ impl<P: super::SendEvent> App<P> {
 					let old = self.interaction.cursor;
 					let was_button = self.button_at_cursor();
 					self.interaction.cursor = point;
+					self.frame.hover =
+						self.frame_layout().caption_at(point.0, point.1);
 					if let Some((_, (px, py))) =
 						self.interaction.pressed_image.as_ref()
 						&& (point.0 - px).hypot(point.1 - py) > 3.
@@ -153,6 +156,7 @@ impl<P: super::SendEvent> App<P> {
 				}
 			}
 			WindowEvent::CursorLeft { .. } => {
+				self.frame.hover = None;
 				if self.tab_strip.drag.is_none()
 					&& self.interaction.scrollbar.is_none()
 					&& self.interaction.panel_grab.is_none()
@@ -173,6 +177,22 @@ impl<P: super::SendEvent> App<P> {
 					w.set_cursor(CursorIcon::Default);
 				}
 				self.redraw();
+			}
+			WindowEvent::MouseInput {
+				button: MouseButton::Right,
+				state: ElementState::Pressed,
+				..
+			} if self.frame_layout().draggable(
+				self.interaction.cursor.0,
+				self.interaction.cursor.1,
+			) =>
+			{
+				if let Some(window) = &self.window {
+					window.show_window_menu(winit::dpi::LogicalPosition::new(
+						self.interaction.cursor.0,
+						self.interaction.cursor.1,
+					));
+				}
 			}
 			WindowEvent::MouseInput {
 				button: MouseButton::Middle,
@@ -196,6 +216,9 @@ impl<P: super::SendEvent> App<P> {
 				state: ElementState::Pressed,
 				..
 			} => {
+				if self.frame_press() {
+					return;
+				}
 				self.cancel_gestures();
 				self.tab_strip.cancel_drag();
 				self.interaction.focus_visible = false;
@@ -370,6 +393,9 @@ impl<P: super::SendEvent> App<P> {
 				state: ElementState::Released,
 				..
 			} => {
+				if self.frame_release(event_loop) {
+					return;
+				}
 				self.tab_strip.cancel_drag();
 				let pressed_image = self.interaction.pressed_image.take();
 				let was_pressed = self.interaction.pressed.is_some();
@@ -418,7 +444,19 @@ impl<P: super::SendEvent> App<P> {
 				self.refresh_hover();
 				self.redraw();
 			}
+			WindowEvent::Focused(true) => {
+				self.frame.focused = true;
+				self.redraw();
+			}
 			WindowEvent::Focused(false) => {
+				#[cfg(windows)]
+				if let Some(native) = &self.native_frame {
+					native.cancel();
+				}
+				self.frame.focused = false;
+				self.frame.hover = None;
+				self.frame.pressed = None;
+				self.frame.last_click = None;
 				self.cancel_gestures();
 				self.interaction.focus_visible = false;
 				self.tab_strip.cancel_drag();
@@ -833,6 +871,19 @@ impl<P: super::SendEvent> App<P> {
 				}
 			}
 			Key::Named(NamedKey::Escape) => {
+				#[cfg(windows)]
+				if let Some(native) = &self.native_frame {
+					native.cancel();
+				}
+				if !self.interaction.panel_open()
+					&& self.interaction.modal.is_none()
+					&& let Some(window) = &self.window
+					&& window.fullscreen().is_some()
+				{
+					window.set_fullscreen(None);
+				}
+				self.frame.pressed = None;
+				self.frame.last_click = None;
 				self.tab_strip.cancel_drag();
 				self.interaction.pressed = None;
 				self.interaction.focus = None;

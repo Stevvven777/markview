@@ -219,6 +219,13 @@ pixels and the type to 18.
   as UTF-8, a BOM included.
 - **Tabs behave.** Drag a tab to reorder it, close one with its × button or the
   middle mouse button, and scroll an overflowing strip with the wheel.
+- **Window layout follows your preference.** Appearance offers System, macOS,
+  Windows and Linux layouts, applied next launch. The `window-layout` setting in
+  `settings.toml` accepts `"system"`, `"macos"`, `"windows"` or `"linux"`. System uses native
+  traffic lights on macOS, square window controls on Windows and chevrons on Linux.
+  Right-side window controls share the toolbar's button size and spacing. A reserved strip beside
+  the toolbar drags the window; controls keep the host system's behavior.
+  Escape exits fullscreen after closing any open panel or confirmation.
 - **Links open where they should.** Web, mail and local files go to the
   operating system's default handler; links to other `.md` files open in a new
   tab, and middle-click opens them in the background. A `#heading` fragment

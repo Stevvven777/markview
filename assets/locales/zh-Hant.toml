@@ -256,3 +256,6 @@ panel_loading = "載入中…"
 panel_refreshing = "重新整理中…"
 panel_load_failed = "載入失敗：{error}"
 panel_retry = "重試"
+
+settings_window_layout = "視窗配置"
+section_next_launch = "下次啟動生效"

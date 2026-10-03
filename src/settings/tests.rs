@@ -23,6 +23,45 @@ fn external_edits_merge_pending_ui_fields_and_preserve_comments() {
 	assert_eq!(loaded.settings().width, 900.0);
 	assert!(!store.reload().unwrap());
 }
+
+#[test]
+fn window_layout_round_trips_and_merges_without_pinning_the_theme() {
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("settings.toml");
+	fs::write(&path, "# Reader\nfont_size = 20\n").unwrap();
+	let (mut store, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	assert_eq!(store.settings().window_layout, WindowLayout::System);
+	for layout in [
+		WindowLayout::Macos,
+		WindowLayout::Windows,
+		WindowLayout::Linux,
+		WindowLayout::System,
+	] {
+		let mut settings = store.settings();
+		settings.window_layout = layout;
+		store.changed(&settings, Some(Setting::WindowLayout));
+		fs::write(&path, "# Reader\nfont_size = 24\n[extra]\nvalue = 42\n")
+			.unwrap();
+		store.flush().unwrap();
+		let (loaded, warning) = SettingsStore::load(Some(path.clone()));
+		assert!(warning.is_none());
+		assert_eq!(loaded.settings().window_layout, layout);
+		assert_eq!(loaded.settings().font_size, 24.0);
+		assert_eq!(loaded.theme_preference(), None);
+		assert!(fs::read_to_string(&path).unwrap().contains("# Reader"));
+	}
+	let mut settings = store.settings();
+	settings.window_layout = WindowLayout::Windows;
+	store.changed(&settings, Some(Setting::WindowLayout));
+	store.flush().unwrap();
+	store.changed(&ReaderSettings::default(), None);
+	store.flush().unwrap();
+	assert_eq!(
+		SettingsStore::load(Some(path)).0.settings().window_layout,
+		WindowLayout::System
+	);
+}
 #[test]
 fn invalid_reload_and_deletion_retain_last_good_settings() {
 	let dir = tempfile::tempdir().unwrap();
@@ -36,6 +75,7 @@ fn invalid_reload_and_deletion_retain_last_good_settings() {
 		"width = nan",
 		"paragraph_indent = 5",
 		"theme = 'unknown'",
+		"window-layout = 'unknown'",
 		"version = 2",
 	] {
 		fs::write(&path, invalid).unwrap();

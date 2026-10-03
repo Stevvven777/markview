@@ -32,6 +32,12 @@ impl<P: super::SendEvent> App<P> {
 		if size.width == 0 || size.height == 0 {
 			return Ok(());
 		}
+		#[cfg(target_os = "macos")]
+		if self.frame.layout == crate::settings::WindowLayout::Macos
+			&& window.fullscreen().is_none()
+		{
+			crate::platform::align_traffic_lights(&window);
+		}
 		// A pass only survives a frame that completes; an occluded or retried
 		// frame must not leave a deadline that wakes the loop forever.
 		self.prewarm_at = None;

@@ -4,9 +4,10 @@ use super::{
 	icons,
 };
 use crate::{
+	app::frame::{CONTROL_GAP, Layout},
 	lang::Lang,
 	layout::{Draw, Rect, TextShaper},
-	settings::ReaderSettings,
+	settings::{ReaderSettings, WindowLayout},
 	state::{Command, DropdownId, InteractionState, PanelPage, PanelTab},
 };
 pub(super) use components::{draw_button, panel_rect};
@@ -14,7 +15,6 @@ use markview_core::style::{
 	CjkType, ColorField as C, Condition, TextAppearance,
 };
 pub(super) const ICON_BUTTON: f32 = 28.0;
-const GAP: f32 = 4.0;
 
 fn choices(
 	entries: &[(&'static str, Command)],
@@ -69,6 +69,22 @@ fn rows(settings: &ReaderSettings) -> Vec<Row> {
 			),
 		)
 		.value(format!("{:.2}×", settings.scroll_speed)),
+		Row::new(
+			t.settings_window_layout(),
+			choices(
+				&[
+					(
+						t.settings_language_system(),
+						Command::WindowLayout(WindowLayout::System),
+					),
+					("macOS", Command::WindowLayout(WindowLayout::Macos)),
+					("Windows", Command::WindowLayout(WindowLayout::Windows)),
+					("Linux", Command::WindowLayout(WindowLayout::Linux)),
+				],
+				Some(Command::WindowLayout(settings.window_layout)),
+			),
+		)
+		.section(t.section_next_launch()),
 		Row::new(
 			t.settings_single_instance(),
 			vec![action(
@@ -270,8 +286,20 @@ fn wrap(ui: &mut TextShaper, text: &str, size: f32, width: f32) -> Vec<String> {
 	}
 	lines
 }
+#[cfg(test)]
 pub(super) fn toolbar_controls(
 	width: f32,
+	outline_open: bool,
+	lang: Lang,
+) -> Vec<Button> {
+	toolbar_controls_at(
+		Layout::new(WindowLayout::Macos, true, width, 0.0, false, false),
+		outline_open,
+		lang,
+	)
+}
+pub(super) fn toolbar_controls_at(
+	frame: Layout,
 	outline_open: bool,
 	lang: Lang,
 ) -> Vec<Button> {
@@ -288,10 +316,11 @@ pub(super) fn toolbar_controls(
 			label,
 			action,
 			Rect {
-				x: toolbar_right_edge(width) + i as f32 * (ICON_BUTTON + GAP),
-				y: 6.0,
-				w: ICON_BUTTON,
-				h: ICON_BUTTON,
+				x: frame.toolbar_x
+					+ i as f32 * (frame.toolbar_button_size + CONTROL_GAP),
+				y: (super::TOP - frame.toolbar_button_size) / 2.0,
+				w: frame.toolbar_button_size,
+				h: frame.toolbar_button_size,
 			},
 		);
 		b.icon = Some(icon);
@@ -300,9 +329,6 @@ pub(super) fn toolbar_controls(
 		b
 	})
 	.collect()
-}
-pub(super) fn toolbar_right_edge(width: f32) -> f32 {
-	width - 4.0 * ICON_BUTTON - 3.0 * GAP - 16.0
 }
 pub(super) fn settings_form(
 	ui: &mut TextShaper,
@@ -420,6 +446,19 @@ pub(super) fn draw_toolbar(
 	width: f32,
 	lang: Lang,
 ) -> Vec<Draw> {
+	draw_toolbar_at(
+		ui,
+		interaction,
+		Layout::new(WindowLayout::Macos, true, width, 0.0, false, false),
+		lang,
+	)
+}
+pub(super) fn draw_toolbar_at(
+	ui: &mut TextShaper,
+	interaction: &InteractionState,
+	frame: Layout,
+	lang: Lang,
+) -> Vec<Draw> {
 	components::appearance(ui);
 	let idle = InteractionState::default();
 	let state = if interaction.panel_open() || interaction.modal.is_some() {
@@ -427,9 +466,14 @@ pub(super) fn draw_toolbar(
 	} else {
 		interaction
 	};
-	toolbar_controls(width, interaction.outline_open, lang)
+	let icon_size = if frame.style == WindowLayout::Macos {
+		20.0
+	} else {
+		18.0
+	};
+	toolbar_controls_at(frame, interaction.outline_open, lang)
 		.iter()
-		.flat_map(|b| draw_button(ui, state, b, false))
+		.flat_map(|b| components::draw_icon_button(ui, state, b, icon_size))
 		.collect()
 }
 
