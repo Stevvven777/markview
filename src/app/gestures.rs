@@ -13,6 +13,7 @@ type Point = (f32, f32);
 
 #[derive(Clone, Debug, PartialEq)]
 enum Tap {
+	Caption(super::frame::Caption),
 	Command(Command),
 	Link(String),
 	ClearSelection,
@@ -66,6 +67,7 @@ impl GestureState {
 
 impl<P: super::SendEvent> App<P> {
 	pub(super) fn cancel_gestures(&mut self) {
+		self.frame.pressed = None;
 		if !self.gestures.gesture.contacts.is_empty() {
 			self.interaction.pressed = None;
 		}
@@ -76,6 +78,13 @@ impl<P: super::SendEvent> App<P> {
 	}
 
 	fn touch_tap(&mut self) -> Option<Tap> {
+		let (x, y) = self.interaction.cursor;
+		if let Some(caption) = self.frame_layout().caption_at(x, y) {
+			return Some(Tap::Caption(caption));
+		}
+		if self.interaction.viewer.is_some() {
+			return None;
+		}
 		// An open option list owns the tap the way it owns a press: only its
 		// own exact option rectangles answer, and a tap anywhere else only
 		// dismisses it. The page controls under it and the 44-pixel expansion
@@ -146,7 +155,8 @@ impl<P: super::SendEvent> App<P> {
 	}
 
 	fn touch_surface(&mut self) -> Surface {
-		if self.interaction.modal.is_some() {
+		if self.interaction.modal.is_some() || self.interaction.viewer.is_some()
+		{
 			return Surface::None;
 		}
 		// The open list owns the gesture too: nothing behind it pans, so the
@@ -185,7 +195,8 @@ impl<P: super::SendEvent> App<P> {
 		Surface::Document
 	}
 
-	pub(super) fn handle_touch(&mut self, touch: Touch) {
+	/// Returns whether a completed caption tap requests application exit.
+	pub(super) fn handle_touch(&mut self, touch: Touch) -> bool {
 		let scale = self.dimensions().2;
 		let point = (
 			touch.location.x as f32 / scale,
@@ -195,11 +206,13 @@ impl<P: super::SendEvent> App<P> {
 		if touch.phase != TouchPhase::Started
 			&& !self.gestures.gesture.contacts.contains_key(&id)
 		{
-			return;
+			return false;
 		}
 		self.gestures.mouse_after =
 			Some(Instant::now() + Duration::from_millis(500));
 		self.interaction.cursor = point;
+		self.frame.pressed = None;
+		let mut close = false;
 		if touch.phase == TouchPhase::Started {
 			self.gestures.motion = None;
 			self.gestures.coasting = false;
@@ -218,6 +231,10 @@ impl<P: super::SendEvent> App<P> {
 				surface: self.touch_surface(),
 				tap: self.touch_tap(),
 			};
+			self.frame.pressed = match &capture.tap {
+				Some(Tap::Caption(caption)) => Some(*caption),
+				_ => None,
+			};
 			self.interaction.pressed = match &capture.tap {
 				Some(Tap::Command(command)) => Some(*command),
 				_ => None,
@@ -228,6 +245,7 @@ impl<P: super::SendEvent> App<P> {
 			if self.gestures.gesture.drag.is_none() {
 				self.gestures.motion = None;
 				self.interaction.pressed = None;
+				self.frame.pressed = None;
 			}
 		} else {
 			match self.gestures.gesture.update(id, touch.phase, point) {
@@ -235,6 +253,9 @@ impl<P: super::SendEvent> App<P> {
 					self.interaction.pressed = None;
 					if capture.tap == self.touch_tap() {
 						match capture.tap {
+							Some(Tap::Caption(caption)) => {
+								close = self.activate_caption(caption);
+							}
 							Some(Tap::Command(command)) => self.action(command),
 							Some(Tap::Link(link)) => {
 								self.open_link(&link, false)
@@ -279,6 +300,7 @@ impl<P: super::SendEvent> App<P> {
 		}
 		self.refresh_hover();
 		self.redraw();
+		close
 	}
 
 	/// Pixel scrolling already carries the OS speed and, on macOS, momentum.

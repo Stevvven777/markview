@@ -205,7 +205,7 @@ impl<P: super::SendEvent> App<P> {
 				w.set_cursor(if viewer.grab.is_some() {
 					CursorIcon::Grabbing
 				} else {
-					CursorIcon::Default
+					self.frame_cursor().unwrap_or(CursorIcon::Default)
 				});
 			}
 			return;
