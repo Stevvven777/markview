@@ -28,10 +28,11 @@ at the same level, without `[brackets]`.
 - Add MVaaC instance-local MVSS registration and dynamic selection by ID, with cached parsing and reserved `bundled:` theme IDs.
 - Add configurable text and inline background edges with local-em baseline shifts, shared by reader and PDF typography.
 - Integrate tabs into platform-style window chrome, with a persisted System, macOS, Windows or Linux layout choice and native window movement and resizing.
-- Add connected rounded tabs and an MVSS `tab_style` choice to restore classic underlined tabs without document reflow.
+- Add connected rounded tabs alongside underlined tabs, selectable in general settings without document reflow.
 
 ### Changed
 
+- Move tab style from MVSS to the `tab-style` user setting, defaulting to `underline` (formerly `classic`).
 - Default text layout edges to cap-height/baseline, allowing line heights and page breaks to follow the new typography policy.
 - Balance macOS traffic-light margins and deepen light and builtin tab-strip backgrounds, matching inactive tabs to the strip.
 - Strengthen light-theme hover feedback, unify right-side toolbar and window-button spacing without a separator, and add Linux chevron and diamond controls.

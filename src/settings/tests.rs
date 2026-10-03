@@ -25,6 +25,42 @@ fn external_edits_merge_pending_ui_fields_and_preserve_comments() {
 }
 
 #[test]
+fn tab_style_round_trips_reloads_and_merges_pending_changes() {
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("settings.toml");
+	fs::write(&path, "# Reader\nfont_size = 20\n").unwrap();
+	let (mut store, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	assert_eq!(store.settings().tab_style, TabStyle::Underline);
+	for style in [TabStyle::Connected, TabStyle::Underline] {
+		let mut settings = store.settings();
+		settings.tab_style = style;
+		store.changed(&settings, Some(Setting::TabStyle));
+		fs::write(&path, "# Reader\nfont_size = 24\n").unwrap();
+		store.flush().unwrap();
+		let (loaded, warning) = SettingsStore::load(Some(path.clone()));
+		assert!(warning.is_none());
+		assert_eq!(loaded.settings().tab_style, style);
+		assert_eq!(loaded.settings().font_size, 24.0);
+		assert_eq!(loaded.theme_preference(), None);
+		assert!(fs::read_to_string(&path).unwrap().contains("# Reader"));
+	}
+	fs::write(&path, "tab-style = 'connected'\n").unwrap();
+	assert!(store.reload().unwrap());
+	assert_eq!(store.settings().tab_style, TabStyle::Connected);
+	fs::write(&path, "tab-style = 'unknown'\n").unwrap();
+	assert!(store.reload().is_err());
+	assert_eq!(store.settings().tab_style, TabStyle::Connected);
+	fs::write(&path, "tab-style = 'connected'\n").unwrap();
+	store.changed(&ReaderSettings::default(), None);
+	store.flush().unwrap();
+	assert_eq!(
+		SettingsStore::load(Some(path)).0.settings().tab_style,
+		TabStyle::Underline
+	);
+}
+
+#[test]
 fn window_layout_round_trips_and_merges_without_pinning_the_theme() {
 	let dir = tempfile::tempdir().unwrap();
 	let path = dir.path().join("settings.toml");

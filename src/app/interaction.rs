@@ -119,6 +119,14 @@ impl<P: super::SendEvent> App<P> {
 				self.redraw();
 				return;
 			}
+			Command::TabStyle(style) => {
+				self.preferences.values.tab_style = style;
+				self.setting_changed(Some(Setting::TabStyle));
+				self.close_dropdown();
+				self.refresh_hover();
+				self.redraw();
+				return;
+			}
 			Command::WindowLayout(layout) => {
 				self.preferences.values.window_layout = layout;
 				self.setting_changed(Some(Setting::WindowLayout));

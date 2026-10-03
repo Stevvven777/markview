@@ -29,6 +29,7 @@ pub(crate) enum Command {
 	SearchClose,
 	FocusInput(TextField),
 	WindowLayout(crate::settings::WindowLayout),
+	TabStyle(crate::settings::TabStyle),
 	Open,
 	Smaller,
 	Larger,
@@ -372,6 +373,7 @@ impl Viewer {
 pub(crate) enum DropdownId {
 	Language,
 	WindowLayout,
+	TabStyle,
 	/// One font role's family chooser.
 	Font(crate::settings::FontRole),
 }

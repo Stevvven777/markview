@@ -1,7 +1,8 @@
 use crate::app::tab_strip::{GAP, TabLayout, TabStrip};
 use crate::layout::{Draw, Paint, Rect, TextShaper};
+use crate::settings::TabStyle;
 use crate::state::ReaderTab;
-use markview_core::style::{ColorField as C, Condition, TabStyle};
+use markview_core::style::{ColorField as C, Condition};
 use unicode_segmentation::UnicodeSegmentation;
 
 const LEFT: &[markview_core::scene::IconPath] =
@@ -15,6 +16,7 @@ const ACTIVE_RIGHT: &[markview_core::scene::IconPath] =
 const RADIUS: f32 = 8.0;
 
 pub(in crate::app) struct TabBar<'a> {
+	pub(super) style: TabStyle,
 	pub(super) ui: &'a mut TextShaper,
 	pub(super) strip: &'a TabStrip,
 	pub(super) widths: &'a [(f32, f32)],
@@ -26,7 +28,7 @@ pub(in crate::app) struct TabBar<'a> {
 impl TabBar<'_> {
 	pub(in crate::app) fn layout(&mut self) -> TabLayout {
 		let mut viewport = self.viewport;
-		if self.ui.stylesheet.tab_style() == TabStyle::Classic {
+		if self.style == TabStyle::Underline {
 			viewport.h -= 4.0;
 		}
 		TabLayout::new(viewport, self.widths, self.strip.scroll)
@@ -34,7 +36,7 @@ impl TabBar<'_> {
 
 	pub(super) fn draw_tabs(&mut self) -> Vec<Draw> {
 		let layout = self.layout();
-		let style = self.ui.stylesheet.tab_style();
+		let style = self.style;
 		let old = self.ui.appearance.clone();
 		self.ui.appearance = crate::app::tab_metrics::tab_appearance(self.ui);
 		let mut out = Vec::new();
@@ -61,7 +63,7 @@ impl TabBar<'_> {
 			let active = index == self.active_tab;
 			let fill = if active {
 				match style {
-					TabStyle::Classic => {
+					TabStyle::Underline => {
 						Paint::Styled(Condition::Panel, C::Background)
 					}
 					TabStyle::Connected => Paint::Background,
@@ -75,7 +77,7 @@ impl TabBar<'_> {
 				TabStyle::Connected => {
 					draw_connected(&mut out, rect, fill, active)
 				}
-				TabStyle::Classic => {
+				TabStyle::Underline => {
 					out.push(Draw::Rect(rect, fill));
 					let (line, paint) = if active {
 						(

@@ -396,22 +396,20 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 		(5, 1, 0.0, false, false, "compressed.png"),
 		(30, 1, 25.0, false, false, "overflow.png"),
 		(30, 3, 125.0, true, true, "drag-dark.png"),
-		(3, 1, 0.0, false, false, "classic-normal.png"),
-		(3, 1, 0.0, false, true, "classic-dark.png"),
-		(30, 1, 25.0, false, false, "classic-overflow.png"),
-		(30, 3, 125.0, true, true, "classic-drag-dark.png"),
+		(3, 1, 0.0, false, false, "underline-normal.png"),
+		(3, 1, 0.0, false, true, "underline-dark.png"),
+		(30, 1, 25.0, false, false, "underline-overflow.png"),
+		(30, 3, 125.0, true, true, "underline-drag-dark.png"),
 	] {
-		let classic = filename.starts_with("classic-");
-		let mut sheet =
-			(*markview_core::style::Stylesheet::bundled(dark)).clone();
-		if classic {
-			sheet.merge(&markview_core::style::Stylesheet::parse(
-				include_str!("../../../examples/classic-tabs.mvss.toml"),
-			)?);
-		}
+		let underline = filename.starts_with("underline-");
 		let settings = ReaderSettings {
 			theme: if dark { Theme::Dark } else { Theme::Light },
-			stylesheet: std::sync::Arc::new(sheet),
+			tab_style: if underline {
+				crate::settings::TabStyle::Underline
+			} else {
+				crate::settings::TabStyle::Connected
+			},
+			stylesheet: markview_core::style::Stylesheet::bundled(dark),
 			..Default::default()
 		};
 		renderer.set_stylesheet(settings.stylesheet.clone());
@@ -440,6 +438,7 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 		};
 		let width = if count <= 3 { 800.0 } else { 500.0 };
 		let mut bar = tabs::TabBar {
+			style: settings.tab_style,
 			ui: &mut ui,
 			strip: &strip,
 			widths: &metrics.widths,
@@ -457,7 +456,7 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 			.tabs,
 		};
 		let layout = bar.layout();
-		let padding = if !classic && layout.max_scroll == 0.0 {
+		let padding = if !underline && layout.max_scroll == 0.0 {
 			9.0
 		} else {
 			0.0
@@ -543,7 +542,7 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 		}
 		if count <= 3 {
 			let image = &images[1];
-			if classic {
+			if underline {
 				let accent = settings
 					.stylesheet
 					.paint(Paint::Styled(Condition::Toolbar, C::Accent))
@@ -553,13 +552,13 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 				assert_eq!(
 					image.get_pixel(x, y).0,
 					accent,
-					"classic underline: {filename}"
+					"active tab underline: {filename}"
 				);
 				let y = (38.0 * view.scale) as u32;
 				assert_eq!(
 					image.get_pixel(x, y),
 					images[0].get_pixel(x, y),
-					"classic tab must remain separate from the page: {filename}"
+					"underline tab must remain separate from the page: {filename}"
 				);
 				continue;
 			}

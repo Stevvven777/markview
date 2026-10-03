@@ -433,9 +433,7 @@ impl Chrome<'_> {
 				Paint::Styled(Condition::Toolbar, C::Background),
 			),
 		];
-		if self.ui.stylesheet.tab_style()
-			== markview_core::style::TabStyle::Classic
-		{
+		if self.settings.tab_style == crate::settings::TabStyle::Underline {
 			out.push(Draw::Rect(
 				Rect {
 					x: 0.0,
@@ -788,6 +786,7 @@ impl Chrome<'_> {
 	}
 	pub(super) fn tab_bar(&mut self) -> tabs::TabBar<'_> {
 		tabs::TabBar {
+			style: self.settings.tab_style,
 			ui: self.ui,
 			strip: self.tab_strip,
 			widths: self.tab_widths,

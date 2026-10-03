@@ -257,5 +257,8 @@ panel_refreshing = "更新中…"
 panel_load_failed = "読み込めません：{error}"
 panel_retry = "再試行"
 
+settings_tab_style = "タブスタイル"
+settings_tabs_underline = "下線"
+settings_tabs_connected = "ページ接続"
 settings_window_layout = "ウィンドウ配置"
 section_next_launch = "次回起動時に適用"

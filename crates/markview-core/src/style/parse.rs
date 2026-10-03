@@ -555,7 +555,6 @@ fn validate_field(conditions: ConditionSet, key: &str) -> Result<()> {
 			"border_collapse" => {
 				has(K::Table) && !has(K::Cell) && !has(K::Header)
 			}
-			"tab_style" => has(K::Toolbar),
 			"wrap" => has(K::CodeBlock) && !has(K::Label),
 			"show" => {
 				has(K::Label) || conditions == ConditionSet::of(K::FrontMatter)

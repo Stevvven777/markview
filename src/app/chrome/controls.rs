@@ -7,7 +7,7 @@ use crate::{
 	app::frame::{CONTROL_GAP, Layout},
 	lang::Lang,
 	layout::{Draw, Rect, TextShaper},
-	settings::{ReaderSettings, WindowLayout},
+	settings::{ReaderSettings, TabStyle, WindowLayout},
 	state::{Command, DropdownId, InteractionState, PanelPage, PanelTab},
 };
 pub(super) use components::{draw_button, panel_rect};
@@ -69,6 +69,22 @@ fn rows(settings: &ReaderSettings) -> Vec<Row> {
 			),
 		)
 		.value(format!("{:.2}×", settings.scroll_speed)),
+		Row::new(t.settings_tab_style(), vec![]).menu(
+			DropdownId::TabStyle,
+			choices(
+				&[
+					(
+						t.settings_tabs_underline(),
+						Command::TabStyle(TabStyle::Underline),
+					),
+					(
+						t.settings_tabs_connected(),
+						Command::TabStyle(TabStyle::Connected),
+					),
+				],
+				Some(Command::TabStyle(settings.tab_style)),
+			),
+		),
 		Row::new(t.settings_window_layout(), vec![])
 			.menu(
 				DropdownId::WindowLayout,

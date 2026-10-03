@@ -119,8 +119,11 @@ fn window_layout_dropdown_exposes_all_layouts_and_marks_the_saved_choice() {
 #[test]
 fn panel_exposes_first_line_indent_presets() {
 	let mut shaper = crate::test_support::shaper();
+	let settings = ReaderSettings::default();
+	let scroll = form(&mut shaper, &settings, 0.0, 1200.0, 800.0)
+		.reveal(Command::Indent(0));
 	let buttons =
-		controls(&mut shaper, &ReaderSettings::default(), true, 1200.0, 800.0);
+		form(&mut shaper, &settings, scroll, 1200.0, 800.0).visible_buttons();
 	for (em, label) in [(0, "Off"), (1, "1 em"), (2, "2 em"), (3, "3 em")] {
 		let button = buttons
 			.iter()

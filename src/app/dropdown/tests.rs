@@ -230,6 +230,44 @@ fn an_open_option_is_a_button_the_pointer_can_hit() {
 }
 
 #[test]
+fn tab_style_commits_from_keyboard_and_pointer_without_document_reflow() {
+	use crate::settings::TabStyle;
+	let mut app = app_with_panel();
+	app.readers.session.path = Some("/tmp/tabs.md".into());
+	let options = app.options();
+	let sheet = app.preferences.values.stylesheet.clone();
+	let frame = app.frame.layout;
+	let scroll = app.tab_strip.scroll;
+	assert_eq!(app.preferences.values.tab_style, TabStyle::Underline);
+	app.action(Command::ToggleDropdown(DropdownId::TabStyle, 0));
+	app.key_pressed(&Key::Named(NamedKey::ArrowDown));
+	assert_eq!(
+		highlighted(&mut app),
+		Command::TabStyle(TabStyle::Connected)
+	);
+	app.key_pressed(&Key::Named(NamedKey::Enter));
+	assert_eq!(app.preferences.values.tab_style, TabStyle::Connected);
+	assert!(app.interaction.dropdown.is_none());
+	assert_eq!(
+		app.interaction.focus,
+		Some(Command::ToggleDropdown(DropdownId::TabStyle, 1))
+	);
+	app.action(Command::ToggleDropdown(DropdownId::TabStyle, 1));
+	let at = option_centre(&mut app, Command::TabStyle(TabStyle::Underline));
+	click(&mut app, at.0, at.1);
+	assert_eq!(app.preferences.values.tab_style, TabStyle::Underline);
+	assert!(app.interaction.dropdown.is_none());
+	assert!(app.readers.session.requested_options.is_none());
+	assert_eq!(app.options(), options);
+	assert!(std::sync::Arc::ptr_eq(
+		&app.preferences.values.stylesheet,
+		&sheet
+	));
+	assert_eq!(app.frame.layout, frame);
+	assert_eq!(app.tab_strip.scroll, scroll);
+}
+
+#[test]
 fn window_layout_commits_from_keyboard_and_pointer_for_next_launch() {
 	use crate::settings::WindowLayout;
 	let mut app = app_with_panel();

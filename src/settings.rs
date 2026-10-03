@@ -37,9 +37,21 @@ impl WindowLayout {
 	}
 }
 
+/// The reader tab silhouette, independent of document layout and themes.
+#[derive(
+	Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum TabStyle {
+	#[default]
+	Underline,
+	Connected,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReaderSettings {
 	pub window_layout: WindowLayout,
+	pub tab_style: TabStyle,
 	pub theme: Theme,
 	pub style: Option<Vec<String>>,
 	/// The interface language; absent means "follow the system", so a locale
@@ -69,6 +81,7 @@ impl Default for ReaderSettings {
 	fn default() -> Self {
 		Self {
 			window_layout: WindowLayout::System,
+			tab_style: TabStyle::default(),
 			theme: Theme::default(),
 			style: None,
 			lang: None,
@@ -137,6 +150,7 @@ impl FontRole {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
 	WindowLayout,
+	TabStyle,
 	Theme,
 	FontSize,
 	Width,
@@ -329,6 +343,7 @@ impl ReaderSettings {
 	pub fn copy_field(&mut self, other: &Self, field: Setting) {
 		match field {
 			Setting::WindowLayout => self.window_layout = other.window_layout,
+			Setting::TabStyle => self.tab_style = other.tab_style,
 			Setting::Theme => {
 				self.theme = other.theme;
 				self.style = other.style.clone();

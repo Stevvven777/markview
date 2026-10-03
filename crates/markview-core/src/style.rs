@@ -18,8 +18,8 @@ pub use types::{
 	ConditionSet, Decoration, Font, FontArchive, FontDefType, FontDefinition,
 	FontFamily, FontFile, FontSource, MAX_CHAIN, MarkerShape, MarkerShapes,
 	MermaidStyle, Padding, PageEdgeStyle, PageStyle, Rule,
-	SYNTHETIC_ITALIC_ANGLE_DEG, SvgStyle, TabStyle, TextAlign, TextEdge,
-	TextMetric, Variant, chain_of, chain_push, chain_set, parse_paper_size,
+	SYNTHETIC_ITALIC_ANGLE_DEG, SvgStyle, TextAlign, TextEdge, TextMetric,
+	Variant, chain_of, chain_push, chain_set, parse_paper_size,
 };
 
 /// A supported stylesheet destination.
@@ -99,12 +99,6 @@ impl Stylesheet {
 			out.overlay(&self.rules[key]);
 		});
 		out
-	}
-	/// The toolbar's cascaded tab style; older themes keep connected tabs.
-	pub fn tab_style(&self) -> TabStyle {
-		self.element_rule(Condition::Toolbar.chain(), Condition::Toolbar)
-			.tab_style
-			.unwrap_or_default()
 	}
 	/// Visit the rule keys that own an element's box, in application order.
 	/// Allocation-free: this runs once per box on every rendered frame.

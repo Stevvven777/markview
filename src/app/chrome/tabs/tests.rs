@@ -54,6 +54,7 @@ fn live_tab_style_switch_preserves_widths_scroll_and_hit_targets() {
 		..Default::default()
 	};
 	let mut bar = TabBar {
+		style: TabStyle::default(),
 		ui: &mut ui,
 		strip: &strip,
 		widths: &widths,
@@ -71,12 +72,10 @@ fn live_tab_style_switch_preserves_widths_scroll_and_hit_targets() {
 		.tabs,
 	};
 	let original = bar.layout();
-	for (style, height) in [("classic", 32.0), ("connected", 36.0)] {
-		let mut sheet = (*bar.ui.stylesheet).clone();
-		sheet.merge(&markview_core::style::Stylesheet::parse(&format!(
-			"format_version=2\nversion=1\n[[rule]]\nwhen=['ui','toolbar']\ntab_style='{style}'"
-		)).unwrap());
-		bar.ui.set_stylesheet(std::sync::Arc::new(sheet));
+	for (style, height) in
+		[(TabStyle::Underline, 32.0), (TabStyle::Connected, 36.0)]
+	{
+		bar.style = style;
 		let layout = bar.layout();
 		assert_eq!(layout.scroll, original.scroll);
 		for (rect, before) in layout.rects.iter().zip(&original.rects) {
@@ -95,7 +94,7 @@ fn live_tab_style_switch_preserves_widths_scroll_and_hit_targets() {
 				Draw::Rect(_, Paint::Styled(Condition::Toolbar, C::Accent))
 			)
 		});
-		assert_eq!(underline, style == "classic");
+		assert_eq!(underline, style == TabStyle::Underline);
 	}
 	metrics.sync(bar.ui, &tabs);
 	assert_eq!(metrics.widths, widths);
@@ -126,6 +125,7 @@ fn measured_tabs_fit_minimum_window_and_styles_invalidate_widths() {
 	let old = metrics.widths.clone();
 	let strip = TabStrip::default();
 	let mut bar = TabBar {
+		style: TabStyle::default(),
 		ui: &mut ui,
 		strip: &strip,
 		widths: &metrics.widths,

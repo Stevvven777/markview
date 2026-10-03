@@ -219,6 +219,8 @@ pixels and the type to 18.
   as UTF-8, a BOM included.
 - **Tabs behave.** Drag a tab to reorder it, close one with its × button or the
   middle mouse button, and scroll an overflowing strip with the wheel.
+  General settings offer Underline (default) and Connected tab styles, applied
+  immediately. `tab-style` in `settings.toml` accepts `"underline"` or `"connected"`.
 - **Window layout follows your preference.** General settings offer a dropdown
   with System, macOS, Windows and Linux layouts, applied next launch.
   The `window-layout` setting in `settings.toml` accepts `"system"`, `"macos"`,

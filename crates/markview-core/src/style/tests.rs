@@ -52,33 +52,12 @@ fn text_edges_validate_inherit_and_invalidate_layout() {
 }
 
 #[test]
-fn tab_styles_cascade_strictly_without_reflowing_documents() {
-	let mut sheet = (*Stylesheet::bundled(false)).clone();
-	let layout = sheet.layout_key();
-	assert_eq!(sheet.tab_style(), TabStyle::Connected);
-	let classic = Stylesheet::parse(include_str!(
-		"../../../../examples/classic-tabs.mvss.toml"
-	))
-	.unwrap();
-	assert_eq!(classic.targets, vec![StyleTarget::Ui]);
-	sheet.merge(&classic);
-	assert_eq!(sheet.tab_style(), TabStyle::Classic);
-	// A color overlay leaves the selected silhouette in place.
-	sheet.merge(&Stylesheet::parse("format_version=2\nversion=1\n[[rule]]\nwhen=['ui','toolbar']\nbackground='#123456'").unwrap());
-	assert_eq!(sheet.tab_style(), TabStyle::Classic);
-	sheet.merge(&Stylesheet::parse("format_version=2\nversion=1\n[[rule]]\nwhen=['ui','toolbar']\ntab_style='connected'").unwrap());
-	assert_eq!(sheet.tab_style(), TabStyle::Connected);
-	assert_eq!(sheet.layout_key(), layout);
-	for (conditions, style) in [
-		("'body'", "classic"),
-		("'ui'", "classic"),
-		("'ui','button'", "classic"),
-		("'toolbar'", "unknown"),
-	] {
-		assert!(Stylesheet::parse(&format!("format_version=2\nversion=1\n[[rule]]\nwhen=[{conditions}]\ntab_style='{style}'")).is_err());
+fn tab_style_is_a_reader_preference_not_an_mvss_property() {
+	for style in ["underline", "connected", "classic"] {
+		assert!(Stylesheet::parse(&format!(
+			"format_version=2\nversion=1\n[[rule]]\nwhen=['ui','toolbar']\ntab_style='{style}'"
+		)).is_err());
 	}
-	let compound = Stylesheet::parse("format_version=2\nversion=1\n[[rule]]\nwhen=['toolbar']\ntab_style='classic'\n[[rule]]\nwhen=['ui','toolbar']\ntab_style='connected'").unwrap();
-	assert_eq!(compound.tab_style(), TabStyle::Connected);
 }
 
 #[test]

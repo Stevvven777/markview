@@ -766,15 +766,6 @@ impl TextEdge {
 	}
 }
 
-/// The reader tab silhouette, independent of document layout.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TabStyle {
-	Classic,
-	#[default]
-	Connected,
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
@@ -839,7 +830,6 @@ pub struct Rule {
 	pub active_background: Option<Color>,
 	pub disabled_color: Option<Color>,
 	pub focus_color: Option<Color>,
-	pub tab_style: Option<TabStyle>,
 	pub theme: Option<String>,
 }
 impl Rule {
@@ -932,7 +922,6 @@ impl Rule {
 			active_background,
 			disabled_color,
 			focus_color,
-			tab_style,
 			theme
 		);
 	}
