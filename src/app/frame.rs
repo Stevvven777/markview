@@ -341,26 +341,34 @@ impl<P: super::SendEvent> App<P> {
 			return false;
 		};
 		let (x, y) = self.interaction.cursor;
-		if self.frame_layout().caption_at(x, y) == Some(caption) {
-			if caption == Caption::Close {
-				event_loop.exit();
-			} else if let Some(w) = &self.window {
-				match caption {
-					Caption::Minimize => w.set_minimized(true),
-					Caption::Expand if cfg!(target_os = "macos") => {
-						w.set_fullscreen(
-							w.fullscreen()
-								.is_none()
-								.then_some(Fullscreen::Borderless(None)),
-						);
-					}
-					Caption::Expand => w.set_maximized(!w.is_maximized()),
-					Caption::Close => unreachable!(),
-				}
-			}
+		if self.frame_layout().caption_at(x, y) == Some(caption)
+			&& self.activate_caption(caption)
+		{
+			event_loop.exit();
 		}
 		self.redraw();
 		true
+	}
+	/// Returns whether the caption action requests application exit.
+	pub(super) fn activate_caption(&mut self, caption: Caption) -> bool {
+		if caption == Caption::Close {
+			return true;
+		}
+		if let Some(w) = &self.window {
+			match caption {
+				Caption::Minimize => w.set_minimized(true),
+				Caption::Expand if cfg!(target_os = "macos") => {
+					w.set_fullscreen(
+						w.fullscreen()
+							.is_none()
+							.then_some(Fullscreen::Borderless(None)),
+					);
+				}
+				Caption::Expand => w.set_maximized(!w.is_maximized()),
+				Caption::Close => unreachable!(),
+			}
+		}
+		false
 	}
 	pub(super) fn frame_cursor(&self) -> Option<CursorIcon> {
 		self.frame_layout()

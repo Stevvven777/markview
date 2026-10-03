@@ -96,6 +96,146 @@ fn viewer_image(app: &mut App<StubProxy>) -> (Rect, u64) {
 		.expect("the viewer image is drawn")
 }
 
+#[derive(Default)]
+struct CaptionLoop(std::cell::Cell<usize>);
+impl Loop for CaptionLoop {
+	fn exit(&self) {
+		self.0.set(self.0.get() + 1);
+	}
+}
+
+#[test]
+fn window_controls_remain_above_the_image_viewer() {
+	use crate::{app::frame::Caption, settings::WindowLayout};
+	for style in [
+		WindowLayout::Macos,
+		WindowLayout::Windows,
+		WindowLayout::Linux,
+	] {
+		let mut app = image_reader("![](a.png)", "a.png", false);
+		app.frame.layout = style;
+		open(&mut app);
+		let layout = app.frame_layout();
+		let content = (400., 300.);
+		for (caption, rect) in layout.captions() {
+			let at = (rect.x + rect.w / 2., rect.y + rect.h / 2.);
+			if layout.caption_at(at.0, at.1).is_none() {
+				continue;
+			}
+			move_to(&mut app, at);
+			assert_eq!(app.frame.hover, Some(caption));
+			assert_eq!(
+				app.frame_cursor(),
+				Some(winit::window::CursorIcon::Pointer)
+			);
+			button(&mut app, MouseButton::Left, ElementState::Pressed);
+			assert_eq!(app.frame.pressed, Some(caption));
+			assert!(app.interaction.viewer.as_ref().unwrap().grab.is_none());
+			move_to(&mut app, content);
+			button(&mut app, MouseButton::Left, ElementState::Released);
+			assert!(app.frame.pressed.is_none());
+			assert!(app.interaction.viewer.is_some());
+		}
+		let at = (layout.drag.x + layout.drag.w / 2., 20.);
+		move_to(&mut app, at);
+		button(&mut app, MouseButton::Left, ElementState::Pressed);
+		assert!(
+			app.interaction
+				.viewer
+				.as_ref()
+				.unwrap()
+				.pressed_at
+				.is_none()
+		);
+		button(&mut app, MouseButton::Left, ElementState::Released);
+		assert!(app.interaction.viewer.is_some());
+		let (_, close) = layout
+			.captions()
+			.into_iter()
+			.find(|(c, _)| *c == Caption::Close)
+			.unwrap();
+		move_to(&mut app, (close.x + close.w / 2., close.y + close.h / 2.));
+		if layout.native_buttons {
+			continue;
+		}
+		button(&mut app, MouseButton::Left, ElementState::Pressed);
+		let exit = CaptionLoop::default();
+		app.handle_window_event(
+			&exit,
+			WindowId::dummy(),
+			WindowEvent::MouseInput {
+				device_id: DeviceId::dummy(),
+				button: MouseButton::Left,
+				state: ElementState::Released,
+			},
+		);
+		assert_eq!(exit.0.get(), 1);
+		assert!(app.interaction.viewer.is_some());
+	}
+}
+
+#[test]
+fn caption_taps_do_not_reach_covered_controls_or_activate_after_a_drag() {
+	use crate::{app::frame::Caption, settings::WindowLayout};
+	use winit::event::Touch;
+	for style in [
+		WindowLayout::Macos,
+		WindowLayout::Windows,
+		WindowLayout::Linux,
+	] {
+		for viewer in [false, true] {
+			let mut app = image_reader("![](a.png)", "a.png", false);
+			app.frame.layout = style;
+			if viewer {
+				open(&mut app);
+			}
+			let exit = CaptionLoop::default();
+			let send = |app: &mut App<StubProxy>, phase, at: (f32, f32)| {
+				app.handle_window_event(
+					&exit,
+					WindowId::dummy(),
+					WindowEvent::Touch(Touch {
+						device_id: DeviceId::dummy(),
+						id: 1,
+						phase,
+						force: None,
+						location: PhysicalPosition::new(
+							f64::from(at.0),
+							f64::from(at.1),
+						),
+					}),
+				);
+			};
+			let layout = app.frame_layout();
+			if layout.native_buttons {
+				continue;
+			}
+			for (caption, rect) in layout.captions() {
+				let at = (rect.x + rect.w / 2., rect.y + rect.h / 2.);
+				let before = exit.0.get();
+				send(&mut app, TouchPhase::Started, at);
+				assert_eq!(app.frame.pressed, Some(caption));
+				send(&mut app, TouchPhase::Cancelled, at);
+				assert!(app.frame.pressed.is_none());
+				assert_eq!(exit.0.get(), before);
+				send(&mut app, TouchPhase::Started, at);
+				send(&mut app, TouchPhase::Moved, (at.0, at.1 + 40.));
+				send(&mut app, TouchPhase::Ended, at);
+				assert_eq!(exit.0.get(), before);
+				send(&mut app, TouchPhase::Started, at);
+				send(&mut app, TouchPhase::Ended, at);
+				assert_eq!(
+					exit.0.get(),
+					before + usize::from(caption == Caption::Close)
+				);
+				assert!(!app.interaction.panel_open());
+				assert_eq!(app.interaction.viewer.is_some(), viewer);
+				assert!(app.frame.pressed.is_none());
+			}
+		}
+	}
+}
+
 #[test]
 fn loaded_images_without_selectable_text_open_on_click() {
 	let code = "graph TD\nA-->B\n";

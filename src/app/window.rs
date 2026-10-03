@@ -35,7 +35,7 @@ impl<P: super::SendEvent> App<P> {
 		_: WindowId,
 		event: WindowEvent,
 	) {
-		if self.viewer_event(&event) {
+		if self.viewer_event(event_loop, &event) {
 			return;
 		}
 		if self.interaction.modal.is_none()
@@ -73,7 +73,11 @@ impl<P: super::SendEvent> App<P> {
 			return;
 		}
 		match event {
-			WindowEvent::Touch(touch) => self.handle_touch(touch),
+			WindowEvent::Touch(touch) => {
+				if self.handle_touch(touch) {
+					event_loop.exit();
+				}
+			}
 			WindowEvent::PinchGesture { .. } => {
 				// TODO: implement viewport zoom without changing the document layout.
 			}
@@ -703,13 +707,57 @@ impl<P: super::SendEvent> App<P> {
 			event_loop.exit();
 		}
 	}
-	/// The topmost viewer captures input before search and page controls.
-	fn viewer_event(&mut self, event: &WindowEvent) -> bool {
+	/// Window controls remain above the viewer; page controls stay covered.
+	fn viewer_event(
+		&mut self,
+		event_loop: &impl Loop,
+		event: &WindowEvent,
+	) -> bool {
 		if self.interaction.viewer.is_none() {
 			return false;
 		}
+		match event {
+			WindowEvent::Touch(_) => return false,
+			WindowEvent::CursorMoved { .. }
+			| WindowEvent::CursorLeft { .. }
+			| WindowEvent::MouseInput { .. }
+				if self.gestures.suppress_mouse() =>
+			{
+				return true;
+			}
+			WindowEvent::MouseInput {
+				button: MouseButton::Left,
+				state: ElementState::Pressed,
+				..
+			} if self.frame_press() => return true,
+			WindowEvent::MouseInput {
+				button: MouseButton::Left,
+				state: ElementState::Released,
+				..
+			} if self.frame_release(event_loop) => return true,
+			WindowEvent::MouseInput {
+				button: MouseButton::Right,
+				state: ElementState::Pressed,
+				..
+			} if self.frame_layout().draggable(
+				self.interaction.cursor.0,
+				self.interaction.cursor.1,
+			) =>
+			{
+				return false;
+			}
+			_ => {}
+		}
 		self.refresh_viewer();
 		let (width, height, scale) = self.dimensions();
+		if let WindowEvent::CursorMoved { position, .. } = event {
+			self.frame.hover = self.frame_layout().caption_at(
+				position.x as f32 / scale,
+				position.y as f32 / scale,
+			);
+		} else if matches!(event, WindowEvent::CursorLeft { .. }) {
+			self.frame.hover = None;
+		}
 		let viewer = self.interaction.viewer.as_mut().unwrap();
 		match event {
 			WindowEvent::CursorMoved { position, .. } => {
@@ -757,7 +805,6 @@ impl<P: super::SendEvent> App<P> {
 			}
 			WindowEvent::MouseInput { .. }
 			| WindowEvent::Ime(_)
-			| WindowEvent::Touch(_)
 			| WindowEvent::PinchGesture { .. }
 			| WindowEvent::PanGesture { .. }
 			| WindowEvent::RotationGesture { .. }
