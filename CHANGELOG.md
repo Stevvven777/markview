@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Pin Comrak to upstream revision `4127507`, which includes all of Markview's merged parser fixes, in the reader and fuzz harness.
 - Expand MVaaC demo fonts with variable Latin weights and italics plus Chinese medium/semibold faces, using npmmirror with a jsDelivr fallback.
 - Use version-pinned CDN WOFF2 faces for MVaaC demo Latin and Simplified Chinese text, and persist font downloads across reloads with Cache Storage.
 - Remove the MVaaC demo’s redundant reading hint.

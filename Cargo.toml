@@ -204,10 +204,10 @@ name = "markview"
 path = "src/main.rs"
 
 # Temporary until a release carries the source-position fixes for fences,
-# multiline inlines, front matter, tables (upstream PR #862), trailing blank
+# multiline inlines, front matter, tables, trailing blank
 # lines in indented code blocks, and CRLF paragraphs before tables.
 [patch.crates-io]
-comrak = { git = "https://github.com/szdytom/comrak", rev = "2364fa73ae207ac46e842f372229315db212b44a" }
+comrak = { git = "https://github.com/kivikakk/comrak", rev = "4127507465ee41e0a6298fd4b217b685a499af79" }
 # Our fork adds `LayoutConfig::metrics`, which lets Markview measure diagram
 # labels with the faces its own stylesheet selected (upstream PR #151). The rev
 # below is the change based on v0.3.1, the release Markview's diagrams are

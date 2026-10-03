@@ -35,4 +35,4 @@ ratex-types = "=0.1.14"
 
 # Mirror the workspace patch so the harness fuzzes the same comrak the app does.
 [patch.crates-io]
-comrak = { git = "https://github.com/szdytom/comrak", rev = "2364fa73ae207ac46e842f372229315db212b44a" }
+comrak = { git = "https://github.com/kivikakk/comrak", rev = "4127507465ee41e0a6298fd4b217b685a499af79" }
