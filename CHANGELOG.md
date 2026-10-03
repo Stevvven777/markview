@@ -45,6 +45,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Reload images when returning to cached tabs, including after closing the active tab.
 - Keep custom window controls interactive above the image viewer and support caption-button taps without triggering covered controls.
 - Make unused tab-strip space draggable on Windows and Wayland, sharing tab bounds with native Windows caption hit testing.
 - Disable unused Adwaita window decorations so Wayland does not parse desktop button layouts or warn about `icon` buttons.

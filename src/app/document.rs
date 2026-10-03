@@ -77,8 +77,10 @@ impl<P: super::SendEvent> App<P> {
 		self.error = false;
 		self.status.clear();
 		self.status_until = None;
+		// The worker releases inactive pixels, so image tabs must resume loading.
 		if self.readers.session.document.is_none()
 			|| self.readers.session.layout_pending
+			|| !self.readers.session.snapshot.images.entries.is_empty()
 			|| self.readers.session.requested_options.as_ref()
 				!= Some(&self.options())
 		{
@@ -137,6 +139,7 @@ impl<P: super::SendEvent> App<P> {
 			self.observe_document();
 			if self.readers.session.document.is_none()
 				|| self.readers.session.layout_pending
+				|| !self.readers.session.snapshot.images.entries.is_empty()
 				|| self.readers.session.requested_options.as_ref()
 					!= Some(&self.options())
 			{
@@ -146,3 +149,6 @@ impl<P: super::SendEvent> App<P> {
 		self.redraw();
 	}
 }
+
+#[cfg(test)]
+mod tests;
