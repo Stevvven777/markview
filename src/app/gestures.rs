@@ -38,6 +38,14 @@ struct Capture {
 	tap: Option<Tap>,
 }
 
+/// Who authors a pixel stream's release inertia: the OS already put it in the
+/// deltas, or the reader synthesizes a coast of its own when the stream ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Inertia {
+	Native,
+	Synthesized,
+}
+
 #[derive(Default)]
 pub(super) struct GestureState {
 	gesture: Recognizer<Capture>,
@@ -200,6 +208,7 @@ impl<P: super::SendEvent> App<P> {
 		&mut self,
 		touch: Touch,
 	) -> Option<super::frame::Caption> {
+		log::debug!("touch {:?} id {}", touch.phase, touch.id);
 		let scale = self.dimensions().2;
 		let point = (
 			touch.location.x as f32 / scale,
@@ -306,12 +315,16 @@ impl<P: super::SendEvent> App<P> {
 		caption_action
 	}
 
-	/// Pixel scrolling already carries the OS speed and, on macOS, momentum.
+	/// Pixel scrolling already carries the OS speed. A stream with
+	/// [`Inertia::Native`] also carries the OS's own momentum, so its deltas
+	/// are the whole motion: none are eased, none are loaned a lead, and none
+	/// are followed by a coast of the reader's own when the stream ends.
 	pub(super) fn trackpad_scroll(
 		&mut self,
 		dx: f32,
 		dy: f32,
 		phase: TouchPhase,
+		inertia: Inertia,
 	) {
 		let now = Instant::now();
 		if phase == TouchPhase::Cancelled {
@@ -329,7 +342,9 @@ impl<P: super::SendEvent> App<P> {
 			self.interaction.wheel = Default::default();
 			let surface = self.touch_surface();
 			self.gestures.trackpad = Some((surface, now));
-			self.gestures.motion = Some((surface, Motion::new(now)));
+			if inertia == Inertia::Synthesized {
+				self.gestures.motion = Some((surface, Motion::new(now)));
+			}
 		}
 		let surface = self
 			.gestures
@@ -365,7 +380,8 @@ impl<P: super::SendEvent> App<P> {
 			motion.sample(delta, now);
 		}
 		self.pan_gesture(surface, delta);
-		if phase == TouchPhase::Ended && !cfg!(target_os = "macos") {
+		// A native stream keeps no `Motion`, so its release coasts nothing.
+		if phase == TouchPhase::Ended {
 			self.gestures.coasting = self
 				.gestures
 				.motion
@@ -373,6 +389,30 @@ impl<P: super::SendEvent> App<P> {
 				.is_some_and(|(_, motion)| motion.release(now));
 		}
 		self.redraw();
+	}
+
+	/// Whether a pointer-driven interaction — a scrollbar drag, a text
+	/// selection drag, a viewer grab — owns the input right now. Direct
+	/// Manipulation's stream yields to it: two inputs must never fight over
+	/// the offset.
+	pub(super) fn pointer_owns_input(&self) -> bool {
+		self.interaction.scrollbar.is_some()
+			|| (self.interaction.pointer_down.is_some()
+				&& self.interaction.dragged)
+			|| self
+				.interaction
+				.viewer
+				.as_ref()
+				.is_some_and(|viewer| viewer.grab.is_some())
+	}
+
+	/// Abandons the viewport: the OS cancels its running gesture and the
+	/// stream's bookkeeping ends, so no stale delta can speak for a view
+	/// that focus loss, a resize, a reload or a tab switch replaced.
+	pub(super) fn abandon_dm(&mut self) {
+		if let Some(dm) = self.dm.as_mut() {
+			dm.abandon();
+		}
 	}
 
 	pub(super) fn advance_gestures(&mut self, now: Instant) {

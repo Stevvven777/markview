@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Pan a Windows precision touchpad through Direct Manipulation, so the finger's contact and the OS's own inertia move the page as one motion; `MARKVIEW_NO_DM` keeps the wheel paths. The pan yields to scrollbar, selection and viewer drags, and focus loss, resize, reload, a panel opening or a tab switch abandon it mid-glide.
+- Document the Direct Manipulation touchpad pan in the architecture document, and add the design's terms, **contact** and **native inertia**, to the scrolling glossary.
 - Add MVaaC instance-local MVSS registration and dynamic selection by ID, with cached parsing and reserved `bundled:` theme IDs.
 - Add configurable text and inline background edges with local-em baseline shifts, shared by reader and PDF typography.
 - Integrate tabs into platform-style window chrome, with a persisted System, macOS, Windows or Linux layout choice and native window movement and resizing.
@@ -36,13 +38,21 @@ at the same level, without `[brackets]`.
 - Choose window layout from a dropdown, matching the language selector.
 - Share caption input routing across viewer and reader modes, keep layout queries free of native-window mutations, and cache tab-strip extents.
 
+### Changed
+
+- Batch a pan's sub-pixel travel until it adds up to a whole physical pixel, and flush the residue on release: the OS inertia tail stops redrawing the page for motion the display cannot show, while the page still lands exactly where the viewport does.
+
 ### Fixed
 
 - Keep custom window controls interactive above the image viewer and support caption-button taps without triggering covered controls.
 - Make unused tab-strip space draggable on Windows and Wayland, sharing tab bounds with native Windows caption hit testing.
 - Disable unused Adwaita window decorations so Wayland does not parse desktop button layouts or warn about `icon` buttons.
 - Show the pointer cursor over custom window buttons, including Windows maximize-hover Snap Layouts, while preserving drag and resize cursors.
-
+- Pin the page while the OS inertia coasts over a touchpad contact that never left the pad, so a hand that rests on the glass holds the page still.
+- Count a touchpad pan's first and last frames in full: the travel the first content update already carries pans instead of grounding the gesture, and the final update reaches the seam even when it shares the release's batch.
+- Keep an open image viewer out of the touchpad pan: its contacts stay on the wheel paths, which zoom the viewer, instead of scrolling the page behind it.
+- Claim the touchpad pointer through the window's pointer hit-test, the only message that can begin a touchpad gesture; the touch events winit delivers never carry the pad's contacts.
+- Keep the viewport's own ready-reset cycle out of the fold, so releasing a pan parks the content without throwing the page back by everything the hand had travelled.
 - Invalidate MVaaC cached geometry when stylesheet selection changes font definitions, including when restoring the default theme.
 - Raise inline code beside Chinese text by 0.08em (#6), join mixed-font code backgrounds, and keep vertical background padding independent of line height.
 - Keep the same external spacing between Chinese prose and inline code containing Chinese or Latin text.

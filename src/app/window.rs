@@ -104,6 +104,13 @@ impl<P: super::SendEvent> App<P> {
 			WindowEvent::Resized(PhysicalSize { width, height }) => {
 				self.cancel_gestures();
 				self.tab_strip.reveal_active = true;
+				let scale = self.dimensions().2;
+				if let Some(dm) = self.dm.as_mut() {
+					// The layout changes under the gesture, so it is
+					// abandoned and the offset clamps with the reflow.
+					dm.abandon();
+					dm.resize(width, height, scale);
+				}
 				if let Some(r) = &mut self.renderer {
 					r.resize(width, height);
 				}
@@ -121,6 +128,13 @@ impl<P: super::SendEvent> App<P> {
 				self.cancel_gestures();
 				self.tab_strip.reveal_active = true;
 				info!("Display scale (DPR) changed: {scale_factor:.3}");
+				if let (Some(dm), Some(window)) =
+					(self.dm.as_mut(), self.window.as_ref())
+				{
+					dm.abandon();
+					let size = window.inner_size();
+					dm.resize(size.width, size.height, scale_factor as f32);
+				}
 				if let Some(r) = &mut self.renderer {
 					r.clear_raster_cache();
 				}
@@ -451,6 +465,9 @@ impl<P: super::SendEvent> App<P> {
 				self.frame.pressed = None;
 				self.frame.last_click = None;
 				self.cancel_gestures();
+				// The gesture dies with the focus: the OS cancels it, and
+				// the page is still when the window is revisited.
+				self.abandon_dm();
 				self.interaction.focus_visible = false;
 				self.tab_strip.cancel_drag();
 				self.interaction.pressed = None;
@@ -526,7 +543,15 @@ impl<P: super::SendEvent> App<P> {
 					{
 						// TODO: implement viewport zoom without changing the document layout.
 					} else {
-						self.trackpad_scroll(dx, dy, phase);
+						// macOS delivers its momentum inside the pixel deltas;
+						// every other desktop's pixel stream asks the reader
+						// to coast on its own when the stream ends.
+						let inertia = if cfg!(target_os = "macos") {
+							super::gestures::Inertia::Native
+						} else {
+							super::gestures::Inertia::Synthesized
+						};
+						self.trackpad_scroll(dx, dy, phase, inertia);
 					}
 					return;
 				}
