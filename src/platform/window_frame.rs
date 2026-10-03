@@ -28,6 +28,7 @@ const SUBCLASS: usize = 0x4d56;
 
 struct State {
 	style: WindowLayout,
+	tab_end: Cell<Option<f32>>,
 	fullscreen: Cell<bool>,
 	hover: Cell<bool>,
 	pressed: Cell<bool>,
@@ -53,6 +54,7 @@ impl NativeFrame {
 		let hwnd = handle.hwnd.get() as HWND;
 		let state = Box::new(State {
 			style,
+			tab_end: Cell::new(None),
 			fullscreen: Cell::new(false),
 			hover: Cell::new(false),
 			pressed: Cell::new(false),
@@ -71,6 +73,9 @@ impl NativeFrame {
 	}
 	pub fn set_fullscreen(&self, fullscreen: bool) {
 		self.state.fullscreen.set(fullscreen);
+	}
+	pub fn set_tab_end(&self, end: f32) {
+		self.state.tab_end.set(Some(end));
 	}
 	pub fn feedback(&self) -> (Option<Caption>, Option<Caption>) {
 		(
@@ -111,14 +116,17 @@ impl State {
 				IsZoomed(hwnd) != 0,
 			)
 		};
-		Layout::new(
+		let layout = Layout::new(
 			self.style,
 			false,
 			(rect.right - rect.left) as f32 / scale,
 			(rect.bottom - rect.top) as f32 / scale,
 			self.fullscreen.get(),
 			maximized,
-		)
+		);
+		self.tab_end
+			.get()
+			.map_or(layout, |end| layout.with_tab_end(end))
 	}
 	fn point(&self, hwnd: HWND, mut point: POINT) -> (f32, f32) {
 		// SAFETY: `point` is writable and `hwnd` is alive during its callback.
@@ -253,4 +261,63 @@ unsafe extern "system" fn subclass(
 	// SAFETY: Forward the original callback arguments to the next hook;
 	// `winit` continues to own sizing, activation and all unrelated input.
 	unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+	use winit::{
+		dpi::LogicalSize, event_loop::EventLoop,
+		platform::windows::EventLoopBuilderExtWindows,
+	};
+
+	#[test]
+	#[ignore = "requires a Windows desktop"]
+	#[allow(deprecated)]
+	fn native_caption_hit_testing_tracks_empty_space_and_tab_changes() {
+		let event_loop =
+			EventLoop::builder().with_any_thread(true).build().unwrap();
+		let window = event_loop
+			.create_window(
+				Window::default_attributes()
+					.with_visible(false)
+					.with_decorations(false)
+					.with_inner_size(LogicalSize::new(800, 500)),
+			)
+			.unwrap();
+		let native =
+			NativeFrame::new(&window, WindowLayout::Windows, || {}).unwrap();
+		let hit = |x: f32, y: f32| {
+			// SAFETY: The hidden window and its hook are alive on this thread;
+			// coordinate conversion and hit testing retain no Rust pointers.
+			unsafe {
+				let scale = GetDpiForWindow(native.hwnd).max(96) as f32 / 96.0;
+				let mut point = POINT {
+					x: (x * scale) as i32,
+					y: (y * scale) as i32,
+				};
+				ClientToScreen(native.hwnd, &mut point);
+				let coordinates = ((point.y as u16 as usize) << 16
+					| point.x as u16 as usize) as LPARAM;
+				SendMessageW(native.hwnd, WM_NCHITTEST, 0, coordinates) as u32
+			}
+		};
+		let layout = native.state.layout(native.hwnd);
+		native.set_tab_end(layout.tabs.x);
+		assert_eq!(hit(200.0, 20.0), HTCAPTION);
+		native.set_tab_end(180.0);
+		assert_eq!(hit(80.0, 20.0), HTCLIENT);
+		assert_eq!(hit(200.0, 20.0), HTCAPTION);
+		assert_eq!(hit(layout.toolbar_x + 16.0, 20.0), HTCLIENT);
+		let (_, expand) = layout.captions()[1];
+		assert_eq!(hit(expand.x + expand.w / 2.0, 20.0), HTMAXBUTTON);
+		assert_eq!(hit(1.0, 1.0), HTTOPLEFT);
+		native.set_tab_end(layout.toolbar_x + 100.0);
+		assert_eq!(hit(200.0, 20.0), HTCLIENT);
+		assert_eq!(hit(layout.drag.x + 10.0, 20.0), HTCAPTION);
+		native.set_fullscreen(true);
+		assert_eq!(hit(layout.drag.x + 10.0, 20.0), HTCLIENT);
+		assert_eq!(hit(1.0, 1.0), HTCLIENT);
+	}
 }
