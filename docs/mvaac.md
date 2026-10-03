@@ -215,6 +215,51 @@ cannot shrink an already built WASM. Decode and invalid-font failures identify
 the input index. [Codec measurements and coverage](mvaac-font-measurements.md)
 record the tested formats, dependency licenses and measured overhead.
 
+## Stylesheet registration and selection
+
+Register custom MVSS after mounting a viewer, then select themes by ID. The host
+owns downloads and request caching, so a theme catalog can fetch only the themes
+the user selects. Registration parses and validates a sheet once and caches it
+in that viewer's engine; switching back reuses its parsed rules.
+
+```ts
+const response = await fetch("/themes/paper.mvss.toml");
+if (!response.ok) throw new Error(`Theme download failed: ${response.status}`);
+viewer.registerStylesheet("paper", await response.text());
+viewer.setStylesheets(["paper"]);
+viewer.setStylesheets(["bundled:dark"]);
+viewer.setStylesheets(["paper"]);
+```
+
+`registerStylesheet(id, source)` accepts a nonblank, case-sensitive host ID and
+UTF-8 TOML text. `meta.name` remains optional display metadata, independent of
+the ID. Registered sheets must support the `ui` destination; omitted `targets`
+retain MVSS's default of both destinations. Registration does not change the
+current appearance. Successful re-registration replaces that ID's cached rules;
+the replacement is applied on the next selection. A failed registration throws
+and retains the previous cache entry and appearance.
+
+`setStylesheets(ids)` replaces the complete selection, highest priority first.
+For example, `["site-overrides", "bundled:light"]` places custom rules above the
+light theme. Every nonempty selection is layered above the shared `builtin`
+fallback; light/dark is not an implicit parent. All IDs are resolved before
+application, so an unknown or incompatible ID throws without changing the
+current selection or interrupting pending layout. Successful selection starts
+budgeted reflow; the viewer preserves its source reading position.
+
+Bundled reader IDs are `bundled:light`, `bundled:dark`, `bundled:celadon`,
+`bundled:blueprint`, `bundled:rosewood` and `bundled:8-bit`. The `bundled:` prefix
+is reserved and cannot be registered or overwritten by hosts. PDF-only themes
+and the hidden `builtin` are not selectable reader themes.
+
+`setStylesheets([])` restores the current `MarkviewOptions.theme` default.
+`setOptions` retains an explicit style selection while changing reading
+parameters; `theme` applies again after clearing that selection. Each viewer has
+its own registry, released by `destroy()`. The low-level `Markview` exposes the
+same registration and selection methods, including through
+`CanvasReader.markview`. Fonts remain explicit `FontSet` assets: registering or
+selecting a stylesheet never downloads fonts.
+
 ## Images and host transport
 
 `browserResources({ baseUrl, requestInit, onError })` from `@markview/resources`

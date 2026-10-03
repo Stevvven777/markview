@@ -9,6 +9,7 @@ use crate::{
 	images::Images,
 	selection::{Pointer, Reading},
 	state::{Published, SelectionLength},
+	stylesheets::Stylesheets,
 };
 use markview_core::{
 	document::{Document, parse},
@@ -133,6 +134,8 @@ pub async fn create(
 		canvas,
 		renderer,
 		engine: LayoutEngine::new(),
+		stylesheets: Stylesheets::default(),
+		published_stylesheet: options.stylesheet.clone(),
 		options,
 		config,
 		published: Published::default(),
@@ -177,6 +180,9 @@ pub struct Markview {
 	engine: LayoutEngine,
 	config: Config,
 	options: LayoutOptions,
+	stylesheets: Stylesheets,
+	/// The stylesheet backing the layout currently on screen.
+	published_stylesheet: Arc<Stylesheet>,
 	published: Published,
 	pointer: Pointer,
 	document: Arc<Document>,
@@ -475,6 +481,7 @@ impl Markview {
 		let source = document.source.clone();
 		let pass = pending.layout.pass_id();
 		self.published_document = document.clone();
+		self.published_stylesheet = self.options.stylesheet.clone();
 		self.published.accept(
 			pending.layout.into_snapshot(),
 			source,
@@ -515,6 +522,8 @@ impl Markview {
 			held_overflow: self.overflow_drag.map(|(b, o, _)| (b, o)),
 		};
 		self.renderer.set_pointer(self.cursor);
+		self.renderer
+			.set_stylesheet(self.published_stylesheet.clone());
 		let status = self
 			.renderer
 			.acquire()
@@ -673,7 +682,7 @@ impl Markview {
 		let point = Point::new(x as f32, y as f32);
 		if let Some((b, o, bar)) = self.context().overflow_bar_at(
 			point,
-			self.options.stylesheet.overflow_scrollbar_metrics(),
+			self.published_stylesheet.overflow_scrollbar_metrics(),
 		) {
 			let grab = if bar.on_thumb(point.x, point.y) {
 				bar.grab(point.x, point.y)
@@ -711,7 +720,7 @@ impl Markview {
 			if let Some(bar) = self.context().overflow_bar(
 				b,
 				o,
-				self.options.stylesheet.overflow_scrollbar_metrics(),
+				self.published_stylesheet.overflow_scrollbar_metrics(),
 			) {
 				self.horizontal
 					.insert((b, o), bar.scroll_for(x as f32, y as f32, grab));
@@ -898,7 +907,11 @@ impl Markview {
 	) -> Result<(), JsValue> {
 		let config = Config::parse(config_json.as_deref())?;
 		let details_open = self.options.details_open.clone();
-		self.options = config.options(self.options.fonts.clone());
+		let mut options = config.options(self.options.fonts.clone());
+		if self.stylesheets.explicit {
+			options.stylesheet = self.options.stylesheet.clone();
+		}
+		self.options = options;
 		self.options.details_open = details_open;
 		self.horizontal.clear();
 		self.overflow_drag = None;
@@ -913,6 +926,33 @@ impl Markview {
 		self.relayout();
 		self.layout_ms = laid.elapsed().as_secs_f64() * 1000.0;
 		self.clamp_scroll();
+		Ok(())
+	}
+
+	/// Parses and caches host MVSS without changing the active appearance.
+	#[wasm_bindgen(js_name = registerStylesheet)]
+	pub fn register_stylesheet(
+		&mut self,
+		id: &str,
+		source: &str,
+	) -> Result<(), JsValue> {
+		self.stylesheets
+			.register(id, source)
+			.map_err(|error| fail(format!("{error:#}")))
+	}
+
+	/// Resolves a complete selection before starting budgeted reflow.
+	#[wasm_bindgen(js_name = setStylesheets)]
+	pub fn set_stylesheets(&mut self, ids: Vec<String>) -> Result<(), JsValue> {
+		let default =
+			Stylesheet::bundled(self.config.theme == ThemeConfig::Dark);
+		let sheet = self.stylesheets.select(&ids, default).map_err(fail)?;
+		// `layout_key` excludes font definitions.
+		if self.options.stylesheet.fontdefs != sheet.fontdefs {
+			self.engine.clear_document_cache();
+		}
+		self.options.stylesheet = sheet;
+		self.reflow();
 		Ok(())
 	}
 }
@@ -937,7 +977,7 @@ impl Markview {
 			Point::new(x, y),
 			self.pointer.drag().is_some() || self.overflow_drag.is_some(),
 			self.images_clickable,
-			self.options.stylesheet.overflow_scrollbar_metrics(),
+			self.published_stylesheet.overflow_scrollbar_metrics(),
 		)
 	}
 	fn follow_pointer(&mut self) {
@@ -1188,12 +1228,14 @@ impl Markview {
 			pointer,
 			document,
 			published_document,
+			published_stylesheet,
 			images,
 			..
 		} = self;
 		let snapshot =
 			engine.layout_with_images(document, options, &images.snapshot);
 		*published_document = document.clone();
+		*published_stylesheet = options.stylesheet.clone();
 		// A full layout is not a prefix of anything, so no pass may extend it.
 		published.accept(snapshot, document.source.clone(), None, pointer);
 	}
@@ -1218,6 +1260,7 @@ impl Markview {
 			let source = document.source.clone();
 			let pass = pending.layout.pass_id();
 			self.published_document = document.clone();
+			self.published_stylesheet = self.options.stylesheet.clone();
 			self.published.accept(
 				pending.layout.into_snapshot(),
 				source,
@@ -1255,6 +1298,7 @@ impl Markview {
 					&mut self.pointer,
 				);
 				self.published_document = document.clone();
+				self.published_stylesheet = self.options.stylesheet.clone();
 				self.selection_chars.forget();
 			}
 			self.pending = Some(pending);

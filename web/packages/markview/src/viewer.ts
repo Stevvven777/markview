@@ -180,6 +180,16 @@ export class Viewer {
 		this.#live();
 		this.reader.markview.setOptions(options);
 	}
+	/** Parses and caches MVSS without changing the current appearance. */
+	registerStylesheet(id: string, source: string): void {
+		this.#live();
+		this.reader.markview.registerStylesheet(id, source);
+	}
+	/** Replaces the selected style list, preserving the source reading position. */
+	setStylesheets(ids: readonly string[]): void {
+		this.#live();
+		this.reader.markview.setStylesheets(ids);
+	}
 	/** Lets a host gesture on another pane cancel a deferred navigation. */
 	cancelNavigation(): void {
 		this.#live();

@@ -243,6 +243,17 @@ export class Markview {
 		handle.setFonts(faces);
 	}
 
+	/** Parses and caches an instance-owned MVSS; registration does not apply it. */
+	registerStylesheet(id: string, source: string): void {
+		this.#live().registerStylesheet(id, source);
+	}
+
+	/** Selects registered/bundled IDs, highest priority first; empty restores `theme`. */
+	setStylesheets(ids: readonly string[]): void {
+		this.#live().setStylesheets(Array.from(ids));
+		this.#supersede();
+	}
+
 	/** Releases the wasm handle. Later calls throw. */
 	destroy(): void {
 		const handle = this.#live();

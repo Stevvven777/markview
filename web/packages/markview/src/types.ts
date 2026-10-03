@@ -7,7 +7,7 @@ export interface MarkviewOptions {
 	width?: number;
 	/** Base body size, logical px. (18) */
 	fontSize?: number;
-	/** Paper theme. ("light") */
+	/** Default paper theme, used when no explicit stylesheet selection is active. ("light") */
 	theme?: "light" | "dark";
 	/** Justify body lines. (true) */
 	justify?: boolean;

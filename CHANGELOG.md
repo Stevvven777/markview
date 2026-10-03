@@ -21,6 +21,14 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Add MVaaC instance-local MVSS registration and dynamic selection by ID, with cached parsing and reserved `bundled:` theme IDs.
+
+### Fixed
+
+- Invalidate MVaaC cached geometry when stylesheet selection changes font definitions, including when restoring the default theme.
+
 ## 0.1.11 - 2026-10-03
 
 **Highlights**:
