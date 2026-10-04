@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 2
+version = 3
 
 [meta]
 name = "Celadon"
@@ -95,6 +95,7 @@ background = "#E7EFE6"
 muted = "#526F61"
 accent = "#276A50"
 border_color = "#B9CEC0"
+warning = "#805B18"
 error = "#A23B4A"
 shadow = "#00000000"
 scrim = "#10192370"

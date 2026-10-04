@@ -591,7 +591,7 @@ fn validate_field(conditions: ConditionSet, key: &str) -> Result<()> {
 			"border_color" => {
 				conditions.container() || conditions.ui() || has(K::TaskMarker)
 			}
-			"muted" | "error" => conditions.ui(),
+			"muted" | "warning" | "error" => conditions.ui(),
 			// A task marker's accent fills a completed checkbox.
 			"accent" => conditions.ui() || has(K::TaskMarker),
 			"shadow" | "scrim" => has(K::Ui),

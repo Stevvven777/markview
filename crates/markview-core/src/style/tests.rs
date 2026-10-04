@@ -1591,3 +1591,34 @@ fn font_minimum_weight_is_validated_and_preserves_inherited_bold() {
 		400
 	);
 }
+
+#[test]
+fn warning_colors_cascade_to_panels_and_stay_out_of_document_rules() {
+	let mut sheet = (*Stylesheet::bundled(false)).clone();
+	let layout = sheet.layout_key();
+	sheet.merge(&Stylesheet::parse(
+		"format_version=2\nversion=1\n[[rule]]\nwhen=['ui']\nwarning='#765432'\n[[rule]]\nwhen=['ui','panel']\nwarning='#987654'",
+	).unwrap());
+	assert_eq!(
+		sheet.color(Condition::Ui, ColorField::Warning),
+		Color(0x765432ff).rgba()
+	);
+	assert_eq!(
+		sheet.paint(Paint::Styled(Condition::Panel, ColorField::Warning)),
+		Color(0x987654ff).rgba()
+	);
+	assert_eq!(sheet.layout_key(), layout);
+	assert!(
+		Stylesheet::parse(
+			"format_version=2\nversion=1\n[[rule]]\nwhen=['body']\nwarning='#765432'"
+		)
+		.is_err()
+	);
+	for dark in [false, true] {
+		assert_eq!(
+			Stylesheet::bundled(dark)
+				.color(Condition::Panel, ColorField::Warning)[3],
+			1.
+		);
+	}
+}

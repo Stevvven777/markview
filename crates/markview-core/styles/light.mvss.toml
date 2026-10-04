@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 5
+version = 6
 
 [meta]
 name = "Light"
@@ -104,6 +104,7 @@ background = "#EEF2F7"
 muted = "#526175"
 accent = "#275D91"
 border_color = "#D5DDE7"
+warning = "#8A5800"
 error = "#AB303D"
 shadow = "#00000000"
 scrim = "#10192370"

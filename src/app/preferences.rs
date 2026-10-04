@@ -5,7 +5,8 @@ use crate::{
 	layout::TextShaper,
 	render::Theme,
 	settings::{
-		ExportSettings, ReaderSettings, Setting, SettingsStore, SettingsWarning,
+		ExportSettings, ReaderSettings, Setting, SettingsStore,
+		SettingsWarning, WindowLayout,
 	},
 };
 use std::{
@@ -53,6 +54,7 @@ pub(super) struct Preferences {
 	pub(super) style_warning: Option<StyleWarning>,
 	pub(super) settings_warning: Option<SettingsWarning>,
 	save_at: Option<Instant>,
+	launch_window_layout: WindowLayout,
 }
 impl Preferences {
 	pub(super) fn new(args: &LaunchOptions, ui: &mut TextShaper) -> Self {
@@ -143,6 +145,7 @@ impl Preferences {
 		);
 		let export = settings_store.export();
 		Self {
+			launch_window_layout: settings.window_layout,
 			values: settings,
 			export,
 			store: settings_store,
@@ -219,6 +222,9 @@ impl Preferences {
 		None
 	}
 
+	pub(super) fn restart_pending(&self) -> bool {
+		self.values.window_layout != self.launch_window_layout
+	}
 	pub(super) fn path(&self) -> Option<&Path> {
 		self.store.path()
 	}

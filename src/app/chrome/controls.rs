@@ -94,32 +94,24 @@ fn rows(settings: &ReaderSettings, phone: bool) -> Vec<Row> {
 	}
 	if !cfg!(target_os = "android") {
 		rows.extend([
-			Row::new(t.settings_window_layout(), vec![])
-				.menu(
-					DropdownId::WindowLayout,
-					choices(
-						&[
-							(
-								t.settings_language_system(),
-								Command::WindowLayout(WindowLayout::System),
-							),
-							(
-								"macOS",
-								Command::WindowLayout(WindowLayout::Macos),
-							),
-							(
-								"Windows",
-								Command::WindowLayout(WindowLayout::Windows),
-							),
-							(
-								"Linux",
-								Command::WindowLayout(WindowLayout::Linux),
-							),
-						],
-						Some(Command::WindowLayout(settings.window_layout)),
-					),
-				)
-				.section(t.section_next_launch()),
+			Row::new(t.settings_window_layout(), vec![]).menu(
+				DropdownId::WindowLayout,
+				choices(
+					&[
+						(
+							t.settings_language_system(),
+							Command::WindowLayout(WindowLayout::System),
+						),
+						("macOS", Command::WindowLayout(WindowLayout::Macos)),
+						(
+							"Windows",
+							Command::WindowLayout(WindowLayout::Windows),
+						),
+						("Linux", Command::WindowLayout(WindowLayout::Linux)),
+					],
+					Some(Command::WindowLayout(settings.window_layout)),
+				),
+			),
 			Row::new(
 				t.settings_single_instance(),
 				vec![action(
@@ -466,11 +458,12 @@ pub(super) fn draw_controls(
 	ui: &mut TextShaper,
 	settings: &ReaderSettings,
 	interaction: &InteractionState,
-	width: f32,
-	height: f32,
+	size: (f32, f32),
 	backend: Option<wgpu::Backend>,
 	phone: bool,
+	restart_pending: bool,
 ) -> Vec<Draw> {
+	let (width, height) = size;
 	if interaction.panel_open() {
 		let t = settings.lang();
 		let form = settings_form(
@@ -494,10 +487,16 @@ pub(super) fn draw_controls(
 					|| interaction.panel == PanelPage::Settings(PanelTab::About)
 				{
 					""
+				} else if restart_pending {
+					t.panel_restart()
 				} else {
 					t.panel_saved()
 				},
-				C::Muted,
+				if restart_pending {
+					C::Warning
+				} else {
+					C::Muted
+				},
 				(width, height),
 			);
 		out.extend(super::components::draw_settings_header(

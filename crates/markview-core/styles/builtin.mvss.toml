@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui", "pdf"]
-version = 6
+version = 7
 
 [[fontdef]]
 id = "serif"
@@ -836,6 +836,7 @@ font = [{ family = "sans-serif" }, { family = "sans-serif[cjk]", min_weight = 50
 muted = "#626C79"
 accent = "#2856D8"
 border_color = "#D5DAE1"
+warning = "#8A5800"
 error = "#AB303D"
 shadow = "#00000000"
 scrim = "#10192352"

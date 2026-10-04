@@ -190,6 +190,7 @@ pub(super) struct Chrome<'a> {
 	pub(super) tab_strip: &'a super::tab_strip::TabStrip,
 	pub(super) tab_widths: &'a [(f32, f32)],
 	pub(super) settings: &'a ReaderSettings,
+	pub(super) restart_pending: bool,
 	/// The fonts the reader shapes with, which the family choosers describe.
 	pub(super) font_config: &'a FontConfig,
 	/// The export panel's own settings, drawn but never applied to the reader.
@@ -698,10 +699,10 @@ impl Chrome<'_> {
 				self.ui,
 				self.settings,
 				self.interaction,
-				width,
-				height,
+				(width, height),
 				self.backend,
 				self.tab_strip.phone,
+				self.restart_pending,
 			));
 		}
 		self.draw_resource_feedback(&mut out);

@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 1
+version = 2
 
 [meta]
 name = "8-bit"
@@ -179,6 +179,7 @@ background = "#050C08"
 muted = "#7EBA87"
 accent = "#70FF80"
 border_color = "#387A49"
+warning = "#FFD080"
 error = "#FFD080"
 shadow = "#00000000"
 scrim = "#020805B8"

@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 3
+version = 4
 
 [meta]
 name = "Blueprint"
@@ -133,6 +133,7 @@ background = "#12243C"
 muted = "#A1B9D4"
 accent = "#85D8EC"
 border_color = "#426080"
+warning = "#F3CE7A"
 error = "#FFB2BB"
 shadow = "#00000000"
 scrim = "#10192370"

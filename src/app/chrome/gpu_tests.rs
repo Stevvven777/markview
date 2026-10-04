@@ -14,21 +14,64 @@ use super::*;
 #[test]
 #[ignore = "requires a GPU; writes artifacts/refactor-ui.png"]
 fn settings_and_selection_frame() -> Result<()> {
-	for (width, height, theme, panel_open, filename) in [
-		(800.0, 600.0, Theme::Light, true, "refactor-ui.png"),
-		(800.0, 600.0, Theme::Dark, true, "settings-dark.png"),
-		(500.0, 300.0, Theme::Light, true, "settings-compact.png"),
-		(800.0, 600.0, Theme::Light, false, "reader-chrome.png"),
+	for (width, height, theme, panel_open, restart_pending, filename) in [
+		(800.0, 600.0, Theme::Light, true, false, "refactor-ui.png"),
+		(800.0, 600.0, Theme::Dark, true, false, "settings-dark.png"),
+		(
+			500.0,
+			300.0,
+			Theme::Light,
+			true,
+			false,
+			"settings-compact.png",
+		),
+		(
+			800.0,
+			600.0,
+			Theme::Light,
+			false,
+			false,
+			"reader-chrome.png",
+		),
 		(
 			500.0,
 			300.0,
 			Theme::Dark,
 			false,
+			false,
 			"reader-chrome-compact.png",
+		),
+		(
+			800.0,
+			600.0,
+			Theme::Light,
+			true,
+			true,
+			"settings-restart-light.png",
+		),
+		(
+			800.0,
+			600.0,
+			Theme::Dark,
+			true,
+			true,
+			"settings-restart-dark.png",
+		),
+		(
+			500.0,
+			600.0,
+			Theme::Light,
+			true,
+			true,
+			"settings-restart-narrow.png",
 		),
 	] {
 		let settings = ReaderSettings {
 			theme,
+			stylesheet: markview_core::style::Stylesheet::bundled(
+				theme == Theme::Dark,
+			),
+			lang: restart_pending.then_some(Lang::ZhHans),
 			..Default::default()
 		};
 		let document = document::parse(
@@ -88,16 +131,23 @@ fn settings_and_selection_frame() -> Result<()> {
 			(width, height),
 			Lang::En,
 		));
+		let mut ui = if restart_pending {
+			TextShaper::with_fonts(Default::default())
+		} else {
+			crate::test_support::shaper()
+		};
+		ui.set_stylesheet(settings.stylesheet.clone());
 		overlay.extend(draw_controls(
-			&mut crate::test_support::shaper(),
+			&mut ui,
 			&settings,
 			&interaction,
-			width,
-			height,
+			(width, height),
 			None,
 			false,
+			restart_pending,
 		));
 		let mut renderer = pollster::block_on(Renderer::new(None))?;
+		renderer.set_stylesheet(settings.stylesheet.clone());
 		let horizontal = HashMap::new();
 		let view = View {
 			hovered_link: None,
@@ -137,9 +187,9 @@ fn settings_and_selection_frame() -> Result<()> {
 				&mut crate::test_support::shaper(),
 				&settings,
 				&about,
-				width,
-				height,
+				(width, height),
 				Some(renderer.backend),
+				false,
 				false,
 			);
 			let submission = renderer.render(
@@ -483,9 +533,9 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 			&mut ui,
 			&settings,
 			&InteractionState::default(),
-			width,
-			100.0,
+			(width, 100.0),
 			None,
+			false,
 			false,
 		);
 		let horizontal = HashMap::new();
@@ -664,9 +714,9 @@ fn icons_keep_their_optical_centre_at_fractional_dpi() -> Result<()> {
 			&mut ui,
 			&settings,
 			&InteractionState::default(),
-			width,
-			HEIGHT,
+			(width, HEIGHT),
 			None,
+			false,
 			false,
 		);
 		let target = renderer.offscreen(view.width, view.height);
@@ -972,6 +1022,7 @@ fn previewing_recedes_the_styles_and_fonts_pages() {
 					tab_strip: &strip,
 					tab_widths: &metrics.widths,
 					settings: &settings,
+					restart_pending: false,
 					font_config: &font_config,
 					export: &export,
 					interaction: &interaction,
@@ -1128,6 +1179,7 @@ fn the_fonts_page_draws_its_open_option_list() {
 		input_draws: Vec::new(),
 		tab_widths: &metrics.widths,
 		settings: &settings,
+		restart_pending: false,
 		font_config: &font_config,
 		export: &export,
 		interaction: &interaction,
@@ -1228,6 +1280,7 @@ fn dismissed_pages_stop_drawing_and_answering_pointers() {
 			tab_strip: &strip,
 			tab_widths: &metrics.widths,
 			settings: &settings,
+			restart_pending: false,
 			font_config: &font_config,
 			export: &export,
 			interaction: &interaction,
@@ -1633,6 +1686,7 @@ fn redesigned_chrome_frames() -> Result<()> {
 						tab_strip: &strip,
 						tab_widths: &metrics.widths,
 						settings: &settings,
+						restart_pending: false,
 						font_config: &fonts,
 						export: &export,
 						interaction: &interaction,

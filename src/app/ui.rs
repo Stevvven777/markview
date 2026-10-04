@@ -65,6 +65,7 @@ impl<P: super::SendEvent> App<P> {
 			active_tab: self.readers.active(),
 			tab_strip: &self.tab_strip,
 			tab_widths: &self.tab_metrics.widths,
+			restart_pending: self.preferences.restart_pending(),
 			settings: &self.preferences.values,
 			font_config: &self.fonts_config,
 			export: &self.preferences.export,

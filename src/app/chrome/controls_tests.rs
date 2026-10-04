@@ -328,9 +328,9 @@ fn the_toolbar_and_panel_close_buttons_carry_icons() {
 			panel: PanelPage::Settings(PanelTab::Generic),
 			..Default::default()
 		},
-		1200.0,
-		800.0,
+		(1200.0, 800.0),
 		None,
+		false,
 		false,
 	) {
 		if matches!(draw, Draw::Icon { .. }) {
@@ -421,9 +421,9 @@ fn preview_keeps_controls_reachable_and_exit_icon_opaque() {
 			settings_preview: true,
 			..Default::default()
 		},
-		1200.0,
-		800.0,
+		(1200.0, 800.0),
 		None,
+		false,
 		false,
 	);
 	let Draw::Rect(_, paint) = draws[0] else {
@@ -575,9 +575,9 @@ fn about_tab_keeps_navigation_and_scrolls_on_short_windows() {
 			&mut ui,
 			&settings,
 			&interaction,
-			width,
-			height,
+			(width, height),
 			None,
+			false,
 			false,
 		);
 		let icon = draws
@@ -689,4 +689,24 @@ fn single_instance_control_reflects_the_saved_choice() {
 			.unwrap();
 		assert_eq!(button.active, enabled);
 	}
+}
+
+#[test]
+fn launch_options_belong_to_the_interface_section() {
+	let settings = ReaderSettings::default();
+	let mut section = None;
+	let mut found = 0;
+	for row in rows(&settings, false) {
+		section = row.section.or(section);
+		if [
+			settings.lang().settings_window_layout(),
+			settings.lang().settings_single_instance(),
+		]
+		.contains(&row.label.as_str())
+		{
+			assert_eq!(section, Some(settings.lang().section_interface()));
+			found += 1;
+		}
+	}
+	assert_eq!(found, if cfg!(target_os = "android") { 0 } else { 2 });
 }

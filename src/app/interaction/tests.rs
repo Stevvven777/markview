@@ -865,3 +865,80 @@ fn phone_drawer_switches_and_closes_shared_tabs_and_hides_tab_style() {
 	assert_eq!(app.preferences.values.tab_style, TabStyle::Connected);
 	assert_eq!(app.tab_layout().rects.len(), 29);
 }
+
+#[test]
+fn only_window_layout_changes_replace_the_saved_hint_until_reverted() {
+	use crate::layout::{Draw, Paint};
+	use crate::settings::WindowLayout;
+	use markview_core::style::{ColorField, Condition};
+
+	let mut app = App::new(
+		crate::cli::LaunchOptions {
+			mode: Mode::Smoke,
+			options: crate::test_support::options(),
+			..Default::default()
+		},
+		StubProxy,
+	);
+	let initial = app.preferences.values.window_layout;
+	let changed = if initial == WindowLayout::Linux {
+		WindowLayout::Windows
+	} else {
+		WindowLayout::Linux
+	};
+	app.action(Command::Settings);
+	assert!(!app.chrome().restart_pending);
+	app.action(Command::SingleInstance);
+	assert!(!app.chrome().restart_pending);
+	app.action(Command::SingleInstance);
+	assert!(!app.chrome().restart_pending);
+	app.action(Command::ScrollSpeed(1));
+	assert!(!app.chrome().restart_pending);
+	app.action(Command::WindowLayout(initial));
+	assert!(!app.chrome().restart_pending);
+	app.action(Command::WindowLayout(changed));
+	app.action(Command::Language(Some(crate::lang::Lang::ZhHans)));
+	assert!(app.preferences.flush());
+	assert!(app.chrome().restart_pending);
+	let draws = app.overlay();
+	let warning_ids: Vec<_> = draws
+		.iter()
+		.filter_map(|draw| match draw {
+			Draw::Glyph(g)
+				if g.paint
+					== Paint::Styled(Condition::Panel, ColorField::Warning) =>
+			{
+				Some(g.id)
+			}
+			_ => None,
+		})
+		.collect();
+	let expected: Vec<_> = app
+		.ui
+		.label(
+			"部分选项可能需重启应用才会生效",
+			12.,
+			0.,
+			0.,
+			Paint::Styled(Condition::Panel, ColorField::Warning),
+		)
+		.into_iter()
+		.filter_map(|draw| match draw {
+			Draw::Glyph(g) => Some(g.id),
+			_ => None,
+		})
+		.collect();
+	assert!(!warning_ids.is_empty());
+	assert_eq!(warning_ids, expected);
+	app.action(Command::SingleInstance);
+	assert!(app.chrome().restart_pending);
+	app.action(Command::Settings);
+	app.action(Command::Settings);
+	assert!(app.chrome().restart_pending);
+	app.action(Command::WindowLayout(initial));
+	assert!(!app.chrome().restart_pending);
+	app.action(Command::SingleInstance);
+	assert!(!app.chrome().restart_pending);
+	assert!(!app.overlay().iter().any(|draw| matches!(draw,
+		Draw::Glyph(g) if g.paint == Paint::Styled(Condition::Panel, ColorField::Warning))));
+}

@@ -214,7 +214,7 @@ A document may open with `---` fenced YAML front matter. It is drawn as a collap
 
 `page` accepts only `background`. The furniture conditions accept the text fields, so a page number can be smaller or greyer than the header text beside it.
 
-Special properties include `theme` on `["code_block"]` alone (`theme = "none"` disables syntax colors and uses the code block text color), scrollbar colors and thicknesses on `["scrollbar"]`, `muted`/`accent`/`error`/`shadow`/`scrim` on `["ui"]`, `accent` on `["task_marker"]`, and `hover_background`/`active_background`/`disabled_color`/`focus_color` on `["ui", "button"]`. UI properties control colors and typography; the tab silhouette is a user setting.
+Special properties include `theme` on `["code_block"]` alone (`theme = "none"` disables syntax colors and uses the code block text color), scrollbar colors and thicknesses on `["scrollbar"]`, `muted`/`accent`/`warning`/`error`/`shadow`/`scrim` on `["ui"]`, `accent` on `["task_marker"]`, and `hover_background`/`active_background`/`disabled_color`/`focus_color` on `["ui", "button"]`. `warning` colors the settings hint when launch-dependent options differ from their values at startup. UI properties control colors and typography; the tab silhouette is a user setting.
 
 ### Reader tab style
 

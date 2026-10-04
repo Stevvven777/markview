@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 3
+version = 4
 
 [meta]
 name = "Rosewood"
@@ -133,6 +133,7 @@ background = "#291F29"
 muted = "#C5A9BA"
 accent = "#E8ADC2"
 border_color = "#654C60"
+warning = "#F1C27B"
 error = "#FFB39F"
 shadow = "#00000000"
 scrim = "#10192370"
