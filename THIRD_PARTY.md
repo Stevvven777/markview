@@ -32,6 +32,7 @@ source and original license texts are available in Cargo's registry packages.
 | wuff / brotli-decompressor | Optional Web WOFF/WOFF2 decoding | MIT / BSD-3-Clause OR MIT |
 | CodeMirror | Web editor state, input and Markdown editing | MIT |
 | usvg | Compile-time parsing of the SVG icon sources | Apache-2.0 OR MIT |
+| ttf-parser | OpenType glyph outlines for SVG and Mermaid text | Apache-2.0 OR MIT |
 | Lucide | Geometry of the `open`, `close`, `minus` and `plus` icons in `assets/ui` | ISC |
 
 KaTeX mathematical fonts are embedded by `ratex-katex-fonts`. Their SIL Open
@@ -43,6 +44,8 @@ with this repository. Unit tests shape with the pinned Noto subsets under
 `licenses/Noto-OFL.txt`. The WOFF/WOFF2 and collection test fixtures under
 `crates/markview-web/tests/fonts` derive from those same Noto subsets. The Lucide icon geometry under `assets/ui` is ISC
 licensed; its license is reproduced in `licenses/Lucide-ISC.txt`.
+The Roboto Flex subset under `tests/fixtures/fonts` is test data; its SIL Open
+Font License is reproduced in `licenses/RobotoFlex-OFL.txt`.
 
 Before packaging a release, include notices for the complete dependency tree,
 not only this architectural summary. `cargo metadata --locked` records that

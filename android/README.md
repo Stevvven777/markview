@@ -226,6 +226,8 @@ GPU PNG export, and repeated Activity destruction/recreation in the same process
 Use `--lifecycle-only` to run just the Activity checks, including Android
 **Don't keep activities**. Both devices can run without an emulator window by
 adding `-no-window` to the emulator command.
+Use `--mermaid-only` to verify all three diagram labels have visible pixels in
+light and dark styles, including Android's variable Roboto Flex font.
 Reports and screenshots are written to `artifacts/android/phone/` and
 `artifacts/android/tablet/` (or the corresponding `*-boundary/` directories).
 

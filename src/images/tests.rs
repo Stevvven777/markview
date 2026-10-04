@@ -390,6 +390,43 @@ fn a_generic_family_still_draws_in_a_diagram() {
 }
 
 #[test]
+fn android_variable_font_draws_mermaid_labels() {
+	// Roboto Flex glyphs have more than 32 variation tuples. Counting only
+	// the diagram's shapes would pass even when every label was missing.
+	let config = FontConfig {
+		ignore_system_fonts: true,
+		directories: vec![
+			Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fonts"),
+		],
+		..Default::default()
+	};
+	let sheet = Stylesheet::parse(
+		"format_version=2\nversion=1\n\
+		 [svg.generic_font_family]\nsans-serif=['Roboto Flex']\n\
+		 [mermaid]\ntheme='dark'\nprimary_text_color='#ff0000'",
+	)
+	.unwrap();
+	let doc = crate::document::parse(
+		"```mermaid\nflowchart LR\n Markdown --> Layout --> GPU\n```\n",
+	);
+	let mut images = Images::with_cache_and_fonts(true, None, config.clone());
+	images.prepare(&doc, Path::new("note.md"), 1, false, &sheet, &config);
+	images.wait();
+	let (src, info) = images.snapshot.entries.iter().next().unwrap();
+	assert!(info.error.is_none(), "{info:?}");
+	let pixels = images.snapshot.decoded();
+	assert!(
+		pixels[src]
+			.rgba
+			.as_chunks::<4>()
+			.0
+			.iter()
+			.any(|p| p[0] > 200 && p[1] < 50 && p[2] < 50 && p[3] > 200),
+		"the diagram's red labels have no ink"
+	);
+}
+
+#[test]
 fn a_new_font_configuration_reaches_the_diagrams() {
 	let initial = FontConfig {
 		ignore_system_fonts: true,

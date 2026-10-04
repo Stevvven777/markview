@@ -26,11 +26,12 @@ public class Smoke extends Instrumentation {
     private String expectedLayout;
     private boolean layoutOnly;
     private boolean lifecycleOnly;
+    private boolean mermaidOnly;
     private boolean phone;
     private int portraitRotation;
     private final StringBuilder results = new StringBuilder();
     private interface Check { boolean matches(JSONObject state) throws Exception; }
-    @Override public void onCreate(Bundle args) { super.onCreate(args); expectedLayout = args.getString("layout", "phone"); layoutOnly = args.getBoolean("layout-only", false) || "true".equals(args.getString("layout-only")); lifecycleOnly = "true".equals(args.getString("lifecycle-only")); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); expectedLayout = args.getString("layout", "phone"); layoutOnly = args.getBoolean("layout-only", false) || "true".equals(args.getString("layout-only")); lifecycleOnly = "true".equals(args.getString("lifecycle-only")); mermaidOnly = "true".equals(args.getString("mermaid-only")); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
@@ -85,6 +86,19 @@ public class Smoke extends Instrumentation {
                 waitFor(s -> s.optString("panel").equals("Settings(About)"));
                 screenshot("layout");
                 checkLayoutDiagnostics(smallestWidth);
+                result.putString("stream", results.toString() + "MARKVIEW_ANDROID_INTEGRATION_OK\n");
+                finish(Activity.RESULT_OK, result);
+                return;
+            }
+            if (mermaidOnly) {
+                checkMermaidLabels("mermaid-light");
+                tap("Settings");
+                tap("SettingsTab(Styles)");
+                JSONArray styles = state().getJSONArray("styles");
+                for (int i = 0; i < styles.length(); i++) if ("dark".equals(styles.getString(i))) tap("StyleToggle(" + i + ")");
+                sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+                waitFor(s -> s.optString("panel").equals("Closed") && s.optBoolean("ready"));
+                checkMermaidLabels("mermaid-dark");
                 result.putString("stream", results.toString() + "MARKVIEW_ANDROID_INTEGRATION_OK\n");
                 finish(Activity.RESULT_OK, result);
                 return;
@@ -364,6 +378,7 @@ public class Smoke extends Instrumentation {
                 waitFor(s -> s.optString("panel").equals("Closed"));
                 pass("Phone drawer switches, closes active/inactive tabs, dismisses on scrim and opens the system picker");
             }
+            checkMermaidLabels("mermaid-dark");
             checkLifecycle();
             result.putString("stream", results.toString() + "MARKVIEW_ANDROID_INTEGRATION_OK\n");
             finish(Activity.RESULT_OK, result);
@@ -610,6 +625,25 @@ public class Smoke extends Instrumentation {
             SystemClock.sleep(100);
         }
         pass((light ? "Light" : "Dark") + " system bars blend into reader chrome");
+    }
+    private void checkMermaidLabels(String name) throws Exception {
+        getTargetContext().startActivity(intent("mermaid.md", Intent.ACTION_VIEW));
+        waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("/mermaid.md") && loadedImages(s) == 1);
+        stableLayout();
+        screenshot(name);
+        File capture = new File(activity.getFilesDir(), "test-artifacts/" + name + ".png");
+        Bitmap pixels = android.graphics.BitmapFactory.decodeFile(capture.getAbsolutePath());
+        int[] ink = new int[3];
+        for (int y = 0; y < pixels.getHeight(); y++) for (int x = 0; x < pixels.getWidth(); x++) {
+            int c = pixels.getPixel(x, y);
+            int r = Color.red(c), g = Color.green(c), b = Color.blue(c);
+            if (r > 200 && g < 50 && b < 50) ink[0]++;
+            if (g > 200 && r < 50 && b < 50) ink[1]++;
+            if (b > 200 && r < 50 && g < 50) ink[2]++;
+        }
+        pixels.recycle();
+        require(ink[0] > 10 && ink[1] > 10 && ink[2] > 10, "All three Mermaid labels render in " + name);
+        pass("Mermaid label pixels in " + name);
     }
     private boolean sameColor(int a, int b) {
         return Math.abs(Color.red(a) - Color.red(b)) <= 2 && Math.abs(Color.green(a) - Color.green(b)) <= 2 && Math.abs(Color.blue(a) - Color.blue(b)) <= 2;

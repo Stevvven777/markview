@@ -61,6 +61,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Render Android Mermaid labels with Roboto Flex by supporting glyphs with more than 32 variation tuples.
 - Stabilize Android CI with AOSP images, launcher-dialog handling and synchronization of focus, layouts and previews.
 - Add Droid Sans Mono before the generic monospace fallback in builtin and artist MVSS themes.
 - Embed KaTeX fonts in debug builds so Android formulas and PDF exports use the bundled math faces.

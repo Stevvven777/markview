@@ -120,6 +120,8 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 unicode-segmentation.workspace = true
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
 resvg = "0.45"
+# Roboto Flex on Android needs more than `ttf-parser`'s 32 stack tuples.
+ttf-parser = { version = "0.25", features = ["gvar-alloc"] }
 # Library only: the default `cli` and `png` features would add a second
 # `resvg`/`usvg` and `clap`, while Markview renders the SVG itself.
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }

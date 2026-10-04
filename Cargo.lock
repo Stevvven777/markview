@@ -2475,6 +2475,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml_edit",
+ "ttf-parser",
  "unicode-segmentation",
  "url",
  "wayland-client",

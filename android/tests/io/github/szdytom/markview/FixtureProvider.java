@@ -31,7 +31,7 @@ public class FixtureProvider extends ContentProvider {
     @Override public String getType(Uri uri) { return "text/markdown"; }
     private String name(Uri uri) throws FileNotFoundException {
         String name = uri.getLastPathSegment();
-        if (!"reader.md".equals(name) && !"second.md".equals(name) && !"README.md".equals(name) && !"chapter.md".equals(name) && !"images/logo.svg".equals(name) && !"images".equals(name) && !"Test.otf".equals(name)) throw new FileNotFoundException();
+        if (!"reader.md".equals(name) && !"mermaid.md".equals(name) && !"second.md".equals(name) && !"README.md".equals(name) && !"chapter.md".equals(name) && !"images/logo.svg".equals(name) && !"images".equals(name) && !"Test.otf".equals(name)) throw new FileNotFoundException();
         return name;
     }
     @Override public Cursor query(Uri uri, String[] projection, String selection, String[] args, String sort) {
