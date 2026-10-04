@@ -5,7 +5,7 @@ use crate::state::{Command, Modal, PanelPage, ScrollbarAxis, ScrollbarDrag};
 use markview_core::text::TextPosition;
 use std::time::{Duration, Instant};
 
-use super::{App, Event, TOP, system_theme};
+use super::{App, Event, TOP};
 
 use crate::state::Selection;
 fn sanitize_filename(title: &str, lang: crate::lang::Lang) -> String {
@@ -494,9 +494,7 @@ impl<P: super::SendEvent> App<P> {
 				self.preferences.values = ReaderSettings::default();
 				// Reset also drops the saved theme preference, so the system
 				// theme applies again immediately and on the next launch.
-				if let Some(theme) =
-					self.window.as_ref().and_then(|w| system_theme(w))
-				{
+				if let Some(theme) = self.system_theme() {
 					self.preferences.values.theme = theme;
 				}
 			}
@@ -840,11 +838,8 @@ impl<P: super::SendEvent> App<P> {
 		self.preferences.export = self.preferences.stored_export();
 		self.preferences.values.stylesheet = previous.stylesheet.clone();
 		if self.preferences.theme_preference().is_none() {
-			self.preferences.values.theme = self
-				.window
-				.as_ref()
-				.and_then(|w| system_theme(w))
-				.unwrap_or_default();
+			self.preferences.values.theme =
+				self.system_theme().unwrap_or_default();
 		}
 		for field in &self.args.overrides {
 			self.preferences.values.copy_field(&previous, *field);

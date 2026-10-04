@@ -2436,6 +2436,7 @@ dependencies = [
  "android_logger",
  "anyhow",
  "arboard",
+ "ashpd",
  "base64",
  "clap",
  "env_logger",

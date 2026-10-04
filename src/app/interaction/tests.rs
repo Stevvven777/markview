@@ -107,6 +107,95 @@ impl Loop for StubLoop {
 	fn exit(&self) {}
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn follow_system_uses_desktop_updates_and_releases_explicit_styles() {
+	use crate::render::Theme;
+	use markview_core::style::{ColorField, Condition, Stylesheet};
+
+	let mut app = App::new(
+		crate::cli::LaunchOptions {
+			mode: Mode::Smoke,
+			theme: Some(Theme::Light),
+			overrides: vec![Setting::Theme],
+			options: crate::test_support::options(),
+			..Default::default()
+		},
+		StubProxy,
+	);
+	app.args.mode = Mode::Window;
+	let background = |app: &App<StubProxy>| {
+		app.preferences
+			.values
+			.stylesheet
+			.color(Condition::Body, ColorField::Background)
+	};
+	let light = Stylesheet::bundled(false)
+		.color(Condition::Body, ColorField::Background);
+	let dark = Stylesheet::bundled(true)
+		.color(Condition::Body, ColorField::Background);
+
+	app.handle_user_event(&StubLoop, Event::SystemThemeChanged(Theme::Dark));
+	assert_eq!(background(&app), light);
+	app.action(Command::SystemTheme);
+	assert_eq!(app.preferences.values.style, None);
+	assert_eq!(app.preferences.values.theme, Theme::Dark);
+	assert_eq!(background(&app), dark);
+	assert!(app.args.theme.is_none());
+	assert!(!app.args.overrides.contains(&Setting::Theme));
+
+	app.handle_user_event(&StubLoop, Event::SystemThemeChanged(Theme::Light));
+	assert_eq!(background(&app), light);
+	app.preferences.style_entries = crate::stylesheet::catalog(None, None);
+	let index = app
+		.preferences
+		.style_entries
+		.iter()
+		.position(|entry| entry.id == "light")
+		.unwrap();
+	app.action(Command::StyleToggle(index));
+	app.handle_user_event(&StubLoop, Event::SystemThemeChanged(Theme::Dark));
+	assert_eq!(background(&app), light);
+	app.action(Command::SystemTheme);
+	assert_eq!(background(&app), dark);
+	app.action(Command::Reset);
+	assert_eq!(background(&app), dark);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires a desktop settings portal on the session bus"]
+fn follow_system_reads_the_live_desktop_portal() {
+	use crate::render::Theme;
+	use std::sync::mpsc;
+
+	let services = crate::services::Services::new(1);
+	let cancel = services.handle.cancel.clone();
+	let (send, recv) = mpsc::channel();
+	services.handle.submit(async move {
+		tokio::select! {
+			_ = cancel.cancelled() => {},
+			result = crate::platform::appearance::watch(|theme| {
+				send.send(theme).unwrap();
+			}) => result.unwrap(),
+		}
+	});
+	let theme = recv.recv_timeout(Duration::from_secs(5)).unwrap();
+	eprintln!("Desktop portal appearance: {theme:?}");
+	let (mut app, _) = reader(SOURCE, 760.0);
+	app.handle_user_event(&StubLoop, Event::SystemThemeChanged(theme));
+	app.action(Command::SystemTheme);
+	assert_eq!(app.preferences.values.theme, theme);
+	assert_eq!(
+		app.preferences
+			.values
+			.stylesheet
+			.paint(crate::layout::Paint::Background),
+		markview_core::style::Stylesheet::bundled(theme == Theme::Dark)
+			.paint(crate::layout::Paint::Background),
+	);
+}
+
 fn position(block: usize, offset: usize) -> TextPosition {
 	TextPosition {
 		revision: 1,

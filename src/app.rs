@@ -73,6 +73,8 @@ pub fn run() -> Result<()> {
 }
 
 enum Event {
+	#[cfg(target_os = "linux")]
+	SystemThemeChanged(Theme),
 	SettingsLoaded(Box<settings_load::Completion>),
 	#[cfg(windows)]
 	FrameFeedback,
@@ -176,14 +178,6 @@ struct Button {
 	action: Command,
 }
 
-/// The desktop preference; `None` when the platform does not report one.
-fn system_theme(window: &Window) -> Option<Theme> {
-	window.theme().map(|theme| match theme {
-		winit::window::Theme::Dark => Theme::Dark,
-		_ => Theme::Light,
-	})
-}
-
 /// Records a finished download in `config`, returning whether it changed.
 ///
 /// A job that stored no file leaves the directories and the revision alone: a
@@ -228,6 +222,8 @@ struct App<P = EventLoopProxy<Event>> {
 	instance_path: Option<PathBuf>,
 	instance: Option<single_instance::Listener>,
 	window: Option<Arc<Window>>,
+	#[cfg(target_os = "linux")]
+	desktop_theme: Option<Theme>,
 	renderer: Option<Renderer>,
 	worker: Worker,
 	search_worker: search::Worker,
@@ -296,6 +292,23 @@ impl<P: SendEvent> App<P> {
 		let done = proxy.clone();
 		let parsed_proxy = proxy.clone();
 		let services = Arc::new(crate::services::Services::new(4));
+		#[cfg(target_os = "linux")]
+		if args.mode == crate::cli::Mode::Window {
+			let proxy = proxy.clone();
+			let cancel = services.handle.cancel.clone();
+			services.handle.submit(async move {
+				tokio::select! {
+					_ = cancel.cancelled() => {},
+					result = crate::platform::appearance::watch(move |theme| {
+						proxy.send(Event::SystemThemeChanged(theme));
+					}) => {
+						if let Err(error) = result {
+							log::debug!("Desktop appearance unavailable: {error}");
+						}
+					},
+				}
+			});
+		}
 		let worker = Worker::with_services_and_parsed(
 			services.clone(),
 			args.offline,
@@ -352,6 +365,8 @@ impl<P: SendEvent> App<P> {
 			instance_path,
 			instance: None,
 			window: None,
+			#[cfg(target_os = "linux")]
+			desktop_theme: None,
 			renderer: None,
 			worker,
 			search_worker,
@@ -391,6 +406,21 @@ impl<P: SendEvent> App<P> {
 			export_watch_request: false,
 		}
 	}
+	/// The desktop preference; `None` when the platform does not report one.
+	fn system_theme(&self) -> Option<Theme> {
+		#[cfg(target_os = "linux")]
+		{
+			self.desktop_theme
+		}
+		#[cfg(not(target_os = "linux"))]
+		{
+			self.window.as_ref()?.theme().map(|theme| match theme {
+				winit::window::Theme::Dark => Theme::Dark,
+				winit::window::Theme::Light => Theme::Light,
+			})
+		}
+	}
+
 	fn reload_styles(&mut self) {
 		if let Some(reflow) = self.preferences.reload_styles(&mut self.ui) {
 			if let Some(renderer) = &mut self.renderer {

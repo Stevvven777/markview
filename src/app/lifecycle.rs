@@ -16,7 +16,7 @@ use winit::{
 };
 
 use super::window::Loop;
-use super::{App, Event, TOP, dm, system_theme};
+use super::{App, Event, TOP, dm};
 use crate::state::Selection;
 impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -89,14 +89,6 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 					)?);
 			}
 			self.frame.focused = window.has_focus();
-			if self.args.mode == Mode::Window
-				&& self.args.theme.is_none()
-				&& self.args.style.is_none()
-				&& self.preferences.theme_preference().is_none()
-				&& let Some(theme) = system_theme(&window)
-			{
-				self.preferences.values.theme = theme;
-			}
 			let size = window.inner_size();
 			let scale = window.scale_factor();
 			info!(
@@ -109,6 +101,14 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 			let dm = dm::DirectManipulation::new(&window);
 			self.window = Some(window);
 			self.dm = dm;
+			if self.args.mode == Mode::Window
+				&& self.args.theme.is_none()
+				&& self.args.style.is_none()
+				&& self.preferences.theme_preference().is_none()
+				&& let Some(theme) = self.system_theme()
+			{
+				self.preferences.values.theme = theme;
+			}
 			self.reload_styles();
 			self.gpu()?;
 			if self.readers.session.path.is_none()
@@ -165,6 +165,13 @@ impl<P: super::SendEvent> App<P> {
 		event: Event,
 	) {
 		match event {
+			#[cfg(target_os = "linux")]
+			Event::SystemThemeChanged(theme) => {
+				self.desktop_theme = Some(theme);
+				if self.preferences.theme_preference().is_none() {
+					self.apply_saved_settings();
+				}
+			}
 			#[cfg(target_os = "android")]
 			Event::AndroidBack => self.android_back(),
 			#[cfg(target_os = "android")]

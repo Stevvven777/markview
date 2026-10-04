@@ -65,6 +65,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Follow the Linux desktop's light/dark preference through the settings portal, including live changes and the Styles “Follow system” action.
 - Align the reader viewport with the toolbar and bottom bar, removing blank strips that clipped scrolling content at both edges.
 - Vertically center settings labels and controls using visible glyph bounds, including CJK and mixed-font text.
 - Raise the settings header divider to balance the auto-save hint's spacing below the tabs.

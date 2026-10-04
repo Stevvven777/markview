@@ -203,6 +203,7 @@ windows-sys = { version = "0.61", features = [
 winresource = { version = "0.1", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
 wgpu = { workspace = true, features = ["vulkan"] }
 wayland-client = { version = "0.31", features = ["system", "dlopen"] }
 wayland-protocols = { version = "0.32", features = ["client"] }
