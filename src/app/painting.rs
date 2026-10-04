@@ -44,8 +44,9 @@ impl<P: super::SendEvent> App<P> {
 		let overlay = self.overlay();
 		#[cfg(windows)]
 		self.sync_native_frame();
-		let (width, _, scale) = self.dimensions();
+		let (_, _, scale) = self.dimensions();
 		let insets = self.insets();
+		let geometry = self.view_geometry();
 		let view = View {
 			selection: self.interaction.selection,
 			revision: self.readers.session.accepted_revision,
@@ -53,10 +54,9 @@ impl<P: super::SendEvent> App<P> {
 			height: size.height,
 			scale,
 			scroll: self.readers.session.scrolling.offset,
-			left: ((width - self.readers.session.snapshot.width) / 2.0)
-				.max(20.0) + insets[0],
-			top: self.content_top() + 10.0 + insets[1],
-			bottom: self.bottom() + 10.0 + insets[3],
+			left: geometry.left + insets[0],
+			top: geometry.top + insets[1],
+			bottom: geometry.bottom + insets[3],
 			theme: self.preferences.values.theme,
 			horizontal: &self.readers.session.horizontal,
 			hovered_link: self.interaction.hover.as_deref(),

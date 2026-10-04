@@ -155,6 +155,101 @@ fn reader(source: &str, width: f32) -> (App<StubProxy>, Arc<Document>) {
 	(app, document)
 }
 
+#[test]
+fn reading_viewport_meets_chrome_and_scrollbar_edges() {
+	let (mut app, _) = reader(&"Body line.\n\n".repeat(100), 760.0);
+	for notice in [false, true] {
+		for search in [false, true] {
+			app.readers.session.remote_deferred = usize::from(notice);
+			app.readers.session.search.open = search;
+			let geometry = app.view_geometry();
+			let clip = geometry.clip();
+			let bar = app.document_scrollbar().unwrap();
+			assert_eq!(clip.y, super::super::chrome::content_top(notice));
+			assert_eq!(
+				clip.y + clip.h,
+				800.0 - super::super::search::bottom(search)
+			);
+			assert_eq!((bar.track.y, bar.track.h), (clip.y, clip.h));
+			assert_eq!(app.viewport(), clip.h);
+			assert_eq!(
+				geometry.document_point(geometry.left, clip.y).1,
+				geometry.scroll
+			);
+		}
+	}
+}
+
+#[test]
+#[ignore = "requires a GPU"]
+fn scrolled_content_paints_to_both_viewport_edges() -> anyhow::Result<()> {
+	use crate::render::{Renderer, Theme, View};
+	let (mut app, _) =
+		reader(&format!("```\n{}\n```", "body\n".repeat(100)), 760.0);
+	app.readers.session.scrolling.offset = 100.0;
+	let mut renderer = pollster::block_on(Renderer::new(None))?;
+	for theme in [Theme::Light, Theme::Dark] {
+		for (notice, search) in [(false, false), (true, true)] {
+			app.readers.session.remote_deferred = usize::from(notice);
+			app.readers.session.search.open = search;
+			let geometry = app.view_geometry();
+			for scale in [1.0, 1.25, 2.0] {
+				let view = View {
+					width: (geometry.width * scale) as u32,
+					height: (geometry.height * scale) as u32,
+					scale,
+					left: geometry.left,
+					top: geometry.top,
+					bottom: geometry.bottom,
+					scroll: geometry.scroll,
+					theme,
+					horizontal: &app.readers.session.horizontal,
+					selection: None,
+					revision: 1,
+					hovered_link: None,
+					hovered_overflow: None,
+					held_overflow: None,
+				};
+				let target = renderer.offscreen(view.width, view.height);
+				let submission = renderer.render(
+					&app.readers.session.snapshot,
+					&view,
+					&[],
+					&target.create_view(&Default::default()),
+				)?;
+				renderer.wait(Some(submission))?;
+				let pixels = renderer.read_pixels(&target)?;
+				let pixel = |x: u32, y: u32| {
+					let i = ((y * view.width + x) * 4) as usize;
+					&pixels.rgba[i..i + 4]
+				};
+				let x = ((geometry.left + 4.0) * scale) as u32;
+				let top = (app.content_top() * scale).ceil() as u32;
+				let bottom =
+					((geometry.height - app.bottom()) * scale).floor() as u32;
+				let background = pixel(x, (top + bottom) / 2);
+				assert_ne!(background, pixel(0, top));
+				for y in [top, top + 1, bottom - 2, bottom - 1] {
+					assert_eq!(
+						pixel(x, y),
+						background,
+						"gap at {y}, scale {scale}, {theme:?}"
+					);
+				}
+				let above = (app.content_top() * scale).floor() as u32 - 1;
+				for y in [above, bottom] {
+					assert_eq!(
+						pixel(x, y),
+						pixel(0, y),
+						"content escaped the clip at {y}"
+					);
+				}
+			}
+		}
+	}
+	Ok(())
+}
+
 /// An update the reader will accept: same path, same version, complete.
 fn update(
 	path: PathBuf,

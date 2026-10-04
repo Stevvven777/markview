@@ -453,8 +453,8 @@ impl<P: SendEvent> App<P> {
 			height,
 			left: ((width - self.readers.session.snapshot.width) / 2.0)
 				.max(20.0),
-			top: self.content_top() + 10.0,
-			bottom: self.bottom() + 10.0,
+			top: self.content_top(),
+			bottom: self.bottom(),
 			scroll: self.readers.session.scrolling.offset,
 		}
 	}
