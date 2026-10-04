@@ -69,6 +69,13 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 				attributes = attributes.with_window_icon(Some(icon));
 			}
 			let window = Arc::new(event_loop.create_window(attributes)?);
+			#[cfg(target_os = "linux")]
+			{
+				self.touch_frame =
+					crate::platform::touch_frame::TouchFrame::new(
+						window.clone(),
+					)?;
+			}
 			#[cfg(windows)]
 			{
 				let proxy = self.proxy.clone();
@@ -385,6 +392,10 @@ impl<P: super::SendEvent> App<P> {
 		event_loop: &impl Loop,
 		now: Instant,
 	) -> Option<Instant> {
+		#[cfg(target_os = "linux")]
+		if let Some(frame) = &mut self.touch_frame {
+			frame.dispatch();
+		}
 		self.input_tick(now);
 		self.search_tick();
 		self.auto_scroll_tabs(now);

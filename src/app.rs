@@ -203,6 +203,8 @@ struct App<P = EventLoopProxy<Event>> {
 	frame: frame::State,
 	#[cfg(windows)]
 	native_frame: Option<crate::platform::window_frame::NativeFrame>,
+	#[cfg(target_os = "linux")]
+	touch_frame: Option<crate::platform::touch_frame::TouchFrame>,
 	interaction: InteractionState,
 	gestures: gestures::GestureState,
 	readers: tabs::Tabs,
@@ -327,6 +329,8 @@ impl<P: SendEvent> App<P> {
 			frame: frame::State::new(preferences.values.window_layout),
 			#[cfg(windows)]
 			native_frame: None,
+			#[cfg(target_os = "linux")]
+			touch_frame: None,
 			interaction: InteractionState::default(),
 			gestures: gestures::GestureState::default(),
 			readers: tabs::Tabs::default(),

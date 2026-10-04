@@ -45,6 +45,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Support touchscreen dragging and edge resizing of custom window frames on Linux, using the touch contact's native serial on Wayland.
 - Reload images when returning to cached tabs, including after closing the active tab.
 - Keep custom window controls interactive above the image viewer and support caption-button taps without triggering covered controls.
 - Make unused tab-strip space draggable on Windows and Wayland, sharing tab bounds with native Windows caption hit testing.

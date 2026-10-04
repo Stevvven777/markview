@@ -11,6 +11,13 @@ use crate::state::{Command, WheelAxis, WheelStep};
 
 type Point = (f32, f32);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TouchAction {
+	Caption(super::frame::Caption),
+	#[cfg(target_os = "linux")]
+	Drag(Option<winit::window::ResizeDirection>),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum Tap {
 	Caption(super::frame::Caption),
@@ -203,11 +210,8 @@ impl<P: super::SendEvent> App<P> {
 		Surface::Document
 	}
 
-	/// Returns the window action requested by a completed caption tap.
-	pub(super) fn handle_touch(
-		&mut self,
-		touch: Touch,
-	) -> Option<super::frame::Caption> {
+	/// Returns a native drag on contact or a caption action on release.
+	pub(super) fn handle_touch(&mut self, touch: Touch) -> Option<TouchAction> {
 		log::debug!("touch {:?} id {}", touch.phase, touch.id);
 		let scale = self.dimensions().2;
 		let point = (
@@ -224,7 +228,7 @@ impl<P: super::SendEvent> App<P> {
 			Some(Instant::now() + Duration::from_millis(500));
 		self.interaction.cursor = point;
 		self.frame.pressed = None;
-		let mut caption_action = None;
+		let mut window_action = None;
 		if touch.phase == TouchPhase::Started {
 			self.gestures.motion = None;
 			self.gestures.coasting = false;
@@ -242,6 +246,24 @@ impl<P: super::SendEvent> App<P> {
 			let capture = Capture {
 				surface: self.touch_surface(),
 				tap: self.touch_tap(),
+			};
+			#[cfg(target_os = "linux")]
+			let capture = if self.gestures.gesture.contacts.is_empty() {
+				self.tab_metrics.sync(&mut self.ui, self.readers.entries());
+				let layout = self.frame_layout();
+				let direction = layout.resize_at(point.0, point.1);
+				if direction.is_some() || layout.draggable(point.0, point.1) {
+					self.frame.last_click = None;
+					window_action = Some(TouchAction::Drag(direction));
+					Capture {
+						surface: Surface::None,
+						tap: None,
+					}
+				} else {
+					capture
+				}
+			} else {
+				capture
 			};
 			self.frame.pressed = match &capture.tap {
 				Some(Tap::Caption(caption)) => Some(*caption),
@@ -266,7 +288,8 @@ impl<P: super::SendEvent> App<P> {
 					if capture.tap == self.touch_tap() {
 						match capture.tap {
 							Some(Tap::Caption(caption)) => {
-								caption_action = Some(caption);
+								window_action =
+									Some(TouchAction::Caption(caption));
 							}
 							Some(Tap::Command(command)) => self.action(command),
 							Some(Tap::Link(link)) => {
@@ -312,7 +335,7 @@ impl<P: super::SendEvent> App<P> {
 		}
 		self.refresh_hover();
 		self.redraw();
-		caption_action
+		window_action
 	}
 
 	/// Pixel scrolling already carries the OS speed. A stream with

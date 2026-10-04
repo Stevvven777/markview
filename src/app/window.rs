@@ -21,6 +21,22 @@ use super::{App, TOP, frame::Caption};
 /// handlers below name this rather than the concrete type.
 pub(super) trait Loop {
 	fn exit(&self);
+	#[cfg(target_os = "linux")]
+	fn window_drag(
+		&self,
+		window: Option<&Window>,
+		direction: Option<winit::window::ResizeDirection>,
+	) {
+		if let Some(window) = window {
+			let result = direction.map_or_else(
+				|| window.drag_window(),
+				|direction| window.drag_resize_window(direction),
+			);
+			if let Err(error) = result {
+				log::debug!("Cannot start window drag: {error}");
+			}
+		}
+	}
 	fn window_action(&self, window: Option<&Window>, caption: Caption) {
 		if caption == Caption::Close {
 			self.exit();
@@ -92,7 +108,25 @@ impl<P: super::SendEvent> App<P> {
 		}
 		match event {
 			WindowEvent::Touch(touch) => {
-				if let Some(caption) = self.handle_touch(touch) {
+				let action = self.handle_touch(touch);
+				#[cfg(target_os = "linux")]
+				{
+					let drag = match action {
+						Some(super::gestures::TouchAction::Drag(direction)) => {
+							Some(direction)
+						}
+						_ => None,
+					};
+					if let Some(frame) = &mut self.touch_frame {
+						frame.touch(touch, drag);
+					} else if let Some(direction) = drag {
+						event_loop
+							.window_drag(self.window.as_deref(), direction);
+					}
+				}
+				if let Some(super::gestures::TouchAction::Caption(caption)) =
+					action
+				{
 					event_loop.window_action(self.window.as_deref(), caption);
 				}
 			}

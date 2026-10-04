@@ -251,6 +251,96 @@ fn caption_taps_do_not_reach_covered_controls_or_activate_after_a_drag() {
 	}
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn touch_window_drags_start_on_contact_and_never_pan_the_reader_or_viewer() {
+	use crate::settings::WindowLayout;
+	use winit::{event::Touch, window::ResizeDirection};
+	#[derive(Default)]
+	struct DragLoop(std::cell::RefCell<Vec<Option<ResizeDirection>>>);
+	impl Loop for DragLoop {
+		fn exit(&self) {
+			panic!("a window drag must not close the app");
+		}
+		fn window_drag(
+			&self,
+			_: Option<&winit::window::Window>,
+			direction: Option<ResizeDirection>,
+		) {
+			self.0.borrow_mut().push(direction);
+		}
+	}
+	for style in [
+		WindowLayout::Linux,
+		WindowLayout::Windows,
+		WindowLayout::Macos,
+	] {
+		for viewer in [false, true] {
+			let mut app = image_reader("![](a.png)", "a.png", false);
+			app.frame.layout = style;
+			if viewer {
+				open(&mut app);
+			}
+			let actions = DragLoop::default();
+			let send = |app: &mut App<StubProxy>, id, phase, at: (f32, f32)| {
+				app.handle_window_event(
+					&actions,
+					WindowId::dummy(),
+					WindowEvent::Touch(Touch {
+						device_id: DeviceId::dummy(),
+						id,
+						phase,
+						force: None,
+						location: PhysicalPosition::new(
+							f64::from(at.0),
+							f64::from(at.1),
+						),
+					}),
+				);
+			};
+			let layout = app.frame_layout();
+			let offset = app.readers.session.scrolling.offset;
+			let tab_scroll = app.tab_strip.scroll;
+			for (at, direction) in [
+				((layout.drag.x + layout.drag.w / 2.0, 20.0), None),
+				((layout.tabs.x + layout.tabs.w / 2.0, 20.0), None),
+				((1.0, 1.0), Some(ResizeDirection::NorthWest)),
+				(
+					(layout.width - 1.0, layout.height - 1.0),
+					Some(ResizeDirection::SouthEast),
+				),
+			] {
+				let before = actions.0.borrow().len();
+				send(&mut app, 1, TouchPhase::Started, at);
+				assert_eq!(actions.0.borrow().len(), before + 1);
+				assert_eq!(actions.0.borrow().last(), Some(&direction));
+				assert!(app.gestures.suppress_mouse());
+				send(&mut app, 1, TouchPhase::Moved, (600.0, 300.0));
+				send(&mut app, 2, TouchPhase::Started, (1.0, 1.0));
+				assert_eq!(actions.0.borrow().len(), before + 1);
+				send(&mut app, 2, TouchPhase::Cancelled, (1.0, 1.0));
+				send(&mut app, 1, TouchPhase::Ended, at);
+				assert_eq!(app.readers.session.scrolling.offset, offset);
+				assert_eq!(app.tab_strip.scroll, tab_scroll);
+				assert_eq!(app.interaction.viewer.is_some(), viewer);
+				assert!(
+					app.interaction
+						.viewer
+						.as_ref()
+						.is_none_or(|viewer| viewer.pan == (0.0, 0.0))
+				);
+				assert!(app.frame.pressed.is_none());
+			}
+			let before = actions.0.borrow().len();
+			send(&mut app, 1, TouchPhase::Started, (600.0, 300.0));
+			send(&mut app, 2, TouchPhase::Started, (1.0, 1.0));
+			assert_eq!(actions.0.borrow().len(), before);
+			send(&mut app, 2, TouchPhase::Cancelled, (1.0, 1.0));
+			send(&mut app, 1, TouchPhase::Cancelled, (600.0, 300.0));
+		}
+	}
+}
+
 #[test]
 fn loaded_images_without_selectable_text_open_on_click() {
 	let code = "graph TD\nA-->B\n";

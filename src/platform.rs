@@ -3,6 +3,9 @@
 #[cfg(windows)]
 pub(crate) mod window_frame;
 
+#[cfg(target_os = "linux")]
+pub(crate) mod touch_frame;
+
 /// Move native traffic lights without replacing their system behavior.
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
