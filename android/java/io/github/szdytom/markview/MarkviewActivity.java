@@ -90,8 +90,12 @@ public class MarkviewActivity extends NativeActivity {
             uri = android.os.Build.VERSION.SDK_INT >= 33
                 ? intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri.class)
                 : intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (uri == null && intent.getClipData() != null && intent.getClipData().getItemCount() > 0)
+                uri = intent.getClipData().getItemAt(0).getUri();
             if (uri == null && intent.hasExtra(Intent.EXTRA_TEXT)) {
-                String text = intent.getStringExtra(Intent.EXTRA_TEXT);
+                CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+                if (shared == null) return;
+                String text = shared.toString();
                 io.execute(() -> {
                     try {
                         File file = new File(getFilesDir(), "shared/Shared.md");

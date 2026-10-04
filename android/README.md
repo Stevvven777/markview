@@ -174,8 +174,14 @@ is a separate process.
 
 Tap **Open** to choose a file or a folder. Folder imports preserve relative
 images and Markdown links; `README.md` is preferred as the first document.
-Android's **Open with** and **Share** also send documents into Markview, and shared
-text opens as a Markdown document. Tabs, touch scrolling, outline, search,
+Android's **Open with** and **Share** offer **Read in Markview** (localized to
+**在 Markview 中阅读** in Simplified Chinese), opening the supplied file directly
+without first saving it or finding it in the picker. Markdown MIME types, plain
+text and generic `application/octet-stream` attachments are supported, including
+providers whose content URIs do not contain a filename. Generic attachments can
+also list Markview for non-Markdown files because Android cannot filter shares
+by their display filename. Shared text opens as a Markdown document.
+Tabs, touch scrolling, outline, search,
 settings and styles use the same controllers as the desktop reader. Phones open
 the tab drawer with the top-left menu button or a right swipe across the reader.
 Selecting a tab, tapping the outside scrim or pressing Back dismisses the tab

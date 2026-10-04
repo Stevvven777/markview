@@ -8,6 +8,9 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+        <activity-alias android:name=".ReadInMarkview" android:targetActivity=".MarkviewActivity" android:exported="true" android:label="@string/read_in_markview">
+            <meta-data android:name="android.app.lib_name" android:value="markview" />
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -16,13 +19,20 @@
                 <data android:mimeType="text/markdown" />
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="text/x-markdown" />
+                <data android:mimeType="application/markdown" />
+                <data android:mimeType="application/x-markdown" />
+                <!-- Providers may use opaque `content` paths and a generic attachment MIME type. -->
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/*" />
+                <data android:mimeType="application/markdown" />
+                <data android:mimeType="application/x-markdown" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
-        </activity>
+        </activity-alias>
         <provider android:name=".ReaderProvider" android:authorities="io.github.szdytom.markview.files" android:exported="false" android:grantUriPermissions="true" />
     </application>
 </manifest>

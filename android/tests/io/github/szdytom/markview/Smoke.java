@@ -37,13 +37,16 @@ public class Smoke extends Instrumentation {
         try {
             require("Markview".contentEquals(getTargetContext().getApplicationInfo().loadLabel(getTargetContext().getPackageManager())), "Application display name");
             pass("Markview application display name");
+            checkExternalIntents();
             File config = new File(getTargetContext().getFilesDir(), "markview/settings.toml");
             config.getParentFile().mkdirs();
             String stored = config.exists() ? new String(Files.readAllBytes(config.toPath()), StandardCharsets.UTF_8) : "";
             stored = "window-layout = \"macos\"\nsingle-instance = true\nwidth = 240\nstyle = [\"light\"]\n" + stored.replaceAll("(?m)^(window-layout|single-instance|width|style) *=.*\\R?", "");
             Files.write(config.toPath(), stored.getBytes(StandardCharsets.UTF_8));
             getUiAutomation().setRotation(0);
-            activity = startActivitySync(intent("reader.md", Intent.ACTION_VIEW));
+            Intent opening = intent("reader.md", Intent.ACTION_VIEW);
+            opening.setDataAndType(opening.getData(), "application/octet-stream");
+            activity = startActivitySync(opening);
             JSONObject initial = waitFor(s -> s.optBoolean("ready") && s.optInt("blocks") > 20 && loadedImages(s) >= 2);
             initial = stableLayout();
             require(initial.getString("window_layout").equals("Macos") && initial.getBoolean("single_instance"), "Saved desktop options loaded");
@@ -121,8 +124,12 @@ public class Smoke extends Instrumentation {
             swipe(180, 300, 180, 300);
             JSONObject beforeSwitch = stableLayout();
             double position = beforeSwitch.getDouble("scroll");
-            getTargetContext().startActivity(intent("second.md", Intent.ACTION_SEND));
+            Intent sharing = intent("second.md", Intent.ACTION_SEND).setType("application/x-markdown").setPackage(null);
+            getTargetContext().startActivity(Intent.createChooser(sharing, "Read Markdown").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            clickText("Read in Markview");
             waitFor(s -> s.optJSONArray("tabs").length() == 2 && s.optBoolean("ready") && loadedImages(s) >= 1);
+            require(!activity.isDestroyed() && state().getString("path").endsWith("/second.md"), "Share reuses the running reader");
+            pass("Implicit open at startup and share into the running reader");
             if (phone) {
                 require(button(state(), "SelectTab(") == null, "Phone has no horizontal tab strip");
                 swipe(100, 180, 280, 180);
@@ -379,6 +386,7 @@ public class Smoke extends Instrumentation {
                 pass("Phone drawer switches, closes active/inactive tabs, dismisses on scrim and opens the system picker");
             }
             checkMermaidLabels("mermaid-dark");
+            checkSharedContent();
             checkLifecycle();
             result.putString("stream", results.toString() + "MARKVIEW_ANDROID_INTEGRATION_OK\n");
             finish(Activity.RESULT_OK, result);
@@ -395,6 +403,56 @@ public class Smoke extends Instrumentation {
             result.putString("stream", results.toString() + "FAIL: " + error + "\n");
             finish(Activity.RESULT_CANCELED, result);
         }
+    }
+    private void checkExternalIntents() throws Exception {
+        android.content.pm.PackageManager packages = getTargetContext().getPackageManager();
+        String[] types = {"text/markdown", "text/x-markdown", "text/plain", "application/markdown", "application/x-markdown", "application/octet-stream"};
+        for (String action : new String[]{Intent.ACTION_VIEW, Intent.ACTION_SEND}) for (String type : types) {
+            Intent external = intent("reader.md", action).setType(type);
+            if (Intent.ACTION_VIEW.equals(action)) external.setDataAndType(Uri.parse("content://io.github.szdytom.markview.test.fixtures/opaque/42"), type).addCategory(Intent.CATEGORY_BROWSABLE);
+            java.util.List<android.content.pm.ResolveInfo> matches = packages.queryIntentActivities(external, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+            require(matches.size() == 1, "One read entry for " + action + " " + type);
+            android.content.pm.ActivityInfo entry = matches.get(0).activityInfo;
+            require(entry.name.endsWith(".ReadInMarkview") && entry.targetActivity.equals(MarkviewActivity.class.getName()) && entry.exported, "External read entry targets the reader");
+            String[] labels = {"Read in Markview", "在 Markview 中阅读", "在 Markview 中閱讀"};
+            java.util.Locale[] locales = {java.util.Locale.ENGLISH, java.util.Locale.SIMPLIFIED_CHINESE, java.util.Locale.TRADITIONAL_CHINESE};
+            for (int i = 0; i < locales.length; i++) {
+                android.content.res.Configuration configuration = new android.content.res.Configuration(getTargetContext().getResources().getConfiguration());
+                configuration.setLocale(locales[i]);
+                require(labels[i].contentEquals(getTargetContext().createConfigurationContext(configuration).getText(entry.labelRes)), "Localized read entry: " + locales[i]);
+            }
+        }
+        for (Intent unrelated : new Intent[]{
+            new Intent(Intent.ACTION_VIEW).setData(Uri.parse("https://example.com/README.md")),
+            intent("reader.md", Intent.ACTION_VIEW).setDataAndType(Uri.parse("content://io.github.szdytom.markview.test.fixtures/reader.md"), "application/pdf"),
+            intent("reader.md", Intent.ACTION_SEND).setType("image/png")
+        }) {
+            unrelated.setPackage(getTargetContext().getPackageName());
+            require(packages.queryIntentActivities(unrelated, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY).isEmpty(), "Unrelated intents do not offer the reader");
+        }
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(getTargetContext().getPackageName());
+        java.util.List<android.content.pm.ResolveInfo> launchers = packages.queryIntentActivities(launcher, 0);
+        require(launchers.size() == 1 && "Markview".contentEquals(launchers.get(0).loadLabel(packages)), "One launcher named Markview");
+        pass("Open/share MIME matching, localized entry labels and launcher name");
+    }
+    private void checkSharedContent() throws Exception {
+        int tabs = state().getJSONArray("tabs").length();
+        Intent clipped = intent("second.md", Intent.ACTION_SEND).setType("application/octet-stream");
+        clipped.removeExtra(Intent.EXTRA_STREAM);
+        clipped.setClipData(android.content.ClipData.newRawUri("Markdown", Uri.parse("content://io.github.szdytom.markview.test.fixtures/second.md")));
+        clipped.putExtra(Intent.EXTRA_TEXT, "Attachment description");
+        getTargetContext().startActivity(clipped);
+        JSONObject shared = waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("/second.md"));
+        require(shared.getJSONArray("tabs").length() == tabs, "Sharing an existing file reuses its tab");
+        require(new String(Files.readAllBytes(new File(shared.getString("path")).toPath()), StandardCharsets.UTF_8).startsWith("# Second tab"), "Shared file takes precedence over accompanying text");
+        String markdown = "# Shared Markdown\n\nRead without saving first.";
+        Intent text = new Intent(Intent.ACTION_SEND).setPackage(getTargetContext().getPackageName()).setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, new android.text.SpannableString(markdown)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getTargetContext().startActivity(text);
+        shared = waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("/Shared.md"));
+        require(markdown.equals(new String(Files.readAllBytes(new File(shared.getString("path")).toPath()), StandardCharsets.UTF_8)), "Shared text imports its Markdown source");
+        require(!activity.isDestroyed(), "External shares retain the Activity");
+        pass("ClipData file sharing and CharSequence Markdown text sharing");
     }
     private void checkLifecycle() throws Exception {
         getTargetContext().startActivity(intent("reader.md", Intent.ACTION_VIEW));
@@ -520,7 +578,7 @@ public class Smoke extends Instrumentation {
     }
     private Intent intent(String name, String action) {
         Uri uri = Uri.parse("content://io.github.szdytom.markview.test.fixtures/" + name);
-        Intent intent = new Intent(action).setClass(getTargetContext(), MarkviewActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        Intent intent = new Intent(action).setPackage(getTargetContext().getPackageName()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
         if (Intent.ACTION_SEND.equals(action)) intent.setType("text/markdown").putExtra(Intent.EXTRA_STREAM, uri);
         else intent.setDataAndType(uri, "text/markdown");
         return intent;

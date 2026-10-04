@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Add a localized Android “Read in Markview” open/share entry for Markdown files, including generic attachments and URI shares supplied through `ClipData`.
+
 - Run Android phone, tablet and sw600dp boundary integration tests in GitHub Actions, and attach signed universal APKs and checksums to releases.
 
 - Open the phone Tabs Drawer with a right swipe and right-side Contents with a left swipe on any touchscreen, including tablets and desktop computers.
