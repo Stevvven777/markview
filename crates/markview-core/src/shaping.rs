@@ -1031,6 +1031,36 @@ impl TextShaper {
 		self.label_measured(text, size, x, baseline, paint).0
 	}
 
+	/// A chrome label whose visible glyph bounds are centred on `center_y`.
+	pub fn centered_label(
+		&mut self,
+		text: &str,
+		size: f32,
+		x: f32,
+		center_y: f32,
+		paint: Paint,
+	) -> Vec<Draw> {
+		let mut draws = self.label(text, size, x, 0.0, paint);
+		let mut bounds: Option<(f32, f32)> = None;
+		for draw in &draws {
+			if let Draw::Glyph(g) = draw
+				&& let Some((lo, hi)) =
+					self.glyph_bounds(&g.font, &g.coords, g.id)
+			{
+				let top = g.y - hi * g.size;
+				let bottom = g.y - lo * g.size;
+				bounds = Some(bounds.map_or((top, bottom), |(a, b)| {
+					(a.min(top), b.max(bottom))
+				}));
+			}
+		}
+		let offset = center_y - bounds.map_or(0.0, |(a, b)| (a + b) / 2.0);
+		for draw in &mut draws {
+			draw.translate(0.0, offset);
+		}
+		draws
+	}
+
 	/// A label together with the advance width it occupies, so a caller that
 	/// needs both does not shape the text twice.
 	pub fn label_measured(

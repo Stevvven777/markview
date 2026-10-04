@@ -6,6 +6,100 @@ use crate::{
 };
 
 #[test]
+fn settings_labels_and_buttons_center_visible_text_in_their_bands() {
+	fn assert_centered(draws: &[Draw], center: f32) {
+		let bounds: Vec<_> = draws
+			.iter()
+			.filter_map(|draw| {
+				let Draw::Glyph(g) = draw else { return None };
+				assert_ne!(
+					g.id, 0,
+					"the fixture must cover the label's characters"
+				);
+				let face =
+					ttf_parser::Face::parse(g.font.data.data(), g.font.index)
+						.unwrap();
+				let bounds =
+					face.glyph_bounding_box(ttf_parser::GlyphId(g.id))?;
+				let scale = g.size / f32::from(face.units_per_em());
+				Some((
+					g.y - f32::from(bounds.y_max) * scale,
+					g.y - f32::from(bounds.y_min) * scale,
+				))
+			})
+			.collect();
+		assert!(!bounds.is_empty());
+		let top = bounds.iter().map(|b| b.0).fold(f32::INFINITY, f32::min);
+		let bottom =
+			bounds.iter().map(|b| b.1).fold(f32::NEG_INFINITY, f32::max);
+		assert!(((top + bottom) / 2.0 - center).abs() < 0.001);
+	}
+
+	let rect = Rect {
+		x: 24.0,
+		y: 90.0,
+		w: 320.0,
+		h: 20.0,
+	};
+	let mut ui = crate::test_support::shaper();
+	for rules in [
+		"",
+		"[[rule]]\nwhen=['ui']\nsize=1.4\nbaseline=-0.1\ndecoration=['underline']",
+	] {
+		let mut style =
+			(*markview_core::style::Stylesheet::bundled(false)).clone();
+		style.merge(
+			&markview_core::style::Stylesheet::parse(&format!(
+				"format_version=2\nversion=1\n{rules}"
+			))
+			.unwrap(),
+		);
+		ui.set_stylesheet(std::sync::Arc::new(style));
+		appearance(&mut ui);
+		for text in ["界面", "Auto-saved", "Ag 中文"] {
+			for size in [12.0, 13.0, 20.0] {
+				let draws = label(&mut ui, text, size, rect, C::Muted);
+				assert_centered(&draws, rect.y + rect.h / 2.0);
+			}
+			let b = button(text, Command::Open, Rect { h: CONTROL, ..rect });
+			let draws =
+				draw_button(&mut ui, &InteractionState::default(), &b, true);
+			assert_centered(&draws, b.rect.y + b.rect.h / 2.0);
+		}
+	}
+	assert!(
+		!label(&mut ui, "", 12.0, rect, C::Muted)
+			.iter()
+			.any(|draw| matches!(draw, Draw::Glyph(_)))
+	);
+	ui.set_stylesheet(markview_core::style::Stylesheet::bundled(false));
+	for (width, height) in [(360.0, 740.0), (800.0, 600.0), (1200.0, 800.0)] {
+		let form = Form::new(width, height, 0.0, vec![], None, true, Lang::En);
+		let draws = form.draw(
+			&mut ui,
+			&InteractionState::default(),
+			"",
+			"Auto-saved",
+			C::Muted,
+			(width, height),
+		);
+		let tabs = tab_controls(form.rect, PanelTab::Generic, Lang::En);
+		let tab_bottom = tabs[0].rect.y + tabs[0].rect.h;
+		let divider = draws
+			.iter()
+			.find_map(|draw| match draw {
+				Draw::Rect(
+					r,
+					Paint::Styled(Condition::Panel, C::BorderColor),
+				) if r.y < form.viewport.y => Some(r.y),
+				_ => None,
+			})
+			.unwrap();
+		assert_centered(&draws, (tab_bottom + divider) / 2.0);
+	}
+}
+
+#[test]
 fn every_form_action_is_reachable_without_clicking_through_the_clip() {
 	let mut ui = crate::test_support::shaper();
 	for (width, height) in [

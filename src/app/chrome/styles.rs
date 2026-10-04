@@ -1,5 +1,5 @@
 use super::super::Button;
-use super::components::CONTROL;
+use super::components::{CONTROL, SETTINGS_HEADER};
 use super::controls::{draw_button, panel_rect};
 use super::icons;
 use super::list::List;
@@ -58,8 +58,6 @@ impl StylesTarget {
 	}
 }
 
-/// How much of the panel the title, tabs and summary take.
-const LIST_TOP: f32 = 120.0;
 /// How much the footer and its separator below the list take.
 const FOOTER: f32 = 64.0;
 /// One stylesheet row.
@@ -84,7 +82,7 @@ fn column_x(panel: Rect) -> f32 {
 fn summary_rect(panel: Rect, list: List) -> Option<Rect> {
 	spacious(panel).then_some(Rect {
 		x: panel.x + super::components::INSET,
-		y: list.viewport.y - 36.0,
+		y: list.viewport.y - 21.0,
 		w: panel.w - 2.0 * super::components::INSET,
 		h: 20.0,
 	})
@@ -98,7 +96,7 @@ pub(in crate::app) fn list(
 	scroll: f32,
 ) -> List {
 	let r = panel_rect(width, height);
-	let top = if spacious(r) { LIST_TOP } else { 88.0 };
+	let top = if spacious(r) { SETTINGS_HEADER } else { 88.0 };
 	List::new(
 		r,
 		Rect {

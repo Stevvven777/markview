@@ -11,6 +11,8 @@ use markview_core::style::{Color, ColorField as C, Condition, TextAppearance};
 pub(in crate::app) const CONTROL: f32 = 32.0;
 pub(super) const INSET: f32 = 24.0;
 const TAB_Y: f32 = 52.0;
+/// The tabs, status band and separator above settings content.
+pub(in crate::app) const SETTINGS_HEADER: f32 = TAB_Y + CONTROL + 20.0 + 1.0;
 /// One form row's height, which a page embedding form rows follows.
 pub(in crate::app) const ROW: f32 = 44.0;
 /// The band a section heading adds above the row it titles.
@@ -268,11 +270,11 @@ pub(super) fn label(
 	color: C,
 ) -> Vec<Draw> {
 	let text = ui.fit(text, size, rect.w);
-	ui.label(
+	ui.centered_label(
 		&text,
 		size,
 		rect.x,
-		rect.y + rect.h / 2.0 + size * 0.35,
+		rect.y + rect.h / 2.0,
 		Paint::Styled(Condition::Panel, color),
 	)
 }
@@ -430,11 +432,11 @@ fn draw_button_edges(
 				color,
 			));
 		}
-		out.extend(ui.label(
+		out.extend(ui.centered_label(
 			&text,
 			13.0,
 			x,
-			b.rect.y + b.rect.h / 2.0 + 4.5,
+			b.rect.y + b.rect.h / 2.0,
 			Paint::Styled(Condition::Button, color),
 		));
 		if let Some(paths) = b.marker {
@@ -590,6 +592,7 @@ pub(in crate::app) struct Form {
 	lang: Lang,
 	pub rect: Rect,
 	pub viewport: Rect,
+	detail_y: f32,
 	pub scroll: f32,
 	pub max_scroll: f32,
 	pub buttons: Vec<Button>,
@@ -612,11 +615,16 @@ impl Form {
 	) -> Self {
 		let rect = panel_rect(width, height);
 		let spacious_header = spacious_header && rect.h >= 300.0;
+		let header_height = if spacious_header {
+			SETTINGS_HEADER
+		} else {
+			88.0
+		};
 		let viewport = Rect {
 			x: rect.x + INSET,
-			y: rect.y + if spacious_header { 120.0 } else { 88.0 },
+			y: rect.y + header_height,
 			w: rect.w - INSET * 2.0,
-			h: rect.h - if spacious_header { 184.0 } else { 152.0 },
+			h: rect.h - header_height - 64.0,
 		};
 		let stacked = viewport.w < 360.0;
 		let content = 16.0
@@ -738,6 +746,12 @@ impl Form {
 			lang,
 			rect,
 			viewport,
+			detail_y: rect.y
+				+ if spacious_header {
+					TAB_Y + CONTROL
+				} else {
+					52.0
+				},
 			scroll,
 			max_scroll,
 			buttons,
@@ -896,7 +910,7 @@ impl Form {
 			detail,
 			12.0,
 			Rect {
-				y: self.viewport.y - 36.0,
+				y: self.detail_y,
 				h: 20.0,
 				w: self.rect.w - 2.0 * INSET,
 				..text_rect
@@ -987,11 +1001,11 @@ impl Form {
 				};
 				let fitted = ui.fit(value, 13.0, r.w - 8.0);
 				let x = r.x + (r.w - ui.text_width(&fitted, 13.0)) / 2.0;
-				body.extend(ui.label(
+				body.extend(ui.centered_label(
 					&fitted,
 					13.0,
 					x,
-					r.y + 20.5,
+					r.y + r.h / 2.0,
 					Paint::Styled(Condition::Panel, C::Color),
 				));
 			}

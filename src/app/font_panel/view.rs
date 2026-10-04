@@ -103,11 +103,6 @@ pub(in crate::app) fn list(
 	)
 }
 
-/// The baseline of `size`-point text centred in a band of `height`.
-fn centered(top: f32, height: f32, size: f32) -> f32 {
-	top + height / 2.0 + size * 0.35
-}
-
 /// The families a font role's chooser offers, with the stylesheet's own
 /// candidate chain first.
 ///
@@ -704,11 +699,11 @@ pub(in crate::app) fn draw_fonts(
 				13.0,
 				list.viewport.w - control_width - 48.0,
 			);
-			body.extend(shaper.label(
+			body.extend(shaper.centered_label(
 				&label,
 				13.0,
 				list.viewport.x + 24.0,
-				centered(band.y, CONTROL, 13.0),
+				band.y + CONTROL / 2.0,
 				Paint::Styled(Condition::Panel, C::Color),
 			));
 		}

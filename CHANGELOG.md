@@ -63,6 +63,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Vertically center settings labels and controls using visible glyph bounds, including CJK and mixed-font text.
+- Raise the settings header divider to balance the auto-save hint's spacing below the tabs.
 - Render Android Mermaid labels with Roboto Flex by supporting glyphs with more than 32 variation tuples.
 - Stabilize Android CI with AOSP images, launcher-dialog handling and synchronization of focus, layouts and previews.
 - Add Droid Sans Mono before the generic monospace fallback in builtin and artist MVSS themes.
