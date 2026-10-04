@@ -24,11 +24,19 @@ impl<P: super::SendEvent> App<P> {
 			return None;
 		}
 		let (width, height, _) = self.dimensions();
-		let metrics = self.preferences.values.stylesheet.scrollbar_metrics();
+		let mut metrics =
+			self.preferences.values.stylesheet.scrollbar_metrics();
+		// Keep the document bar's painted width and grab zone fixed.
+		metrics.thickness_hover = metrics.thickness;
 		let band = metrics.band();
+		let inset = if cfg!(any(target_os = "android", target_os = "ios")) {
+			0.0
+		} else {
+			6.0
+		};
 		let top = self.content_top();
 		let track = Rect {
-			x: width - band - 2.0,
+			x: width - band - inset,
 			y: top,
 			w: band,
 			h: (height - top - self.bottom()).max(0.0),

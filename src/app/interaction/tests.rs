@@ -270,6 +270,47 @@ fn reading_viewport_meets_chrome_and_scrollbar_edges() {
 }
 
 #[test]
+fn document_scrollbar_keeps_its_edge_inset_and_width_while_dragging() {
+	use markview_core::style::Stylesheet;
+	let (mut app, _) = reader(&"Body line.\n\n".repeat(100), 760.0);
+	app.preferences.values.stylesheet = Arc::new(
+		Stylesheet::parse(
+			"format_version=2\nversion=1\n[[rule]]\nwhen=['scrollbar']\nthickness=6.0\nthickness_hover=14.0",
+		)
+		.unwrap(),
+	);
+	let width = app.dimensions().0;
+	let inset = if cfg!(any(target_os = "android", target_os = "ios")) {
+		0.0
+	} else {
+		6.0
+	};
+	let bar = app.document_scrollbar().unwrap();
+	let (track, thumb) = bar.bars(false);
+	let rect = |r: crate::layout::Rect| (r.x, r.y, r.w, r.h);
+	assert_eq!(track.w, 6.0);
+	assert_eq!(track.x + track.w, width - inset);
+	assert_eq!(rect(bar.track), rect(track));
+	let (hovered_track, hovered_thumb) = bar.bars(true);
+	assert_eq!(rect(hovered_track), rect(track));
+	assert_eq!(rect(hovered_thumb), rect(thumb));
+	for x in [track.x, track.x + track.w] {
+		assert!(app.frame_layout().resize_at(x, thumb.y + 10.0).is_none());
+	}
+	assert!(!bar.hit(track.x - 1.0, thumb.y + 10.0));
+	assert!(!bar.hit(track.x + track.w + 1.0, thumb.y + 10.0));
+	app.interaction.cursor = (thumb.x + thumb.w / 2.0, thumb.y + 10.0);
+	assert!(app.begin_scrollbar_drag());
+	app.interaction.cursor.1 += 100.0;
+	app.drag_scrollbar();
+	assert!(app.readers.session.scrolling.offset > 0.0);
+	let (dragged_track, dragged_thumb) =
+		app.document_scrollbar().unwrap().bars(true);
+	assert_eq!(rect(dragged_track), rect(track));
+	assert_eq!((dragged_thumb.x, dragged_thumb.w), (thumb.x, thumb.w));
+}
+
+#[test]
 #[ignore = "requires a GPU"]
 fn scrolled_content_paints_to_both_viewport_edges() -> anyhow::Result<()> {
 	use crate::render::{Renderer, Theme, View};

@@ -592,9 +592,7 @@ impl Chrome<'_> {
 				.scrollbar
 				.is_some_and(|drag| drag.target == ScrollbarAxis::Document);
 			let (x, y) = self.interaction.cursor;
-			// Hovering anywhere on the bar thickens it; only the thumb itself
-			// takes the hover color.
-			let (track, thumb) = bar.bars(held || bar.hit(x, y));
+			let (track, thumb) = bar.bars(false);
 			out.push(Draw::Rect(
 				track,
 				Paint::Styled(Condition::Scrollbar, C::Track),
