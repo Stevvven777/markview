@@ -67,6 +67,7 @@ at the same level, without `[brackets]`.
 - Use `sw600dp` to keep phones in portrait with a left tab drawer and hide their tab-style setting; tablets retain desktop tabs and rotation.
 
 - Move tab style from MVSS to the `tab-style` user setting, defaulting to `underline` (formerly `classic`).
+- Separate neighboring inactive tabs in both tab styles while keeping active-tab joins and the trailing edge clear.
 - Default text layout edges to cap-height/baseline, allowing line heights and page breaks to follow the new typography policy.
 - Balance macOS traffic-light margins and deepen light and builtin tab-strip backgrounds, matching inactive tabs to the strip.
 - Strengthen light-theme hover feedback, unify right-side toolbar and window-button spacing without a separator, and add Linux chevron and diamond controls.
