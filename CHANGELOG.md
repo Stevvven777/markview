@@ -44,6 +44,8 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Compact Light theme headings, quotations and table cells on phones using MVSS media rules.
+
 - Keep the document scrollbar 6 px from the desktop edge and flush with the mobile edge, with a fixed thickness on hover and drag.
 
 - Fold next-launch settings into Interface and show a localized restart hint only for changed window layout, colored by the MVSS `warning` field.

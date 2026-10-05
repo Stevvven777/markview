@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 6
+version = 7
 
 [meta]
 name = "Light"
@@ -136,3 +136,54 @@ background = "#E9BA4547"
 [[rule]]
 when = ["search_current"]
 background = "#D8952477"
+
+# Compact headings and containers for phone reading.
+[[rule]]
+when = ["h1"]
+media = ["phone"]
+size = 1.5
+line_height = 1.3
+space_after = 0.6
+
+[[rule]]
+when = ["h2"]
+media = ["phone"]
+size = 1.25
+line_height = 1.3
+space_after = 0.5
+
+[[rule]]
+when = ["h3"]
+media = ["phone"]
+size = 1.12
+line_height = 1.3
+space_after = 0.45
+
+[[rule]]
+when = ["h4"]
+media = ["phone"]
+size = 1.05
+line_height = 1.3
+space_after = 0.4
+
+[[rule]]
+when = ["h5"]
+media = ["phone"]
+line_height = 1.3
+space_after = 0.4
+
+[[rule]]
+when = ["h6"]
+media = ["phone"]
+line_height = 1.3
+space_after = 0.4
+
+[[rule]]
+when = ["blockquote"]
+media = ["phone"]
+padding = [0.2, 0.2, 0.2, 0.6]
+
+[[rule]]
+when = ["table", "cell"]
+media = ["phone"]
+padding = 0.35
