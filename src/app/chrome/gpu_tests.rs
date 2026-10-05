@@ -670,6 +670,114 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 	Ok(())
 }
 
+#[test]
+#[ignore = "requires a GPU; writes artifacts/tab-feedback/*.png"]
+fn tab_feedback_frames() -> Result<()> {
+	use crate::app::{tab_metrics::TabMetrics, tab_strip::TabStrip};
+	use crate::settings::{TabStyle, WindowLayout};
+	let output = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+		.join("artifacts/tab-feedback");
+	std::fs::create_dir_all(&output)?;
+	let mut renderer = pollster::block_on(Renderer::new(None))?;
+	let fonts = crate::test_support::fonts();
+	let document = document::parse(
+		"# Reading, without distractions\n\nA native home for **Markdown**, with a clear place for every document.\n\n## Keep the reading surface quiet\n\nThe selected document is **notes.md**. The pointer rests on **design.md**.\n\n- Find the selected tab at a glance\n- Keep neighboring joins clear\n- Make hovered labels easier to read\n\n```rust\nlet reader = Markview::open(\"notes.md\");\n```\n",
+	);
+	let tabs: Vec<_> =
+		["guide.md", "design.md", "notes.md", "theme.md", "links.md"]
+			.into_iter()
+			.map(|name| ReaderTab::new(name.into()))
+			.collect();
+	let strip = TabStrip::default();
+	let (width, height, scale) = (900.0, 420.0, 1.5);
+	let frame = crate::app::frame::Layout::new(
+		WindowLayout::Macos,
+		true,
+		width,
+		height,
+		false,
+		false,
+	);
+	for (dark, style, filename) in [
+		(true, TabStyle::Underline, "dark-underline.png"),
+		(true, TabStyle::Connected, "dark-connected.png"),
+		(false, TabStyle::Underline, "light-underline.png"),
+	] {
+		let settings = ReaderSettings {
+			theme: if dark { Theme::Dark } else { Theme::Light },
+			tab_style: style,
+			stylesheet: markview_core::style::Stylesheet::bundled(dark),
+			..Default::default()
+		};
+		renderer.set_stylesheet(settings.stylesheet.clone());
+		let mut ui = crate::test_support::shaper();
+		ui.set_stylesheet(settings.stylesheet.clone());
+		let mut metrics = TabMetrics::default();
+		metrics.sync(&mut ui, &tabs);
+		let mut bar = tabs::TabBar {
+			style,
+			ui: &mut ui,
+			strip: &strip,
+			widths: &metrics.widths,
+			tabs: &tabs,
+			active_tab: 2,
+			cursor: (0.0, 0.0),
+			viewport: frame.tabs,
+		};
+		let hovered = bar.layout().rects[1];
+		bar.cursor = (hovered.x + hovered.w / 2.0, hovered.y + hovered.h / 2.0);
+		let cursor = bar.cursor;
+		let mut overlay = vec![Draw::Rect(
+			Rect {
+				x: 0.0,
+				y: 0.0,
+				w: width,
+				h: TOP,
+			},
+			Paint::Styled(Condition::Toolbar, C::Background),
+		)];
+		overlay.extend(bar.draw_tabs());
+		overlay.extend(controls::draw_toolbar_at(
+			&mut ui,
+			&InteractionState {
+				cursor,
+				..Default::default()
+			},
+			frame,
+			Lang::En,
+		));
+		let snapshot = LayoutEngine::new()
+			.layout(&document, &settings.layout_options(width, false, &fonts));
+		let horizontal = HashMap::new();
+		let view = View {
+			width: (width * scale) as u32,
+			height: (height * scale) as u32,
+			scale,
+			left: 24.0,
+			top: TOP + 20.0,
+			bottom: 10.0,
+			scroll: 0.0,
+			theme: settings.theme,
+			horizontal: &horizontal,
+			selection: None,
+			revision: 0,
+			hovered_link: None,
+			hovered_overflow: None,
+			held_overflow: None,
+		};
+		let target = renderer.offscreen(view.width, view.height);
+		let submission = renderer.render(
+			&snapshot,
+			&view,
+			&overlay,
+			&target.create_view(&Default::default()),
+		)?;
+		renderer.wait(Some(submission))?;
+		renderer.save_png(&target, &output.join(filename))?;
+	}
+	Ok(())
+}
+
 /// A vector icon keeps its optical centre inside its button at any device
 /// phase. The icon bakes its subpixel position into the raster, so it must
 /// stay centred on a button that sits on a half device pixel instead of

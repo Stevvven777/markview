@@ -48,6 +48,8 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Darken the Dark reading surface and raise its chrome; separate inactive tabs while keeping the active tab's joins clear, and blend hovered labels with 70% active text color.
+
 - Package Android release APKs for ARM64 only to reduce download size; retain ARM64 and x86_64 debug builds and x86_64 KVM emulator tests.
 
 - Reduce phone list indentation and quotation/table padding across bundled reader themes.
