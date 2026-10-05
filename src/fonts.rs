@@ -927,7 +927,7 @@ async fn fetch_file<T: Transport>(
 		services, cancel, ..
 	} = *download;
 	let basename = url_basename(file.url());
-	let temp = DownloadTemp(temp_path(dir), true);
+	let temp = DownloadTemp(temp_path(dir)?, true);
 	let bytes = reporter
 		.fetch(
 			index,
@@ -977,7 +977,7 @@ async fn fetch_archive<T: Transport>(
 		services, cancel, ..
 	} = *download;
 	let basename = url_basename(&archive.url);
-	let temp = DownloadTemp(temp_path(dir), true);
+	let temp = DownloadTemp(temp_path(dir)?, true);
 	let bytes = reporter
 		.fetch(
 			index,
@@ -1126,7 +1126,7 @@ fn install(dir: &Path, staged: &mut [Staged]) -> Result<()> {
 	for entry in staged.iter_mut() {
 		let target = dir.join(&entry.name);
 		let saved = if target.exists() {
-			let keep = temp_path(dir);
+			let keep = temp_path(dir)?;
 			if let Err(error) = fs::rename(&target, &keep) {
 				remove_placed(&placed);
 				restore(&replaced);
@@ -1358,11 +1358,16 @@ fn url_basename(url: &str) -> String {
 ///
 /// The `.tmp` suffix is what keeps the shaper's directory scan from ever
 /// registering a half-written file, and staying in the same directory is what
-/// makes the final rename atomic.
-fn temp_path(dir: &Path) -> PathBuf {
-	static NEXT: AtomicUsize = AtomicUsize::new(0);
-	let n = NEXT.fetch_add(1, Ordering::Relaxed);
-	dir.join(format!(".tmp-{}-{n}.tmp", std::process::id()))
+/// makes the final rename atomic. The random part comes from the operating
+/// system rather than the process id, so no one who can write beside the
+/// directory can predict the name and plant a symlink there. The name alone is
+/// returned; every caller creates the file exclusively, and [`install`] only
+/// uses it as a rename destination.
+fn temp_path(dir: &Path) -> Result<PathBuf> {
+	let mut random = [0u8; 8];
+	getrandom::fill(&mut random)
+		.context("Cannot name a temporary font file")?;
+	Ok(dir.join(format!(".tmp-{:016x}.tmp", u64::from_le_bytes(random))))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -1513,11 +1518,16 @@ impl Extracted {
 		if self.files.len() >= MAX_MEMBERS {
 			bail!("Archive has more than {MAX_MEMBERS} matching members");
 		}
-		let temp = temp_path(dir);
+		let temp = temp_path(dir)?;
 		// Registered before the first write, so a failed copy or sync is
 		// cleaned up by [`Drop`] exactly like an abandoned extraction.
 		self.files.push((temp.clone(), name));
-		let mut file = fs::File::create(&temp)?;
+		// Exclusive: the name is random, and a file already sitting there is
+		// not something this extraction may write through.
+		let mut file = fs::OpenOptions::new()
+			.write(true)
+			.create_new(true)
+			.open(&temp)?;
 		let mut limited = reader.take(MAX_FILE_BYTES + 1);
 		let written = io::copy(&mut limited, &mut file)?;
 		file.sync_all()?;
@@ -2361,6 +2371,45 @@ mod tests {
 			summary.failed[0].1
 		);
 		assert_eq!(summary.requested, ["noto"]);
+	}
+
+	/// The temporary name must be unpredictable, keep the two properties the
+	/// readers of it rely on, and never be a name the callers may clobber.
+	#[test]
+	fn a_temporary_font_name_is_random_and_scannable() {
+		let dir = tempfile::tempdir().unwrap();
+		let first = temp_path(dir.path()).unwrap();
+		let second = temp_path(dir.path()).unwrap();
+		assert_ne!(first, second, "two names must not collide");
+		// `install` moves a copy aside to it, and every creator writes to it
+		// exclusively, so naming must not create anything.
+		assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+		for path in [&first, &second] {
+			assert_eq!(path.parent(), Some(dir.path()));
+			let name = path.file_name().unwrap().to_string_lossy().into_owned();
+			// The shaper's directory scan must never register a half-written
+			// file, and `remove_placed` must clean up after a failed install.
+			assert!(
+				name.starts_with(".tmp-") && name.ends_with(".tmp"),
+				"{name}"
+			);
+			// The exact shape pins the scheme: a decimal process id and a
+			// counter cannot spell it, so the name is no longer predictable
+			// to whoever can write beside the directory.
+			let random = name
+				.strip_prefix(".tmp-")
+				.and_then(|rest| rest.strip_suffix(".tmp"));
+			assert!(
+				random.is_some_and(|random| {
+					random.len() == 16
+						&& random.bytes().all(|byte| {
+							byte.is_ascii_digit()
+								|| (b'a'..=b'f').contains(&byte)
+						})
+				}),
+				"{name}"
+			);
+		}
 	}
 
 	/// A refresh that succeeds replaces the old copy and keeps no leftover.

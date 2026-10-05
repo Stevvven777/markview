@@ -364,7 +364,13 @@ async fn stream_body(
 		bail!("Cancelled");
 	}
 	// Await non-abortable file operations before the caller releases cleanup ownership.
-	let mut file = tokio::fs::File::create(path)
+	// The destination is a fresh name the caller reserved, and only a file
+	// this call creates is written: a name that already exists is an error
+	// rather than a write through whatever occupies it.
+	let mut file = tokio::fs::OpenOptions::new()
+		.write(true)
+		.create_new(true)
+		.open(path)
 		.await
 		.with_context(|| format!("Cannot write {}", path.display()))?;
 	let mut written = 0u64;
@@ -789,6 +795,61 @@ mod tests {
 			assert_eq!(result.unwrap_err().to_string(), "Cancelled");
 			assert!(!path.exists(), "cancelled creation left an orphaned file");
 			assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+		};
+		runtime.block_on(scenario);
+	}
+
+	/// A streamed body must never be written through a link planted at the
+	/// destination, even when the caller reserved a predictable name.
+	#[cfg(unix)]
+	#[test]
+	fn a_streamed_body_never_writes_through_a_planted_symlink() {
+		use std::os::unix::fs::symlink;
+		let runtime = tokio::runtime::Builder::new_current_thread()
+			.enable_all()
+			.build()
+			.unwrap();
+		let scenario = async {
+			let listener =
+				tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+			let address = listener.local_addr().unwrap();
+			let server = tokio::spawn(async move {
+				use tokio::io::{AsyncReadExt, AsyncWriteExt};
+				let (mut socket, _) = listener.accept().await.unwrap();
+				let mut request = [0; 4096];
+				assert!(socket.read(&mut request).await.unwrap() > 0);
+				let response = concat!(
+					"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n",
+					"Connection: close\r\n\r\nabcdef"
+				);
+				socket.write_all(response.as_bytes()).await.unwrap();
+			});
+			let response = reqwest::Client::builder()
+				.no_proxy()
+				.build()
+				.unwrap()
+				.get(format!("http://{address}"))
+				.send()
+				.await
+				.unwrap();
+			let dir = tempfile::tempdir().unwrap();
+			let victim = dir.path().join("victim");
+			std::fs::write(&victim, b"safe").unwrap();
+			let path = dir.path().join("download");
+			symlink(&victim, &path).unwrap();
+			let error = stream_body(
+				response,
+				&path,
+				1024,
+				Some(6),
+				&mut |_, _| {},
+				&tokio_util::sync::CancellationToken::new(),
+			)
+			.await
+			.unwrap_err();
+			server.await.unwrap();
+			assert!(error.to_string().contains("Cannot write"), "{error}");
+			assert_eq!(std::fs::read(&victim).unwrap(), b"safe");
 		};
 		runtime.block_on(scenario);
 	}

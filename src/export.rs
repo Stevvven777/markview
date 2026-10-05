@@ -18,6 +18,7 @@ use markview_core::{
 	style::{CjkType, PageStyle, Stylesheet},
 };
 use std::{
+	io::Write,
 	path::{Path, PathBuf},
 	sync::Arc,
 };
@@ -301,18 +302,29 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 		.filter(|parent| !parent.as_os_str().is_empty())
 		.unwrap_or(Path::new("."));
 	std::fs::create_dir_all(parent)?;
-	let name = path
-		.file_name()
-		.map(|name| name.to_string_lossy().into_owned())
-		.unwrap_or_default();
-	let temp = parent.join(format!(".{name}.{}.tmp", std::process::id()));
-	std::fs::write(&temp, bytes)
-		.with_context(|| format!("Cannot write {}", temp.display()))?;
-	if let Err(error) = std::fs::rename(&temp, path) {
-		let _ = std::fs::remove_file(&temp);
-		return Err(error)
-			.with_context(|| format!("Cannot replace {}", path.display()));
-	}
+	// An exclusive create under a random name: no name here is predictable
+	// enough to pre-place a symlink at, and the bytes go to the handle this
+	// call owns rather than to whatever some path resolves to. `0o666` lets
+	// the umask pick the mode a plain write would have used; `tempfile`'s own
+	// default would make every export owner-only.
+	#[cfg(unix)]
+	let temp = {
+		use std::os::unix::fs::PermissionsExt;
+		tempfile::Builder::new()
+			.permissions(std::fs::Permissions::from_mode(0o666))
+			.tempfile_in(parent)
+	};
+	#[cfg(not(unix))]
+	let temp = tempfile::NamedTempFile::new_in(parent);
+	let mut temp = temp
+		.with_context(|| format!("Cannot write beside {}", path.display()))?;
+	temp.write_all(bytes)
+		.with_context(|| format!("Cannot write {}", path.display()))?;
+	// Moving the inner error out drops the temporary path with this call, so a
+	// failed replace never leaves the file behind.
+	temp.persist(path)
+		.map_err(|error| error.error)
+		.with_context(|| format!("Cannot replace {}", path.display()))?;
 	Ok(())
 }
 

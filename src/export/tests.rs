@@ -111,6 +111,60 @@ fn a_write_replaces_the_destination_atomically() {
 	);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_planted_temporary_symlink_is_never_written_through() {
+	use std::os::unix::fs::{PermissionsExt, symlink};
+	let dir = tempfile::tempdir().unwrap();
+	let victim = dir.path().join("victim");
+	std::fs::write(&victim, b"safe").unwrap();
+	// The name the helper used before it took a random one, so the planting
+	// attacker's best guess is covered rather than a name this test chose.
+	let planted = dir
+		.path()
+		.join(format!(".out.pdf.{}.tmp", std::process::id()));
+	symlink(&victim, &planted).unwrap();
+	// A plain write in the same directory is the mode an export must match.
+	let plain = dir.path().join("plain");
+	std::fs::write(&plain, b"plain").unwrap();
+
+	write_atomic(&dir.path().join("out.pdf"), b"exported").unwrap();
+
+	assert_eq!(std::fs::read(&victim).unwrap(), b"safe");
+	assert_eq!(
+		std::fs::read(dir.path().join("out.pdf")).unwrap(),
+		b"exported"
+	);
+	assert_eq!(
+		std::fs::metadata(dir.path().join("out.pdf"))
+			.unwrap()
+			.permissions()
+			.mode() & 0o777,
+		std::fs::metadata(&plain).unwrap().permissions().mode() & 0o777
+	);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_destination_is_replaced_rather_than_followed() {
+	use std::os::unix::fs::symlink;
+	let dir = tempfile::tempdir().unwrap();
+	let victim = dir.path().join("victim");
+	std::fs::write(&victim, b"safe").unwrap();
+	let destination = dir.path().join("out.pdf");
+	symlink(&victim, &destination).unwrap();
+
+	write_atomic(&destination, b"exported").unwrap();
+
+	assert_eq!(std::fs::read(&victim).unwrap(), b"safe");
+	assert!(
+		!std::fs::symlink_metadata(&destination)
+			.unwrap()
+			.is_symlink()
+	);
+	assert_eq!(std::fs::read(&destination).unwrap(), b"exported");
+}
+
 #[test]
 fn a_mapped_export_writes_a_real_pdf() {
 	let dir = tempfile::tempdir().unwrap();

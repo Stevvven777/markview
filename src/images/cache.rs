@@ -21,7 +21,6 @@ use std::{
 	hash::{Hash, Hasher},
 	io::{Read, Write},
 	path::{Path, PathBuf},
-	sync::atomic::{AtomicU64, Ordering},
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
 /// Total bytes the cache keeps. 128 MiB holds hundreds of ordinary diagrams
@@ -32,7 +31,6 @@ const MAGIC: &[u8] = b"MARKVIEW-CACHE/1\n";
 const MAX_HEADER: usize = 8 * 1024;
 /// A temporary file older than this is debris from a crashed writer.
 const TEMP_AGE: Duration = Duration::from_secs(3600);
-static TEMP: AtomicU64 = AtomicU64::new(0);
 
 /// What a stored response must remember to be reused or revalidated.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -247,26 +245,23 @@ impl Cache {
 	fn write(&self, key: &str, meta: &Meta, body: &[u8]) -> Result<()> {
 		fs::create_dir_all(&self.root).context("Create image cache")?;
 		let header = serde_json::to_vec(meta).context("Encode cache header")?;
-		let temp = self.root.join(format!(
-			".tmp-{}-{}",
-			std::process::id(),
-			TEMP.fetch_add(1, Ordering::Relaxed)
-		));
-		let mut file = fs::File::create(&temp)?;
-		let result = (|| -> Result<()> {
-			file.write_all(MAGIC)?;
-			file.write_all(&(header.len() as u32).to_le_bytes())?;
-			file.write_all(&header)?;
-			file.write_all(body)?;
-			file.flush()?;
-			fs::rename(&temp, self.path(key))
-				.context("Install image cache entry")?;
-			Ok(())
-		})();
-		if result.is_err() {
-			let _ = fs::remove_file(&temp);
-		}
-		result
+		// The name is random and the file is created exclusively, so a symlink
+		// planted in the cache directory is never written through. The
+		// `.tmp-` prefix stays, because [`Cache::evict`] is what reclaims a
+		// temporary file a crashed writer left behind.
+		let mut temp = tempfile::Builder::new()
+			.prefix(".tmp-")
+			.suffix(".tmp")
+			.tempfile_in(&self.root)
+			.context("Create image cache entry")?;
+		temp.write_all(MAGIC)?;
+		temp.write_all(&(header.len() as u32).to_le_bytes())?;
+		temp.write_all(&header)?;
+		temp.write_all(body)?;
+		temp.flush()?;
+		temp.persist(self.path(key))
+			.context("Install image cache entry")?;
+		Ok(())
 	}
 
 	/// Drops least-recently-used entries until the cache is within its bound,
@@ -565,6 +560,30 @@ mod tests {
 			has_cache_control: max_age.is_some(),
 			..Default::default()
 		}
+	}
+
+	/// A store must never write through a link planted in the cache directory.
+	#[cfg(unix)]
+	#[test]
+	fn a_planted_cache_symlink_is_never_written_through() {
+		use std::os::unix::fs::symlink;
+		let dir = tempfile::tempdir().unwrap();
+		let cache = Cache::new(dir.path().to_owned());
+		let victim = dir.path().join("victim");
+		fs::write(&victim, b"safe").unwrap();
+		// Every name the counter-based scheme could reach, so the guard does
+		// not depend on how many stores ran before it in this test process.
+		for n in 0..4096 {
+			symlink(
+				&victim,
+				dir.path().join(format!(".tmp-{}-{n}", std::process::id())),
+			)
+			.unwrap();
+		}
+		let url = "https://example.com/a.png";
+		cache.put(url, hit(None, Some(600)), b"stored");
+		assert_eq!(fs::read(&victim).unwrap(), b"safe");
+		assert_eq!(cache.load_body(url).unwrap(), b"stored");
 	}
 
 	#[test]

@@ -79,6 +79,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Write PDF and PNG exports, downloaded fonts and cached images through an exclusive random temporary file, so a symlink planted beside the destination is never written through.
+
 - Preserve block-relative session positions below text and let explicit search, scrollbar or background fragment navigation cancel pending restoration.
 
 - Skip WinGet updates without failing release CI while the initial community submission is still pending.
