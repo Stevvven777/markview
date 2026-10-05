@@ -75,6 +75,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Skip WinGet updates without failing release CI while the initial community submission is still pending.
+
 - Reserve alignment insets in narrow list marker columns so small bullets, checkboxes and ordered labels cannot overlap item text.
 
 - Prevent nested list closing spaces from accumulating, and keep lower heading fonts consistent in Celadon, Rosewood and artist PDF themes.

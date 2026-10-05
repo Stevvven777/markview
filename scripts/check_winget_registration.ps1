@@ -8,6 +8,8 @@ if ($LASTEXITCODE -eq 0) {
 } elseif ($response -match '(?m)^HTTP/\S+ 404\b') {
     "registered=false" >> $OutputFile
     Write-Host "::notice::The initial WinGet submission is pending; skipping the update. After it merges, run this workflow for the latest stable release."
+    # Clear `gh`'s handled failure before the Actions `pwsh` wrapper exits.
+    $global:LASTEXITCODE = 0
 } else {
     throw "Could not check WinGet registration: $response"
 }
