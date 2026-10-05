@@ -1,12 +1,12 @@
 //! Instance-owned parsed MVSS rules and atomic reader selection.
 
 use anyhow::{Context, Result, ensure};
-use markview_core::style::{StyleTarget, Stylesheet};
+use markview_core::style::{StyleTarget, Stylesheet, StylesheetSource};
 use std::{collections::HashMap, sync::Arc};
 
 #[derive(Default)]
 pub(crate) struct Stylesheets {
-	registered: HashMap<String, Arc<Stylesheet>>,
+	registered: HashMap<String, Arc<StylesheetSource>>,
 	pub(crate) explicit: bool,
 }
 
@@ -17,16 +17,16 @@ impl Stylesheets {
 			!id.starts_with("bundled:"),
 			"stylesheet ID {id:?}: bundled: is reserved"
 		);
-		let sheet = Stylesheet::parse(source)
+		let sheet = StylesheetSource::parse(source)
 			.with_context(|| format!("stylesheet {id:?}"))?;
 		Self::validate_target(id, &sheet)?;
 		self.registered.insert(id.into(), Arc::new(sheet));
 		Ok(())
 	}
 
-	fn resolve(&self, id: &str) -> Result<Arc<Stylesheet>> {
+	fn resolve(&self, id: &str) -> Result<Arc<StylesheetSource>> {
 		let sheet = match id.strip_prefix("bundled:") {
-			Some(name) => Stylesheet::named_rules(name),
+			Some(name) => StylesheetSource::named_rules(name),
 			None => self.registered.get(id).cloned(),
 		}
 		.with_context(|| format!("unknown stylesheet ID {id:?}"))?;
@@ -34,7 +34,7 @@ impl Stylesheets {
 		Ok(sheet)
 	}
 
-	fn validate_target(id: &str, sheet: &Stylesheet) -> Result<()> {
+	fn validate_target(id: &str, sheet: &StylesheetSource) -> Result<()> {
 		ensure!(
 			sheet.targets.contains(&StyleTarget::Ui),
 			"stylesheet {id:?}: targets do not include ui"
@@ -50,11 +50,11 @@ impl Stylesheets {
 		let selected = if ids.is_empty() {
 			default
 		} else {
-			let mut sheet = (*Stylesheet::builtin()).clone();
+			let mut sheet = (*StylesheetSource::builtin()).clone();
 			for id in ids.iter().rev() {
 				sheet.merge(&*self.resolve(id)?);
 			}
-			Arc::new(sheet)
+			Arc::new(Arc::new(sheet).resolve(default.media()))
 		};
 		self.explicit = !ids.is_empty();
 		Ok(selected)
@@ -64,7 +64,7 @@ impl Stylesheets {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use markview_core::style::{Color, Condition};
+	use markview_core::style::{Color, Condition, MediaContext};
 
 	const FIRST: &str = "format_version = 2\nversion = 1\n[[rule]]\nwhen = ['body']\ncolor = '#112233'";
 	const SECOND: &str = "format_version = 2\nversion = 1\n[[rule]]\nwhen = ['body']\ncolor = '#445566'";
@@ -91,7 +91,13 @@ mod tests {
 		assert!(Arc::ptr_eq(&cached, &styles.resolve("light").unwrap()));
 		styles.register("light", SECOND).unwrap();
 		assert!(!Arc::ptr_eq(&cached, &styles.resolve("light").unwrap()));
-		assert_eq!(cached.rule(Condition::Body).color, Some(Color(0x112233ff)));
+		assert_eq!(
+			cached
+				.resolve(MediaContext::default())
+				.rule(Condition::Body)
+				.color,
+			Some(Color(0x112233ff))
+		);
 		assert!(Stylesheets::default().resolve("light").is_err());
 	}
 

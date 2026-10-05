@@ -1,13 +1,18 @@
 //! Markview Stylesheet v2: strict parsing, field-wise cascading and semantic text styles.
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use serde::de::IntoDeserializer;
+use std::{
+	collections::{BTreeMap, BTreeSet},
+	sync::Arc,
+};
 
 use super::{
-	CjkType, Condition, ConditionSet, FontDefinition, FontFamily, MermaidStyle,
-	Metadata, PageStyle, Rule, StyleTarget, Stylesheet, SvgStyle,
+	CjkType, Condition, ConditionSet, FontDefinition, FontFamily, Media,
+	MermaidStyle, Metadata, PageStyle, Rule, StyleTarget, StylesheetProperties,
+	StylesheetSource, SvgStyle,
 };
-impl Stylesheet {
+impl StylesheetSource {
 	pub fn parse(source: &str) -> Result<Self> {
 		let mut doc = source.parse::<toml_edit::DocumentMut>()?;
 		let format_version =
@@ -52,7 +57,7 @@ impl Stylesheet {
 		let page = parse_page(&mut doc)?;
 		let svg = parse_svg(&mut doc)?;
 		let mermaid = parse_mermaid(&mut doc)?;
-		let mut out = Self {
+		let mut properties = StylesheetProperties {
 			version,
 			targets,
 			fontdefs: BTreeMap::new(),
@@ -63,15 +68,16 @@ impl Stylesheet {
 			page,
 			svg,
 			mermaid,
-			..Self::default()
 		};
-		out.resolve_fontdefs();
+		properties.resolve_fontdefs();
+		let mut layer = Vec::new();
+		let mut selectors = BTreeSet::new();
 		if let Some(item) = doc.remove("rule") {
 			let rules = item
 				.as_array_of_tables()
 				.context("rule: expected [[rule]] tables")?;
 			for table in rules.iter() {
-				let (conditions, fields) = split_rule(table)?;
+				let (conditions, media, fields) = split_rule(table)?;
 				for (key, _) in fields.iter() {
 					validate_field(conditions, key)?;
 				}
@@ -118,16 +124,22 @@ impl Stylesheet {
 				{
 					bail!("rule [body].background: must be opaque");
 				}
-				if out.rules.insert(conditions, rule).is_some() {
-					bail!("rule [{name}]: duplicate conditions");
+				if !selectors.insert((conditions, media)) {
+					bail!("rule [{name}]: duplicate conditions and media");
 				}
+				layer.push((conditions, media, rule));
 			}
 		}
 		if let Some((name, _)) = doc.iter().next() {
 			bail!("unknown table [{name}]");
 		}
-		out.reindex();
-		Ok(out)
+		let has_media = layer.iter().any(|(_, media, _)| *media != 0);
+		layer.sort_by_key(|(_, media, _)| *media != 0);
+		Ok(Self {
+			properties: Arc::new(properties),
+			layers: vec![layer.into()],
+			has_media,
+		})
 	}
 }
 
@@ -344,12 +356,34 @@ fn parse_mermaid(doc: &mut toml_edit::DocumentMut) -> Result<MermaidStyle> {
 /// Split one `[[rule]]` table into its condition set and style fields.
 fn split_rule(
 	table: &toml_edit::Table,
-) -> Result<(ConditionSet, toml_edit::DocumentMut)> {
+) -> Result<(ConditionSet, u32, toml_edit::DocumentMut)> {
 	let mut fields = toml_edit::DocumentMut::new();
 	let mut when = None;
+	let mut media = 0;
 	for (key, value) in table.iter() {
 		if key == "when" {
 			when = Some(parse_when(value)?);
+		} else if key == "media" {
+			let names = value
+				.as_array()
+				.context("rule.media: expected an array of media names")?;
+			if names.is_empty() {
+				bail!("rule.media: expected at least one media name");
+			}
+			for name in names {
+				let value = name
+					.as_str()
+					.context("rule.media: expected media names")?;
+				let condition = Media::deserialize(value.into_deserializer())
+					.map_err(|e: serde::de::value::Error| anyhow::anyhow!(e))
+					.with_context(|| {
+						format!("rule.media: unknown media {value:?}")
+					})?;
+				if media & condition.bit() != 0 {
+					bail!("rule.media: duplicate media {value:?}");
+				}
+				media |= condition.bit();
+			}
 		} else {
 			if value.is_table_like() {
 				bail!("rule.{key}: expected a value");
@@ -361,7 +395,7 @@ fn split_rule(
 	if fields.is_empty() {
 		bail!("rule [{}]: declares no fields", conditions.display());
 	}
-	Ok((conditions, fields))
+	Ok((conditions, media, fields))
 }
 fn parse_when(value: &toml_edit::Item) -> Result<ConditionSet> {
 	let names = value

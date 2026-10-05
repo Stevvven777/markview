@@ -174,6 +174,7 @@ impl<P: super::SendEvent> App<P> {
 					r.resize(width, height);
 				}
 				if width > 0 && height > 0 {
+					self.update_media();
 					self.reveal_panel_focus();
 					self.worker.prioritize(
 						self.readers.session.coverage(self.viewport()),

@@ -150,7 +150,38 @@ A condition is one fact about a rendered run: the blocks that contain it, the pa
 
 `page` paints the exported sheet; the other three style page furniture. They never apply to the reader window, and a theme that ignores them still exports: the PDF falls back to the body appearance.
 
-A rule applies to a run when **every** condition it names holds for that run. The order inside `when` is not part of the rule's identity, so `["strong", "code"]` and `["code", "strong"]` are the same rule, and a file that declares both is rejected as a duplicate. There are no selectors, variables, `inherit`, `unset`, imports, or scripts. The only remote resource a stylesheet can name is a font family, declared under [`[[font-family]]`](#downloadable-fonts), and even that is never fetched until the reader asks for it.
+A rule applies to a run when **every** condition it names holds for that run, and its optional `media` filter matches the rendering environment. The order inside `when` and `media` is not part of the rule's identity: two rules with the same sets are rejected as duplicates, while the same `when` with different media filters is allowed. There are no variables, `inherit`, `unset`, imports, or scripts. The only remote resource a stylesheet can name is a font family, declared under [`[[font-family]]`](#downloadable-fonts), and even that is never fetched until the reader asks for it.
+
+### Media filters
+
+`media` is a nonempty array with **OR** semantics: a rule applies when **any** listed media name matches. Omit it to apply the rule in every environment. `when` continues to require all its document conditions.
+
+```toml
+[[rule]]
+when = ["body"]
+media = ["android", "linux"]
+line_height = 1.7
+
+[[rule]]
+when = ["code"]
+media = ["pdf"]
+size = 0.85
+```
+
+| Area | Media names |
+| --- | --- |
+| Output | `ui`, `pdf` |
+| Device | `desktop`, `mobile`, `tablet`, `phone` |
+| Orientation | `landscape`, `portrait` |
+| Platform | `android`, `linux`, `windows`, `macos`, `ios`, `web` |
+
+`ui` covers the reader and diagnostic PNG previews; `pdf` covers the export panel's PDF and PNG paper exports. Platform and device describe the host even during export. Both `phone` and `tablet` also match `mobile`. Android uses its existing `sw600dp` classification: phones below 600 dp, tablets at or above 600 dp; shrinking a desktop window does not turn it into a phone. Native hosts report their OS; the WebAssembly viewer reports `web` and uses the `desktop` device category. Core embedders can provide a `MediaContext` explicitly.
+
+Orientation follows the whole reader window, preview image, viewer canvas or exported paper, rather than the text column. Width greater than height matches `landscape`; otherwise it matches `portrait`. Resizing or rotating the reader and changing export paper options reselects the applicable rules.
+
+Within a stylesheet, matching media rules overlay the unfiltered rule with the same `when`, field by field. When multiple media rules match the same `when`, the later declaration wins. Stylesheet layer priority still takes precedence: a higher layer's unfiltered rule can override a lower layer's media rule. Semantic specificity between different `when` sets remains unchanged. Unknown media names, repeated entries and empty arrays are rejected. `targets` still controls where an entire theme can be selected; `media` filters individual rules.
+
+Internally, `StylesheetSource` holds the parsed declarations. After merging theme layers, `StylesheetSource` and `MediaContext` produce a resolved `Stylesheet` containing only effective rules and their lookup index. Rendering uses that resolved table without checking media per element. A changed media context resolves the shared declarations again without reparsing TOML; runtime font and page overrides remain in effect.
 
 Footnote links are clicks that move inside the document: a reference jumps to its note, and the note's number jumps back to the citation it was opened from. They carry `footnote_ref` instead of `link`, so a theme can mark them without recoloring every hyperlink; `["footnote_ref", "hover"]` styles the link under the pointer. Consecutive references share one bracket pair, as in `[1,2]`, and only their numbers stay click targets.
 

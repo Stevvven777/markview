@@ -1,16 +1,21 @@
 //! Stylesheet cascading and resolved semantic appearance.
+mod media;
 mod numbering;
 mod parse;
+mod source;
 mod types;
 use crate::{
 	document::TextStyle,
 	scene::{Paint, SCROLLBAR_GUTTER, ScrollbarMetrics},
 };
 use anyhow::{Result, bail};
+pub use media::{Media, MediaContext};
 pub use numbering::NumberingPattern;
 use serde::Deserialize;
+pub use source::StylesheetSource;
 use std::{
 	collections::BTreeMap,
+	ops::{Deref, DerefMut},
 	sync::{Arc, LazyLock, OnceLock},
 };
 pub use types::{
@@ -44,8 +49,9 @@ pub struct Metadata {
 	pub description: Option<String>,
 	pub author: Option<String>,
 }
+/// Media-independent stylesheet metadata, fonts and drawing configuration.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Stylesheet {
+pub struct StylesheetProperties {
 	/// Version of the theme represented by this stylesheet.
 	pub version: u64,
 	pub targets: Vec<StyleTarget>,
@@ -56,8 +62,6 @@ pub struct Stylesheet {
 	pub font_families: Vec<FontFamily>,
 	cjk_type: CjkType,
 	pub meta: Metadata,
-	/// Rules keyed by the canonical condition set they require.
-	pub rules: BTreeMap<ConditionSet, Rule>,
 	/// Paper, margins and page furniture for the PDF export.
 	pub page: PageStyle,
 	/// How generic SVG font requests resolve to configured family candidates.
@@ -65,10 +69,118 @@ pub struct Stylesheet {
 	/// How Mermaid diagrams are drawn. Like the page, it holds no cascade: a
 	/// merged stylesheet overlays it field by field.
 	pub mermaid: MermaidStyle,
+}
+
+/// A stylesheet resolved for one media environment, ready for rendering.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Stylesheet {
+	properties: Arc<StylesheetProperties>,
+	/// Rules keyed by the canonical condition set they require.
+	pub rules: BTreeMap<ConditionSet, Rule>,
 	/// Rule keys grouped by condition, most specific first.
 	rule_index: Vec<Vec<ConditionSet>>,
+	media: MediaContext,
+	source: Option<Arc<StylesheetSource>>,
+}
+impl StylesheetProperties {
+	fn overlay(&mut self, higher: &Self) {
+		for (key, def) in &higher.fontdef_variants {
+			self.fontdef_variants.insert(key.clone(), def.clone());
+		}
+		self.resolve_fontdefs();
+		for family in &higher.font_families {
+			match self.font_families.iter_mut().find(|o| o.id == family.id) {
+				Some(existing) => *existing = family.clone(),
+				None => self.font_families.push(family.clone()),
+			}
+		}
+		self.page.overlay(&higher.page);
+		self.svg.overlay(&higher.svg);
+		self.mermaid.overlay(&higher.mermaid);
+	}
+	fn resolve_fontdefs(&mut self) {
+		let mut resolved = BTreeMap::new();
+		for ((id, ty), def) in &self.fontdef_variants {
+			if ty.is_none() {
+				resolved.insert(id.clone(), def.clone());
+			}
+		}
+		if self.cjk_type != CjkType::None {
+			let selected = match self.cjk_type {
+				CjkType::Sc => FontDefType::Sc,
+				CjkType::Tc => FontDefType::Tc,
+				CjkType::Jp => FontDefType::Jp,
+				CjkType::None => unreachable!(),
+			};
+			for ((id, ty), def) in &self.fontdef_variants {
+				if *ty == Some(selected) {
+					resolved.insert(id.clone(), def.clone());
+				}
+			}
+		}
+		self.fontdefs = resolved;
+	}
+}
+impl Deref for Stylesheet {
+	type Target = StylesheetProperties;
+	fn deref(&self) -> &Self::Target {
+		&self.properties
+	}
+}
+impl DerefMut for Stylesheet {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		Arc::make_mut(&mut self.properties)
+	}
 }
 impl Stylesheet {
+	/// Parse declarations and resolve them for the native reader environment.
+	pub fn parse(source: &str) -> Result<Self> {
+		Ok(Arc::new(StylesheetSource::parse(source)?)
+			.resolve(MediaContext::default()))
+	}
+	pub fn media(&self) -> MediaContext {
+		self.media
+	}
+	/// Parsed declarations shared by every media variant of this stylesheet.
+	pub fn source(&self) -> Arc<StylesheetSource> {
+		self.source
+			.clone()
+			.unwrap_or_else(|| Arc::new(StylesheetSource::from_resolved(self)))
+	}
+	/// Resolve a new environment without copying the previous rule table.
+	/// Runtime font and page overrides remain in effect.
+	pub fn for_media(&self, media: MediaContext) -> Self {
+		if self.media == media
+			|| self.source.as_ref().is_none_or(|source| !source.has_media)
+		{
+			let mut sheet = self.clone();
+			sheet.media = media;
+			return sheet;
+		}
+		let mut sheet = self.source().resolve(media);
+		sheet.properties = self.properties.clone();
+		sheet
+	}
+	/// Returns whether the resolved rules changed.
+	pub fn set_media(&mut self, media: MediaContext) -> bool {
+		if self.media == media {
+			return false;
+		}
+		self.media = media;
+		let Some(source) = &self.source else {
+			return false;
+		};
+		if !source.has_media {
+			return false;
+		}
+		let rules = source.resolve_rules(media);
+		if self.rules == rules {
+			return false;
+		}
+		self.rules = rules;
+		self.reindex();
+		true
+	}
 	/// Rebuild the lookup index after the rule table changes.
 	fn reindex(&mut self) {
 		let mut index = vec![Vec::new(); Condition::COUNT];
@@ -300,45 +412,25 @@ impl Stylesheet {
 			.unwrap_or(&DEFAULT)
 	}
 	pub fn merge(&mut self, higher: &Self) {
-		for (key, def) in &higher.fontdef_variants {
-			self.fontdef_variants.insert(key.clone(), def.clone());
-		}
-		self.resolve_fontdefs();
-		for family in &higher.font_families {
-			match self.font_families.iter_mut().find(|o| o.id == family.id) {
-				Some(existing) => *existing = family.clone(),
-				None => self.font_families.push(family.clone()),
+		let mut source = (*self.source()).clone();
+		source.properties = self.properties.clone();
+		let mut higher_source = (*higher.source()).clone();
+		higher_source.properties = higher.properties.clone();
+		source.merge(&higher_source);
+		let source = Arc::new(source);
+		self.properties = source.properties.clone();
+		if source.has_media {
+			self.rules = source.resolve_rules(self.media);
+		} else {
+			for (conditions, rule) in &higher.rules {
+				self.rules.entry(*conditions).or_default().overlay(rule);
 			}
 		}
-		for (conditions, v) in &higher.rules {
-			self.rules.entry(*conditions).or_default().overlay(v);
-		}
+		self.source = Some(source);
 		self.reindex();
-		self.page.overlay(&higher.page);
-		self.svg.overlay(&higher.svg);
-		self.mermaid.overlay(&higher.mermaid);
 	}
 	pub(super) fn resolve_fontdefs(&mut self) {
-		let mut resolved = BTreeMap::new();
-		for ((id, ty), def) in &self.fontdef_variants {
-			if ty.is_none() {
-				resolved.insert(id.clone(), def.clone());
-			}
-		}
-		if self.cjk_type != CjkType::None {
-			let selected = match self.cjk_type {
-				CjkType::Sc => FontDefType::Sc,
-				CjkType::Tc => FontDefType::Tc,
-				CjkType::Jp => FontDefType::Jp,
-				CjkType::None => unreachable!(),
-			};
-			for ((id, ty), def) in &self.fontdef_variants {
-				if *ty == Some(selected) {
-					resolved.insert(id.clone(), def.clone());
-				}
-			}
-		}
-		self.fontdefs = resolved;
+		Arc::make_mut(&mut self.properties).resolve_fontdefs();
 	}
 	/// Which CJK convention this stylesheet resolved its `[cjk]` font
 	/// definitions with, and so which one judges its punctuation.
@@ -396,47 +488,30 @@ impl Stylesheet {
 		static BASE: OnceLock<Arc<Stylesheet>> = OnceLock::new();
 		BASE.get_or_init(|| {
 			Arc::new(
-				Self::parse(include_str!("../styles/builtin.mvss.toml"))
-					.expect("builtin stylesheet"),
+				StylesheetSource::builtin().resolve(MediaContext::default()),
 			)
 		})
 		.clone()
 	}
-
-	/// Raw declarations only; merging these never reintroduces fallback fields.
+	/// Named rules resolved for the native reader environment.
 	pub fn named_rules(id: &str) -> Option<Arc<Self>> {
 		static SHEETS: OnceLock<Vec<(&str, Arc<Stylesheet>)>> = OnceLock::new();
 		SHEETS
 			.get_or_init(|| {
-				[
-					("light", include_str!("../styles/light.mvss.toml")),
-					("dark", include_str!("../styles/dark.mvss.toml")),
-					("celadon", include_str!("../styles/celadon.mvss.toml")),
-					(
-						"blueprint",
-						include_str!("../styles/blueprint.mvss.toml"),
-					),
-					("rosewood", include_str!("../styles/rosewood.mvss.toml")),
-					("8-bit", include_str!("../styles/8-bit.mvss.toml")),
-					("print", include_str!("../styles/print.mvss.toml")),
-					(
-						"monochrome",
-						include_str!("../styles/monochrome.mvss.toml"),
-					),
-					("qibaishi", include_str!("../styles/qibaishi.mvss.toml")),
-					("vangogh", include_str!("../styles/vangogh.mvss.toml")),
-					("mondrian", include_str!("../styles/mondrian.mvss.toml")),
-				]
-				.into_iter()
-				.map(|(id, source)| {
-					(
-						id,
-						Arc::new(
-							Self::parse(source).expect("bundled stylesheet"),
-						),
-					)
-				})
-				.collect()
+				Self::READER_THEMES
+					.iter()
+					.chain(Self::PDF_THEMES)
+					.map(|&id| {
+						(
+							id,
+							Arc::new(
+								StylesheetSource::named_rules(id)
+									.unwrap()
+									.resolve(MediaContext::default()),
+							),
+						)
+					})
+					.collect()
 			})
 			.iter()
 			.find(|(name, _)| *name == id)
@@ -457,6 +532,11 @@ impl Stylesheet {
 				sheet.merge(&rules);
 				sheet.meta = rules.meta.clone();
 				sheet.targets = rules.targets.clone();
+				let (width, height) = sheet.page.paper_mm().unwrap();
+				sheet.set_media(
+					MediaContext::native(StyleTarget::Pdf)
+						.with_size(width, height),
+				);
 				Arc::new(sheet)
 			})
 			.clone()

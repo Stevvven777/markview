@@ -51,6 +51,13 @@ pub fn styled(sheet: Arc<Stylesheet>, page: &PageOverrides) -> Arc<Stylesheet> {
 			slot_of(&mut sheet.page, false, slot, value.clone());
 		}
 	}
+	let (width, height) = sheet.page.paper_mm().unwrap();
+	sheet.set_media(
+		crate::stylesheet::media_context(
+			markview_core::style::StyleTarget::Pdf,
+		)
+		.with_size(width, height),
+	);
 	Arc::new(sheet)
 }
 

@@ -177,6 +177,9 @@ impl<P: super::SendEvent> App<P> {
 			#[cfg(target_os = "android")]
 			Event::AndroidConfiguration => {
 				self.tab_strip.phone = crate::platform::android::phone_layout();
+				if self.update_media() {
+					self.request(false);
+				}
 				self.cancel_gestures();
 				if self.interaction.panel == crate::state::PanelPage::Tabs {
 					self.interaction

@@ -46,7 +46,7 @@ pub(super) fn run() -> Result<()> {
 			"Valid stylesheet: {} (version {}, {} rules, targets [{}])",
 			source.display(),
 			sheet.version,
-			sheet.rules.len(),
+			sheet.rule_count(),
 			sheet
 				.targets
 				.iter()
@@ -116,6 +116,12 @@ pub(super) fn run() -> Result<()> {
 	if args.mode == Mode::Pdf {
 		return crate::pdf::run(&args.pdf_request()?, args.watch);
 	}
+	let mut sheet = (*args.options.stylesheet).clone();
+	sheet.set_media(
+		crate::stylesheet::media_context(markview_core::style::StyleTarget::Ui)
+			.with_size(args.width as f32, args.height as f32),
+	);
+	args.options.stylesheet = std::sync::Arc::new(sheet);
 	if args.mode == Mode::Render
 		|| args.mode == Mode::Bench
 		|| args.mode == Mode::Latency

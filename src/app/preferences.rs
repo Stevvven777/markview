@@ -175,6 +175,9 @@ impl Preferences {
 			self.values.cjk_type,
 		) {
 			Ok(sheet) => {
+				let mut sheet = (*sheet).clone();
+				sheet.set_media(self.values.stylesheet.media());
+				let sheet = Arc::new(sheet);
 				let result = crate::stylesheet::apply_font_overrides(
 					sheet,
 					&self.values.fontdef_overrides,

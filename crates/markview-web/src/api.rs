@@ -18,7 +18,7 @@ use markview_core::{
 	layout::{LayoutEngine, LayoutOptions, ProgressiveLayout, Viewport},
 	scene::Rect,
 	source::{SourceIndex, SourcePosition, byte_to_utf16, utf16_to_byte},
-	style::Stylesheet,
+	style::{MediaContext, StyleTarget, Stylesheet},
 };
 use markview_render::{FrameStatus, Renderer, SurfaceSource, Theme, View};
 use markview_selection::{
@@ -128,6 +128,9 @@ pub async fn create(
 	let (width, height) = size_canvas(&canvas, logical, scale, limit);
 	renderer.resize(width, height);
 	let mut options = config.options(fonts);
+	Arc::make_mut(&mut options.stylesheet).set_media(
+		MediaContext::native(StyleTarget::Ui).with_size(logical.0, logical.1),
+	);
 	options.width = column_width(config.width, logical.0);
 	let document = Arc::new(parse(""));
 	Ok(Markview {
@@ -567,7 +570,8 @@ impl Markview {
 		self.renderer.resize(width, height);
 		// A narrower canvas narrows the column, and the lines that were laid
 		// out for the wider one no longer fit: lay the document out again.
-		let reflowed = self.apply_column();
+		let media_changed = self.update_media();
+		let reflowed = self.apply_column() || media_changed;
 		if reflowed {
 			self.reflow();
 		}
@@ -912,6 +916,7 @@ impl Markview {
 			options.stylesheet = self.options.stylesheet.clone();
 		}
 		self.options = options;
+		self.update_media();
 		self.options.details_open = details_open;
 		self.horizontal.clear();
 		self.overflow_drag = None;
@@ -952,12 +957,24 @@ impl Markview {
 			self.engine.clear_document_cache();
 		}
 		self.options.stylesheet = sheet;
+		self.update_media();
 		self.reflow();
 		Ok(())
 	}
 }
 
 impl Markview {
+	fn update_media(&mut self) -> bool {
+		let media = MediaContext::native(StyleTarget::Ui)
+			.with_size(self.logical.0, self.logical.1);
+		if self.options.stylesheet.media() == media {
+			return false;
+		}
+		let sheet = self.options.stylesheet.for_media(media);
+		let changed = sheet.rules != self.options.stylesheet.rules;
+		self.options.stylesheet = Arc::new(sheet);
+		changed
+	}
 	fn context(&self) -> DocumentInteraction<'_> {
 		DocumentInteraction {
 			snapshot: &self.published.snapshot,

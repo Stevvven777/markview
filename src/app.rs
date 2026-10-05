@@ -422,6 +422,7 @@ impl<P: SendEvent> App<P> {
 	}
 
 	fn reload_styles(&mut self) {
+		self.update_media();
 		if let Some(reflow) = self.preferences.reload_styles(&mut self.ui) {
 			if let Some(renderer) = &mut self.renderer {
 				renderer
@@ -463,6 +464,32 @@ impl<P: SendEvent> App<P> {
 				s,
 			)
 		})
+	}
+	fn update_media(&mut self) -> bool {
+		use markview_core::style::{Condition, StyleTarget, TextAppearance};
+		let (width, height) =
+			self.window.as_ref().map_or((1200.0, 800.0), |window| {
+				let size = window.inner_size();
+				(size.width as f32, size.height as f32)
+			});
+		let media = crate::stylesheet::media_context(StyleTarget::Ui)
+			.with_size(width, height);
+		if self.preferences.values.stylesheet.media() == media {
+			return false;
+		}
+		let sheet = self.preferences.values.stylesheet.for_media(media);
+		let changed = sheet.rules != self.preferences.values.stylesheet.rules;
+		let sheet = Arc::new(sheet);
+		self.preferences.values.stylesheet = sheet.clone();
+		if changed {
+			self.ui.set_stylesheet(sheet.clone());
+			self.ui.appearance =
+				sheet.text(&TextAppearance::default(), Condition::Ui);
+			if let Some(renderer) = &mut self.renderer {
+				renderer.set_stylesheet(sheet);
+			}
+		}
+		changed
 	}
 	pub(super) fn insets(&self) -> [f32; 4] {
 		#[cfg(target_os = "android")]

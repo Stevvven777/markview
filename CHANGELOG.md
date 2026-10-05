@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Add per-rule MVSS `media` filters with OR matching; resolve shared parsed declarations on environment changes, keeping media checks outside rendering.
+
 - Add a localized Android “Read in Markview” open/share entry for Markdown files, including generic attachments and URI shares supplied through `ClipData`.
 
 - Run Android phone, tablet and sw600dp boundary integration tests in GitHub Actions, and attach signed universal APKs and checksums to releases.

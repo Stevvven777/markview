@@ -767,6 +767,16 @@ fn run(
 					return ExportOutcome::Failed(format!("{error:#}"));
 				}
 			};
+			let mut sheet = (*stylesheet).clone();
+			let (width, height) =
+				export::page_style(settings).paper_mm().unwrap();
+			sheet.set_media(
+				crate::stylesheet::media_context(
+					markview_core::style::StyleTarget::Pdf,
+				)
+				.with_size(width, height),
+			);
+			let stylesheet = Arc::new(sheet);
 			let options = export::layout_options(
 				settings,
 				geometry.text_px().0,

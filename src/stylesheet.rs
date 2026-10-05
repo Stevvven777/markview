@@ -1,6 +1,8 @@
 //! User stylesheet discovery and atomic installation. Bundled IDs cannot be shadowed.
 use anyhow::{Context, Result, bail};
-use markview_core::style::{CjkType, StyleTarget, Stylesheet};
+use markview_core::style::{
+	CjkType, MediaContext, StyleTarget, Stylesheet, StylesheetSource,
+};
 use std::{
 	fs,
 	io::Write,
@@ -8,6 +10,18 @@ use std::{
 	sync::Arc,
 };
 pub const SUFFIX: &str = ".mvss.toml";
+
+pub(crate) fn media_context(target: StyleTarget) -> MediaContext {
+	let context = MediaContext::native(target);
+	#[cfg(target_os = "android")]
+	let context =
+		context.with_device(if crate::platform::android::phone_layout() {
+			markview_core::style::Media::Phone
+		} else {
+			markview_core::style::Media::Tablet
+		});
+	context
+}
 pub fn apply_font_overrides(
 	sheet: Arc<Stylesheet>,
 	overrides: &[crate::settings::FontDefOverride],
@@ -67,6 +81,7 @@ pub fn load_for_run(
 		Some(ids) => load_with_cjk_type(ids, dir, cjk_type),
 		None => {
 			let mut sheet = (*Stylesheet::bundled(false)).clone();
+			sheet.set_media(media_context(StyleTarget::Ui));
 			sheet.set_cjk_type(cjk_type);
 			Ok(Arc::new(sheet))
 		}
@@ -103,6 +118,10 @@ pub fn load_for_pdf(
 		),
 		None => {
 			let mut sheet = (*Stylesheet::bundled_print()).clone();
+			let (width, height) = sheet.page.paper_mm().unwrap();
+			sheet.set_media(
+				media_context(StyleTarget::Pdf).with_size(width, height),
+			);
 			sheet.set_cjk_type(cjk_type);
 			Ok(Arc::new(sheet))
 		}
@@ -128,7 +147,7 @@ fn load_over(
 	base: Arc<Stylesheet>,
 	target: Option<StyleTarget>,
 ) -> Result<Arc<Stylesheet>> {
-	let mut sheet = (*base).clone();
+	let mut source = (*base.source()).clone();
 	for id in ids.iter().rev() {
 		validate_id(id)?;
 		let next = read_rules(id, dir)?;
@@ -137,8 +156,14 @@ fn load_over(
 		{
 			bail!("{id}: targets do not include {}", target.as_str());
 		}
-		sheet.merge(&next);
+		source.merge(&next);
 	}
+	let mut media = media_context(target.unwrap_or(StyleTarget::Ui));
+	if target == Some(StyleTarget::Pdf) {
+		let (width, height) = source.page.paper_mm().unwrap();
+		media = media.with_size(width, height);
+	}
+	let mut sheet = Arc::new(source).resolve(media);
 	sheet.set_cjk_type(cjk_type);
 	if let Some(target) = target {
 		sheet.targets = vec![target];
@@ -154,9 +179,9 @@ pub struct Entry {
 	/// Font families the sheet offers to download, in declaration order.
 	pub font_families: Vec<markview_core::style::FontFamily>,
 }
-fn read_rules(id: &str, dir: Option<&Path>) -> Result<Arc<Stylesheet>> {
+fn read_rules(id: &str, dir: Option<&Path>) -> Result<Arc<StylesheetSource>> {
 	validate_id(id)?;
-	if let Some(sheet) = Stylesheet::named_rules(id) {
+	if let Some(sheet) = StylesheetSource::named_rules(id) {
 		return Ok(sheet);
 	}
 	let path = dir
@@ -165,7 +190,7 @@ fn read_rules(id: &str, dir: Option<&Path>) -> Result<Arc<Stylesheet>> {
 	let source = fs::read_to_string(&path)
 		.with_context(|| format!("Cannot read {}", path.display()))?;
 	Ok(Arc::new(
-		Stylesheet::parse(&source)
+		StylesheetSource::parse(&source)
 			.with_context(|| path.display().to_string())?,
 	))
 }
@@ -236,7 +261,7 @@ pub fn catalog_for(
 			} else {
 				result.err().map(|e| format!("{e:#}"))
 			};
-			let source = if Stylesheet::named_rules(&id).is_some() {
+			let source = if StylesheetSource::named_rules(&id).is_some() {
 				"Bundled".into()
 			} else {
 				dir.map(|p| {
@@ -257,10 +282,10 @@ pub fn catalog_for(
 
 /// Parses a stylesheet file without installing it, so a caller can check a
 /// draft in place and report the sheet's own metadata on success.
-pub fn validate(source: &Path) -> Result<Stylesheet> {
+pub fn validate(source: &Path) -> Result<StylesheetSource> {
 	let text = fs::read_to_string(source)
 		.with_context(|| format!("Cannot read {}", source.display()))?;
-	Stylesheet::parse(&text).with_context(|| source.display().to_string())
+	StylesheetSource::parse(&text).with_context(|| source.display().to_string())
 }
 
 pub fn install(
@@ -279,13 +304,13 @@ pub fn install(
 	}
 	let bytes = fs::read(source)
 		.with_context(|| format!("Cannot read {}", source.display()))?;
-	let incoming = Stylesheet::parse(std::str::from_utf8(&bytes)?)
+	let incoming = StylesheetSource::parse(std::str::from_utf8(&bytes)?)
 		.with_context(|| source.display().to_string())?;
 	fs::create_dir_all(dir)?;
 	let destination = dir.join(format!("{id}{SUFFIX}"));
 	let replace = force || destination.exists();
 	if destination.exists() && !force {
-		let installed = Stylesheet::parse(
+		let installed = StylesheetSource::parse(
 			&fs::read_to_string(&destination).with_context(|| {
 				format!(
 					"Cannot read installed stylesheet {}",
@@ -339,7 +364,7 @@ mod tests {
 		.unwrap();
 		let sheet = validate(&source).unwrap();
 		assert_eq!(sheet.version, 1);
-		assert_eq!(sheet.rules.len(), 1);
+		assert_eq!(sheet.rule_count(), 1);
 		// Nothing is copied, and a file that cannot parse names itself.
 		assert!(!tmp.path().join("styles").exists());
 		fs::write(&source, "version=1\n").unwrap();
@@ -708,5 +733,71 @@ mod paper_theme_tests {
 			mono.rule(Condition::CodeBlock).theme.as_deref(),
 			Some("none")
 		);
+	}
+}
+
+#[cfg(test)]
+mod media_tests {
+	use super::*;
+	use markview_core::style::Condition;
+
+	#[test]
+	fn reader_and_pdf_load_media_and_reselect_after_paper_overrides() {
+		let dir = tempfile::tempdir().unwrap();
+		fs::write(
+			dir.path().join("adaptive.mvss.toml"),
+			r#"
+format_version = 2
+version = 1
+[[rule]]
+when = ["p"]
+media = ["ui"]
+size = 1.2
+[[rule]]
+when = ["p"]
+media = ["pdf"]
+size = 1.4
+[[rule]]
+when = ["p"]
+media = ["ui", "pdf"]
+weight = 500
+[[rule]]
+when = ["p"]
+media = ["portrait"]
+line_height = 1.7
+[[rule]]
+when = ["p"]
+media = ["landscape"]
+line_height = 1.9
+"#,
+		)
+		.unwrap();
+		let ids = ["adaptive".into()];
+		let reader =
+			load_for_run(Some(&ids), Some(dir.path()), CjkType::Sc).unwrap();
+		let pdf =
+			load_for_pdf(Some(&ids), Some(dir.path()), CjkType::Sc).unwrap();
+		assert_eq!(reader.rule(Condition::P).size, Some(1.2));
+		assert_eq!(pdf.rule(Condition::P).size, Some(1.4));
+		assert_eq!(reader.rule(Condition::P).weight, Some(500));
+		assert_eq!(pdf.rule(Condition::P).weight, Some(500));
+		assert_eq!(pdf.rule(Condition::P).line_height, Some(1.7));
+		let landscape = crate::pdf::styled(
+			pdf.clone(),
+			&crate::export::PageOverrides {
+				landscape: true,
+				..Default::default()
+			},
+		);
+		assert_eq!(landscape.rule(Condition::P).line_height, Some(1.9));
+		let portrait = crate::pdf::styled(
+			landscape,
+			&crate::export::PageOverrides {
+				paper: Some("300x200".into()),
+				..Default::default()
+			},
+		);
+		assert_eq!(portrait.rule(Condition::P).line_height, Some(1.7));
+		assert_eq!(pdf.rule(Condition::P).line_height, Some(1.7));
 	}
 }
