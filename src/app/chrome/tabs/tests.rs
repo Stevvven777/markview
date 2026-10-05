@@ -157,3 +157,62 @@ fn measured_tabs_fit_minimum_window_and_styles_invalidate_widths() {
 	metrics.sync(&mut ui, &[]);
 	assert!(metrics.widths.is_empty());
 }
+
+#[test]
+fn separators_only_divide_neighboring_inactive_tabs() {
+	let mut ui = crate::test_support::shaper();
+	let strip = TabStrip::default();
+	for count in 1..=5 {
+		let tabs: Vec<_> = (0..count)
+			.map(|i| ReaderTab::new(format!("{i}.md").into()))
+			.collect();
+		let widths = vec![(100.0, 50.0); count];
+		let mut bar = TabBar {
+			ui: &mut ui,
+			strip: &strip,
+			widths: &widths,
+			tabs: &tabs,
+			active_tab: 0,
+			cursor: (0.0, 0.0),
+			style: TabStyle::Underline,
+			viewport: Rect {
+				x: 10.0,
+				y: 4.0,
+				w: 900.0,
+				h: 36.0,
+			},
+		};
+		for style in [TabStyle::Underline, TabStyle::Connected] {
+			bar.style = style;
+			let layout = bar.layout();
+			for active in 0..count {
+				bar.active_tab = active;
+				let draws = bar.draw_tabs();
+				let Draw::Clipped { draws, .. } = &draws[0] else {
+					unreachable!()
+				};
+				let separators: Vec<_> = draws
+					.iter()
+					.filter_map(|draw| match draw {
+						Draw::Rect(
+							rect,
+							Paint::Styled(Condition::Toolbar, C::BorderColor),
+						) => Some(rect.x),
+						_ => None,
+					})
+					.collect();
+				let expected: Vec<_> = layout
+					.rects
+					.windows(2)
+					.enumerate()
+					.filter(|(i, _)| *i != active && *i + 1 != active)
+					.map(|(_, pair)| pair[0].x + pair[0].w - 1.0)
+					.collect();
+				assert_eq!(
+					separators, expected,
+					"{style:?}: active tab {active} of {count}"
+				);
+			}
+		}
+	}
+}

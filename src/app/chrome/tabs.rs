@@ -79,31 +79,30 @@ impl TabBar<'_> {
 				}
 				TabStyle::Underline => {
 					out.push(Draw::Rect(rect, fill));
-					let (line, paint) = if active {
-						(
+					if active {
+						out.push(Draw::Rect(
 							Rect {
 								y: rect.y + rect.h - 2.0,
 								h: 2.0,
 								..rect
 							},
-							C::Accent,
-						)
-					} else {
-						(
-							Rect {
-								x: rect.x + rect.w - 1.0,
-								y: rect.y + 8.0,
-								w: 1.0,
-								h: rect.h - 16.0,
-							},
-							C::BorderColor,
-						)
-					};
-					out.push(Draw::Rect(
-						line,
-						Paint::Styled(Condition::Toolbar, paint),
-					));
+							Paint::Styled(Condition::Toolbar, C::Accent),
+						));
+					}
 				}
+			}
+			if index + 1 < self.tabs.len()
+				&& !active && index + 1 != self.active_tab
+			{
+				out.push(Draw::Rect(
+					Rect {
+						x: rect.x + rect.w - 1.0,
+						y: rect.y + 8.0,
+						w: 1.0,
+						h: rect.h - 16.0,
+					},
+					Paint::Styled(Condition::Toolbar, C::BorderColor),
+				));
 			}
 
 			let name = self.tabs[index]
