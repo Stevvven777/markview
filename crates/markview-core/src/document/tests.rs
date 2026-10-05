@@ -20,7 +20,7 @@ fn gfm_and_raw_html() {
 	assert!(p.iter().any(|s| s.style.strike));
 	assert!(
 		p.iter()
-			.any(|s| s.style.link.as_deref() == Some("https://example.com"))
+			.any(|s| s.style.link_url() == Some("https://example.com"))
 	);
 	assert!(p.iter().any(|s| s.style.bold
 		&& matches!(&s.kind, InlineKind::Text(t) if t == "raw")));
@@ -46,7 +46,7 @@ fn html_comments_disappear_and_attributes_are_ignored() {
 	assert!(style("d").strike);
 	assert!(style("c").code);
 	assert!(style("s").superscript);
-	assert_eq!(style("l").link.as_deref(), Some("/u"));
+	assert_eq!(style("l").link_url(), Some("/u"));
 }
 #[test]
 fn html_blocks_become_rule_heading_and_paragraph() {
@@ -104,7 +104,7 @@ fn transparent_containers_nest_and_resolve_document_references() {
 	};
 	assert!(
 		text.iter()
-			.any(|i| i.style.link.as_deref() == Some("https://example.com"))
+			.any(|i| i.style.link_url() == Some("https://example.com"))
 	);
 }
 
@@ -396,7 +396,7 @@ fn resolved_references_invalidate_semantics_and_footnotes_use_numbers() {
 		.iter()
 		.find(|i| matches!(i.kind, InlineKind::FootnoteRef(1)))
 		.expect("footnote reference");
-	assert_eq!(reference.style.link.as_deref(), Some("#fn:1"));
+	assert_eq!(reference.style.link_url(), Some("#fn:1"));
 	assert!(reference.style.footnote_ref && reference.style.superscript);
 	assert!(
 		!reference
@@ -1271,7 +1271,7 @@ fn a_details_body_resolves_document_wide_references() {
 		.iter()
 		.find(|inline| inline.style.link.is_some())
 		.expect("the reference link");
-	assert_eq!(link.style.link.as_deref(), Some("https://example.com"));
+	assert_eq!(link.style.link_url(), Some("https://example.com"));
 	let image = body
 		.iter()
 		.find_map(|inline| match &inline.kind {
@@ -1970,7 +1970,7 @@ fn a_definition_after_a_leaf_block_still_counts() {
 	let BlockKind::Paragraph(text) = &prefix.blocks[0].kind else {
 		panic!("expected a paragraph")
 	};
-	assert!(text.iter().any(|i| i.style.link.as_deref() == Some("url")));
+	assert!(text.iter().any(|i| i.style.link_url() == Some("url")));
 }
 
 #[test]

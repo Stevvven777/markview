@@ -1,6 +1,6 @@
 use super::*;
 use crate::document;
-use crate::document::{Inline, InlineKind, TextStyle};
+use crate::document::{Inline, InlineKind, Link, TextStyle};
 use crate::style::Condition;
 
 #[test]
@@ -336,8 +336,8 @@ fn links_are_hit_testable_and_survive_reuse() {
 	let snapshot = engine.layout(&d, &opts);
 	let block = &snapshot.blocks[0];
 	assert_eq!(block.layout.links.len(), 2);
-	assert_eq!(block.layout.links[0].url, "https://example.com/manual");
-	assert_eq!(block.layout.links[1].url, "mailto:a@b.example");
+	assert_eq!(&*block.layout.links[0].url, "https://example.com/manual");
+	assert_eq!(&*block.layout.links[1].url, "mailto:a@b.example");
 	let hit = block.layout.links[0].rect;
 	let none = HashMap::new();
 	assert_eq!(
@@ -352,6 +352,22 @@ fn links_are_hit_testable_and_survive_reuse() {
 	let again = engine.layout(&d, &opts);
 	assert_eq!(again.reused, 1);
 	assert_eq!(again.blocks[0].layout.links.len(), 2);
+	// A destination-only edit leaves the geometry alone, so the cached
+	// rectangle must still be replaced by one holding the new address rather
+	// than served with the old one.
+	let edited = document::parse(
+		"See [the manual](https://example.com/manual/changed) and [mail](mailto:a@b.example).\n",
+	);
+	let edited = engine.layout(&edited, &opts);
+	assert_eq!(
+		&*edited.blocks[0].layout.links[0].url,
+		"https://example.com/manual/changed"
+	);
+	let rect = edited.blocks[0].layout.links[0].rect;
+	assert_eq!(
+		(rect.x, rect.y, rect.w, rect.h),
+		(hit.x, hit.y, hit.w, hit.h)
+	);
 }
 #[test]
 fn heading_anchors_resolve_to_layout_positions() {
@@ -476,7 +492,7 @@ fn footnote_links_reach_the_note_and_its_number_returns() {
 	let links: Vec<&str> = snapshot
 		.blocks
 		.iter()
-		.flat_map(|b| b.layout.links.iter().map(|l| l.url.as_str()))
+		.flat_map(|b| b.layout.links.iter().map(|l| &*l.url))
 		.collect();
 	assert_eq!(links.iter().filter(|u| **u == "#fn:1").count(), 2);
 	assert!(links.contains(&"#fn:2"));
@@ -486,7 +502,7 @@ fn footnote_links_reach_the_note_and_its_number_returns() {
 	let empty = HashMap::new();
 	let hit = |url: &str| {
 		snapshot.blocks.iter().enumerate().find_map(|(bi, b)| {
-			let link = b.layout.links.iter().find(|l| l.url == url)?;
+			let link = b.layout.links.iter().find(|l| &*l.url == url)?;
 			let (offset, _) = b.layout.command_view(link.command, bi, &empty);
 			Some((
 				link.rect.x - offset + link.rect.w * 0.5,
@@ -516,8 +532,7 @@ fn consecutive_footnote_references_merge_into_one_clickable_group() {
 	);
 	let block = &snapshot.blocks[0];
 	assert!(block.layout.text[0].text.contains("[1,2]"));
-	let links: Vec<&str> =
-		block.layout.links.iter().map(|l| l.url.as_str()).collect();
+	let links: Vec<&str> = block.layout.links.iter().map(|l| &*l.url).collect();
 	assert_eq!(links, ["#fn:1", "#fn:2"]);
 	// Both numbers register the anchor a scrolled-to note returns to.
 	assert!(snapshot.anchor_y("fnref:1").is_some());
@@ -719,7 +734,7 @@ fn wrapped_links_produce_one_rect_per_line() {
 	let snapshot = engine.layout(&d, &opts);
 	let links = &snapshot.blocks[0].layout.links;
 	assert!(links.len() > 1, "expected a wrapped link, got {links:?}");
-	assert!(links.iter().all(|l| l.url == "https://example.com"));
+	assert!(links.iter().all(|l| &*l.url == "https://example.com"));
 	assert!(links.windows(2).all(|w| w[0].rect.y < w[1].rect.y));
 }
 #[test]
@@ -2307,7 +2322,7 @@ fn typst_hyphenation_can_be_turned_off_for_a_passage() {
 	// The same word set as a link, or as inline code, keeps its hyphenation.
 	for style in [
 		TextStyle {
-			link: Some("http://example.com".into()),
+			link: Some(Link::new("http://example.com")),
 			..Default::default()
 		},
 		TextStyle {
@@ -3110,7 +3125,7 @@ fn identical_nested_details_bind_their_own_summaries() {
 			.layout
 			.links
 			.iter()
-			.map(|link| link.url.as_str())
+			.map(|link| &*link.url)
 			.collect();
 		let own = document::details_url(doc.blocks[i].id);
 		let inner = document::details_url(nested(i));
@@ -3158,7 +3173,7 @@ fn disclosure_hover_ranges_are_ordered_and_bounded() {
 		(0..layout.draws.len())
 			.filter(|&i| {
 				layout.links.iter().enumerate().any(|(n, link)| {
-					link.url == url
+					&*link.url == url
 						&& link.command <= i
 						&& layout
 							.links
@@ -3212,7 +3227,7 @@ fn a_details_body_reference_link_lays_out_as_a_link() {
 		.layout
 		.links
 		.iter()
-		.map(|link| link.url.as_str())
+		.map(|link| &*link.url)
 		.collect();
 	assert!(urls.contains(&"https://example.com/b"), "{urls:?}");
 }

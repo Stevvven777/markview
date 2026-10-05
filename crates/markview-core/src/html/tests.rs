@@ -1,5 +1,11 @@
 use super::*;
 
+/// The block scanner with the scope budget out of the way, so each test
+/// states one rule; the budget has its own test.
+fn block(source: &str) -> Block {
+	super::block(source, usize::MAX)
+}
+
 #[test]
 fn inline_tags_map_and_attributes_are_ignored() {
 	assert_eq!(
@@ -280,7 +286,7 @@ fn block_style_follows_the_open_tags() {
 #[test]
 fn block_links_nest_and_images_carry_the_run_style() {
 	let linked = |url: &str| Style {
-		link: Some(url.into()),
+		link: Some(crate::document::Link::new(url)),
 		..Style::default()
 	};
 	// A nested link overrides the outer one, which comes back on its close.
@@ -321,4 +327,26 @@ fn block_links_nest_and_images_carry_the_run_style() {
 	assert_eq!(spans.len(), 1);
 	assert!(spans[0].image.is_some());
 	assert!(spans[0].style.bold);
+}
+
+#[test]
+fn open_tags_are_budgeted() {
+	// Past the budget the block is kept as source, like any other markup the
+	// scanner cannot represent.
+	assert_eq!(
+		super::block(
+			"<b><b><b>x</b>
+",
+			2
+		),
+		Block::Unsupported
+	);
+	assert!(matches!(
+		super::block(
+			"<b><b>x</b>
+",
+			2
+		),
+		Block::Paragraph(_)
+	));
 }

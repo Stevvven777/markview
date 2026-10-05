@@ -592,7 +592,7 @@ fn markdown_references_and_html_preserve_image_semantics() {
 		panic!()
 	};
 	assert!(matches!(rich[0].kind, InlineKind::Image(_)));
-	assert_eq!(rich[0].style.link.as_deref(), Some("https://example.com"));
+	assert_eq!(rich[0].style.link_url(), Some("https://example.com"));
 }
 
 #[test]

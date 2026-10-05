@@ -559,6 +559,7 @@ pub fn shrunk_limits(seed: u128) -> markview_core::limits::Limits {
 	markview_core::limits::Limits {
 		inline_depth: 32 + pick(64, 512) as usize,
 		block_depth: 8 + pick(68, 260) as usize,
+		html_scopes: 4 + pick(66, 512) as usize,
 		linebreak_evaluations: 1000 + pick(72, 3_000_000) as usize,
 		highlight_line_bytes: 64 + pick(76, 65_536) as usize,
 		highlight_bytes: 4096 + pick(80, 16 * 1024 * 1024) as usize,

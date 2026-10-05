@@ -1103,7 +1103,7 @@ impl BlockContext<'_> {
 						w: label_width.max(1.0),
 						h: size * 1.4,
 					},
-					url: footnote::back_url(label),
+					url: Arc::from(footnote::back_url(label)),
 				});
 				body
 			}
@@ -1188,13 +1188,13 @@ impl BlockContext<'_> {
 					w: width,
 					h: summary_height,
 				},
-				url: crate::document::details_url(block.id),
+				url: Arc::from(crate::document::details_url(block.id)),
 			});
 			if expanded {
 				out.links.push(LinkRect {
 					command: out.draws.len(),
 					rect: Rect::default(),
-					url: String::new(),
+					url: Arc::from(""),
 				});
 			}
 		}

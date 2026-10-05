@@ -95,6 +95,8 @@ at the same level, without `[brackets]`.
 
 - Resolve a raw HTML block's styles into one fixed-size state per run instead of a snapshot per open tag, so deeply nested or repeated tags no longer cost quadratic time and memory.
 
+- Share each link address across the scopes, runs and layout rectangles that carry it, and bound the raw HTML scopes open at once, so inline tags around one long `href` can no longer multiply it into quadratic memory or hashing time.
+
 - Preserve block-relative session positions below text and let explicit search, scrollbar or background fragment navigation cancel pending restoration.
 
 - Skip WinGet updates without failing release CI while the initial community submission is still pending.

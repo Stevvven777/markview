@@ -14,6 +14,12 @@ pub struct Limits {
 	/// Maximum block nesting retained as structure; deeper content is kept as
 	/// source text.
 	pub block_depth: usize,
+	/// Maximum raw HTML scopes open at once. Inline HTML tags are AST
+	/// siblings, so an unclosed run of them grows the scope stack without
+	/// consuming `inline_depth`; past this many the tags stay source text.
+	/// Far above any document's real nesting, because an unclosed run is what
+	/// this guards against, not depth.
+	pub html_scopes: usize,
 	/// Total candidate line breaks the knapsack pass and its greedy fallback
 	/// may evaluate for one paragraph.
 	pub linebreak_evaluations: usize,
@@ -41,6 +47,7 @@ impl Default for Limits {
 		Self {
 			inline_depth: 256,
 			block_depth: 256,
+			html_scopes: 8_192,
 			linebreak_evaluations: 2_000_000,
 			highlight_line_bytes: 64 * 1024,
 			highlight_bytes: 16 * 1024 * 1024,
@@ -61,6 +68,7 @@ mod tests {
 		let l = Limits::default();
 		assert_eq!(l.inline_depth, 256);
 		assert_eq!(l.block_depth, 256);
+		assert!(l.html_scopes >= 4_096);
 		assert!(l.linebreak_evaluations >= 1_000_000);
 		// A 10K-character formula, even in three-byte characters, must fit.
 		assert!(l.math_formula_bytes >= 10_000 * 3);

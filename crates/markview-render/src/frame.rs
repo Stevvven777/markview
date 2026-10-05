@@ -61,7 +61,7 @@ impl Renderer {
 			for (i, draw) in block.layout.draws.iter().enumerate() {
 				let hovered = view.hovered_link.is_some_and(|url| {
 					block.layout.links.iter().enumerate().any(|(n, link)| {
-						link.url == url
+						&*link.url == url
 							&& link.command <= i && block
 							.layout
 							.links

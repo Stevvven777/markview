@@ -15,7 +15,7 @@ use std::{
 };
 
 use super::{
-	Block, BlockKind, CellAlign, Document, Inline, InlineKind, ListItem,
+	Block, BlockKind, CellAlign, Document, Inline, InlineKind, Link, ListItem,
 	RichText, TextStyle, content_identity, fingerprint, front_matter,
 	incremental, plain_text, semantic_key,
 };
@@ -166,9 +166,17 @@ impl Reader<'_> {
 						Some(InlineKind::LineBreak { justify: true })
 					}
 					html::Inline::Open { name, patch } => {
-						scopes.push((name, style.clone()));
-						apply_patch(&patch, &mut style);
-						continue;
+						if scopes.len() >= self.limits.html_scopes {
+							// Past the budget the tag stays source, like any
+							// unsupported markup, so a run of sibling tags
+							// cannot grow the scope stack without bound.
+							child_style.code = true;
+							Some(InlineKind::Text(t.clone()))
+						} else {
+							scopes.push((name, style.clone()));
+							apply_patch(&patch, &mut style);
+							continue;
+						}
 					}
 					html::Inline::Close { name } => {
 						if let Some(i) =
@@ -192,7 +200,8 @@ impl Reader<'_> {
 					let label = f.ix.to_string();
 					child_style.superscript = true;
 					child_style.footnote_ref = true;
-					child_style.link = Some(super::footnote::url(&label));
+					child_style.link =
+						Some(Link::new(super::footnote::url(&label)));
 					Some(InlineKind::FootnoteRef(f.ix))
 				}
 				NodeValue::Strong => {
@@ -208,7 +217,7 @@ impl Reader<'_> {
 					None
 				}
 				NodeValue::Link(l) => {
-					child_style.link = Some(l.url.clone());
+					child_style.link = Some(Link::new(l.url.clone()));
 					None
 				}
 				NodeValue::Image(link) => {
@@ -360,6 +369,7 @@ impl Reader<'_> {
 				self.source,
 				&frame.raw,
 				frame.start..frame.start.saturating_add(frame.raw.len()),
+				self.limits.html_scopes,
 			) {
 				blocks.push(block);
 			}
@@ -385,7 +395,12 @@ impl Reader<'_> {
 			match event {
 				html::BlockEvent::Text { text, range } => {
 					let at = map_source(&original, &child_range, range);
-					if let Some(block) = html_leaf_block(source, &text, at) {
+					if let Some(block) = html_leaf_block(
+						source,
+						&text,
+						at,
+						self.limits.html_scopes,
+					) {
 						push_block(stack, out, block);
 					}
 				}
@@ -403,8 +418,12 @@ impl Reader<'_> {
 					if !set {
 						let at = map_source(&original, &child_range, range);
 						let html = format!("<summary>{text}</summary>");
-						if let Some(block) = html_leaf_block(source, &html, at)
-						{
+						if let Some(block) = html_leaf_block(
+							source,
+							&html,
+							at,
+							self.limits.html_scopes,
+						) {
 							push_block(stack, out, block);
 						}
 					}
@@ -417,6 +436,7 @@ impl Reader<'_> {
 							source,
 							&original.text[range.clone()],
 							at,
+							self.limits.html_scopes,
 						) {
 							push_block(stack, out, block);
 						}
@@ -448,6 +468,7 @@ impl Reader<'_> {
 							source,
 							&original.text[range.clone()],
 							at,
+							self.limits.html_scopes,
 						) {
 							push_block(stack, out, block);
 						}
@@ -693,25 +714,27 @@ impl Reader<'_> {
 					language: c.info.clone(),
 					text: c.literal.clone(),
 				},
-				NodeValue::HtmlBlock(h) => match html::block(&h.literal) {
-					html::Block::Unsupported => BlockKind::Code {
-						language: "HTML source".into(),
-						text: h.literal.clone(),
-					},
-					html::Block::Empty => return Child::Skip,
-					html::Block::Rule => BlockKind::Rule,
-					html::Block::Heading { level, text } => {
-						let text = html_rich(text, &source);
-						BlockKind::Heading {
-							level,
-							text,
-							anchor: String::new(),
+				NodeValue::HtmlBlock(h) => {
+					match html::block(&h.literal, self.limits.html_scopes) {
+						html::Block::Unsupported => BlockKind::Code {
+							language: "HTML source".into(),
+							text: h.literal.clone(),
+						},
+						html::Block::Empty => return Child::Skip,
+						html::Block::Rule => BlockKind::Rule,
+						html::Block::Heading { level, text } => {
+							let text = html_rich(text, &source);
+							BlockKind::Heading {
+								level,
+								text,
+								anchor: String::new(),
+							}
+						}
+						html::Block::Paragraph(text) => {
+							BlockKind::Paragraph(html_rich(text, &source))
 						}
 					}
-					html::Block::Paragraph(text) => {
-						BlockKind::Paragraph(html_rich(text, &source))
-					}
-				},
+				}
 				NodeValue::ThematicBreak => BlockKind::Rule,
 				NodeValue::BlockQuote => BlockKind::Quote {
 					label: None,
@@ -996,7 +1019,7 @@ impl Reader<'_> {
 		let Some(text) = text.filter(|text| !text.trim().is_empty()) else {
 			return RichText::new();
 		};
-		let mut out = match html::block(text) {
+		let mut out = match html::block(text, self.limits.html_scopes) {
 			html::Block::Paragraph(spans) => html_rich(spans, source),
 			_ => RichText::new(),
 		};
@@ -1079,9 +1102,10 @@ fn html_leaf_block(
 	source: &str,
 	text: &str,
 	range: Range<usize>,
+	scope_limit: usize,
 ) -> Option<Block> {
 	let range = clamp_range(source, range);
-	let kind = match html::block(text) {
+	let kind = match html::block(text, scope_limit) {
 		html::Block::Unsupported => BlockKind::Code {
 			language: "HTML source".into(),
 			text: text.to_string(),
@@ -1415,7 +1439,7 @@ fn apply_patch(patch: &html::Patch, style: &mut TextStyle) {
 		html::Patch::Strike => style.strike = true,
 		html::Patch::Code => style.code = true,
 		html::Patch::Superscript => style.superscript = true,
-		html::Patch::Link(url) => style.link = Some(url.clone()),
+		html::Patch::Link(url) => style.link = Some(Link::new(url.as_str())),
 		html::Patch::None => {}
 	}
 }
@@ -1467,7 +1491,7 @@ fn html_rich(spans: Vec<html::Span>, source: &Range<usize>) -> RichText {
 				strike: span.style.strike,
 				code: span.style.code,
 				superscript: span.style.superscript,
-				link: span.style.link.map(|url| url.to_string()),
+				link: span.style.link,
 				..TextStyle::default()
 			},
 			source: source.clone(),

@@ -9,6 +9,7 @@ use crate::{
 	style::{ColorField, Condition, Decoration},
 	text::{TextCluster, TextNode},
 };
+use std::sync::Arc;
 impl BlockContext<'_> {
 	#[expect(
 		clippy::too_many_arguments,
@@ -298,7 +299,7 @@ impl BlockContext<'_> {
 			};
 			let start_draw = out.draws.len();
 			let mut cursor = line_x + offset;
-			let mut link: Option<(String, f32)> = None;
+			let mut link: Option<(Arc<str>, f32)> = None;
 			// Consecutive clusters that share a background paint it as one
 			// rectangle. Pushing one per cluster made the export emit a
 			// rectangle per glyph and, because a rectangle interrupts a run,
@@ -362,7 +363,8 @@ impl BlockContext<'_> {
 						.spans
 						.iter()
 						.find(|s| s.range.contains(&c.range.start))
-						.and_then(|s| s.style.link.clone())
+						.and_then(|s| s.style.link.as_ref())
+						.map(|link| link.shared().clone())
 					{
 						out.links.push(LinkRect { command, rect, url });
 					}
@@ -432,10 +434,11 @@ impl BlockContext<'_> {
 					crate::document::footnote::url(&number.to_string())
 				});
 				let url = style
-					.and_then(|s| s.link.as_deref())
-					.or(note_url.as_deref());
+					.and_then(|s| s.link.as_ref())
+					.map(|link| link.shared().clone())
+					.or_else(|| note_url.map(Arc::from));
 				// A link wraps as one run per line, so hit testing stays tight.
-				if link.as_ref().map(|(u, _)| u.as_str()) != url {
+				if link.as_ref().map(|(u, _)| &**u) != url.as_deref() {
 					if let Some((url, x0)) = link.take() {
 						out.links.push(LinkRect {
 							command: start_draw,
@@ -449,7 +452,7 @@ impl BlockContext<'_> {
 						});
 					}
 					if let Some(url) = url {
-						link = Some((url.to_string(), cursor));
+						link = Some((url, cursor));
 					}
 				}
 				let appearance = style

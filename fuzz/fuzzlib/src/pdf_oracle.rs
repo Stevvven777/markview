@@ -368,7 +368,7 @@ impl Structure {
 				};
 				let expected = page_rect(link.rect, item, geometry);
 				let candidates =
-					by_uri.get(link.url.as_str()).unwrap_or_else(|| {
+					by_uri.get(&*link.url).unwrap_or_else(|| {
 						panic!(
 							"the layout resolved the link {url:?} (block {bi} \
 							 link {li}) but the export has no annotation with \

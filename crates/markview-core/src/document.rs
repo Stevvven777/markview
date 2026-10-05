@@ -15,6 +15,57 @@ use std::{
 	sync::Arc,
 };
 
+/// One link target, shared by every run and every open scope that carries it.
+///
+/// Raw HTML can leave an address active across an unbounded number of sibling
+/// tags, so a style snapshot must never copy the address itself: the URL is
+/// behind an [`Arc`], and `key` caches its content hash so that a run's
+/// identity costs a `u64` hash rather than a pass over the address.
+#[derive(Clone, Debug)]
+pub struct Link {
+	url: Arc<str>,
+	key: u64,
+}
+
+impl Link {
+	pub fn new(url: impl Into<Arc<str>>) -> Self {
+		let url = url.into();
+		let mut hasher = DefaultHasher::new();
+		url.hash(&mut hasher);
+		Self {
+			key: hasher.finish(),
+			url,
+		}
+	}
+
+	pub fn as_str(&self) -> &str {
+		&self.url
+	}
+
+	/// The shared address, so a caller that stores one keeps the sharing.
+	pub fn shared(&self) -> &Arc<str> {
+		&self.url
+	}
+}
+
+impl PartialEq for Link {
+	fn eq(&self, other: &Self) -> bool {
+		// Copies of one address share their buffer, so the usual comparison
+		// reads one pointer instead of the whole address.
+		Arc::ptr_eq(&self.url, &other.url) || self.url == other.url
+	}
+}
+
+impl Eq for Link {}
+
+impl Hash for Link {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		// The cached key keeps hashing constant-cost however long the address
+		// is; equality still compares the address itself.
+		self.key.hash(state);
+	}
+}
+
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct TextStyle {
 	pub bold: bool,
@@ -26,10 +77,15 @@ pub struct TextStyle {
 	/// A footnote reference: clickable, but styled by `footnote_ref` rather
 	/// than by the link color.
 	pub footnote_ref: bool,
-	pub link: Option<String>,
+	pub link: Option<Link>,
 	pub color: Option<crate::style::Color>,
 }
 impl TextStyle {
+	/// The link address this style carries, if any.
+	pub fn link_url(&self) -> Option<&str> {
+		self.link.as_ref().map(Link::as_str)
+	}
+
 	/// The inline conditions this style activates, in application order.
 	pub fn conditions(&self) -> impl Iterator<Item = crate::style::Condition> {
 		use crate::style::Condition as C;

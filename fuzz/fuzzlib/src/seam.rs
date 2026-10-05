@@ -181,7 +181,7 @@ pub fn resolved_urls(doc: &Document) -> Vec<(String, String)> {
 			}
 			InlineKind::Text(text) => {
 				if let Some(url) = &inline.style.link {
-					out.push((text.clone(), url.clone()));
+					out.push((text.clone(), url.as_str().to_owned()));
 				}
 			}
 			_ => {}
@@ -1202,6 +1202,7 @@ mod tests {
 	use std::sync::Arc;
 
 	use super::*;
+	use markview_core::document::Link;
 
 	fn parse(source: &str) -> Document {
 		markview_core::document::parse(Arc::from(source))
@@ -1262,7 +1263,7 @@ mod tests {
 				match &mut inline.kind {
 					InlineKind::Image(image) => image.src = url.to_string(),
 					InlineKind::Text(_) if inline.style.link.is_some() => {
-						inline.style.link = Some(url.to_string())
+						inline.style.link = Some(Link::new(url))
 					}
 					_ => {}
 				}

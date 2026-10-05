@@ -253,7 +253,9 @@ pub struct Overflow {
 pub struct LinkRect {
 	pub command: usize,
 	pub rect: Rect,
-	pub url: String,
+	/// Shared with the style the run came from, so one address costs one
+	/// allocation however many line fragments point at it.
+	pub url: Arc<str>,
 }
 
 /// A heading's anchor and the block-local y a link to it should scroll to.

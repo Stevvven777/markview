@@ -8,7 +8,6 @@
 //! elements become atomic host-decoded images.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Block-level HTML tags whose multi-block form only groups Markdown
 /// content. The group has no visual semantics of its own, so its children
@@ -78,34 +77,15 @@ pub struct Span {
 /// nest. Keeping the tags instead made every run carry a snapshot that grew
 /// with the nesting depth. The link is shared so that copying the state — once
 /// per run and once per open tag — never copies the URL.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Style {
 	pub bold: bool,
 	pub italic: bool,
 	pub strike: bool,
 	pub code: bool,
 	pub superscript: bool,
-	pub link: Option<Arc<str>>,
+	pub link: Option<crate::document::Link>,
 }
-
-impl PartialEq for Style {
-	fn eq(&self, other: &Self) -> bool {
-		self.bold == other.bold
-			&& self.italic == other.italic
-			&& self.strike == other.strike
-			&& self.code == other.code
-			&& self.superscript == other.superscript
-			&& match (&self.link, &other.link) {
-				// Copies of one `href` share their buffer, so the usual
-				// comparison reads one pointer instead of the whole URL.
-				(Some(a), Some(b)) => Arc::ptr_eq(a, b) || a == b,
-				(None, None) => true,
-				_ => false,
-			}
-	}
-}
-
-impl Eq for Style {}
 
 impl Style {
 	fn apply(&mut self, patch: &Patch) {
@@ -115,7 +95,9 @@ impl Style {
 			Patch::Strike => self.strike = true,
 			Patch::Code => self.code = true,
 			Patch::Superscript => self.superscript = true,
-			Patch::Link(url) => self.link = Some(Arc::from(url.as_str())),
+			Patch::Link(url) => {
+				self.link = Some(crate::document::Link::new(url.as_str()))
+			}
 			Patch::None => {}
 		}
 	}
@@ -443,7 +425,10 @@ pub fn inline(fragment: &str) -> Inline {
 }
 
 /// Interpret a raw HTML block; block-level tags must be self-contained.
-pub fn block(source: &str) -> Block {
+///
+/// `scope_limit` bounds the tags that may stay open at once, so a run of
+/// unclosed tags cannot grow the scope stack without bound.
+pub fn block(source: &str, scope_limit: usize) -> Block {
 	let mut spans: Vec<Span> = Vec::new();
 	let mut style = Style::default();
 	// Each open tag remembers the style its contents inherited, so closing it
@@ -485,6 +470,11 @@ pub fn block(source: &str) -> Block {
 				}
 			}
 			Tag::Open { name, patch } => {
+				if scopes.len() >= scope_limit {
+					// Past the budget the block is kept as source, like any
+					// unsupported markup.
+					return Block::Unsupported;
+				}
 				if first_open.is_none() {
 					first_open = Some(name.clone());
 				}
