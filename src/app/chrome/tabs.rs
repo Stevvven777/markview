@@ -1,3 +1,4 @@
+use super::components::mix;
 use crate::app::tab_strip::{GAP, TabLayout, TabStrip};
 use crate::layout::{Draw, Paint, Rect, TextShaper};
 use crate::settings::TabStyle;
@@ -61,6 +62,7 @@ impl TabBar<'_> {
 				continue;
 			}
 			let active = index == self.active_tab;
+			let hovered = rect.contains(self.cursor.0, self.cursor.1);
 			let fill = if active {
 				match style {
 					TabStyle::Underline => {
@@ -68,7 +70,7 @@ impl TabBar<'_> {
 					}
 					TabStyle::Connected => Paint::Background,
 				}
-			} else if rect.contains(self.cursor.0, self.cursor.1) {
+			} else if hovered {
 				Paint::Styled(Condition::Button, C::HoverBackground)
 			} else {
 				Paint::Styled(Condition::Toolbar, C::Background)
@@ -111,15 +113,24 @@ impl TabBar<'_> {
 				.unwrap_or(self.tabs[index].path.as_os_str())
 				.to_string_lossy();
 			let name = fit_label(self.ui, &name, rect.w - 36.0);
+			let label = if active {
+				Paint::Styled(Condition::Toolbar, C::Color)
+			} else if hovered {
+				mix(
+					self.ui,
+					Paint::Styled(Condition::Toolbar, C::Muted),
+					Paint::Styled(Condition::Toolbar, C::Color),
+					0.7,
+				)
+			} else {
+				Paint::Styled(Condition::Toolbar, C::Muted)
+			};
 			out.extend(self.ui.label(
 				&name,
 				12.0,
 				rect.x + 12.0,
 				rect.y + rect.h / 2.0 + 5.0,
-				Paint::Styled(
-					Condition::Toolbar,
-					if active { C::Color } else { C::Muted },
-				),
+				label,
 			));
 			out.push(Draw::Icon {
 				paths: super::icons::CLOSE,

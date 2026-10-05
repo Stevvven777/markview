@@ -349,15 +349,20 @@ fn draw_button_edges(
 	let styled = |field| Paint::Styled(Condition::Button, field);
 	let fill = if primary {
 		if pressed || hovered {
-			mix(ui, C::Accent, C::Color, if pressed { 0.22 } else { 0.10 })
+			mix(
+				ui,
+				styled(C::Accent),
+				styled(C::Color),
+				if pressed { 0.22 } else { 0.10 },
+			)
 		} else {
 			styled(C::Accent)
 		}
 	} else if selected && (pressed || hovered) {
 		mix(
 			ui,
-			C::ActiveBackground,
-			C::Accent,
+			styled(C::ActiveBackground),
+			styled(C::Accent),
 			if pressed { 0.22 } else { 0.10 },
 		)
 	} else if pressed || selected {
@@ -476,9 +481,14 @@ fn outline(r: Rect, color: C, thickness: f32, edges: [bool; 2]) -> Vec<Draw> {
 }
 
 /// Derive interaction shades from the effective stylesheet, including custom themes.
-fn mix(ui: &TextShaper, from: C, to: C, amount: f32) -> Paint {
-	let from = ui.stylesheet.color(Condition::Button, from);
-	let to = ui.stylesheet.color(Condition::Button, to);
+pub(super) fn mix(
+	ui: &TextShaper,
+	from: Paint,
+	to: Paint,
+	amount: f32,
+) -> Paint {
+	let from = ui.stylesheet.paint(from);
+	let to = ui.stylesheet.paint(to);
 	Paint::Color(Color(u32::from_be_bytes(std::array::from_fn(|i| {
 		((from[i] + (to[i] - from[i]) * amount) * 255.0).round() as u8
 	}))))

@@ -2,6 +2,100 @@ use super::*;
 use crate::app::tab_metrics::TabMetrics;
 
 #[test]
+fn hovered_labels_mix_current_theme_colors_and_keep_the_background_highlight() {
+	use markview_core::style::Stylesheet;
+	let mut ui = crate::test_support::shaper();
+	let strip = TabStrip::default();
+	let tabs: Vec<_> = (0..3)
+		.map(|i| ReaderTab::new(format!("{i}.md").into()))
+		.collect();
+	let widths = vec![(100.0, 50.0); tabs.len()];
+	let custom = Stylesheet::parse("format_version=2\nversion=1\n[[rule]]\nwhen=['ui','toolbar']\nmuted='#20406080'\ncolor='#80A0C0FF'\n").unwrap();
+	for sheet in [
+		Stylesheet::bundled(false),
+		Stylesheet::bundled(true),
+		std::sync::Arc::new(custom),
+	] {
+		ui.set_stylesheet(sheet);
+		let muted = ui.stylesheet.color(Condition::Toolbar, C::Muted);
+		let active = ui.stylesheet.color(Condition::Toolbar, C::Color);
+		let mixed = std::array::from_fn::<_, 4, _>(|i| {
+			muted[i] * 0.3 + active[i] * 0.7
+		});
+		let mut bar = TabBar {
+			ui: &mut ui,
+			strip: &strip,
+			widths: &widths,
+			tabs: &tabs,
+			active_tab: 0,
+			cursor: (0.0, 0.0),
+			style: TabStyle::Underline,
+			viewport: Rect {
+				x: 10.0,
+				y: 4.0,
+				w: 700.0,
+				h: 36.0,
+			},
+		};
+		for style in [TabStyle::Underline, TabStyle::Connected] {
+			bar.style = style;
+			let layout = bar.layout();
+			for hovered in [None, Some(0), Some(1)] {
+				bar.cursor = hovered
+					.map_or((0.0, 0.0), |i| (layout.rects[i].x + 20.0, 20.0));
+				let draws = bar.draw_tabs();
+				let Draw::Clipped { draws, .. } = &draws[0] else {
+					unreachable!()
+				};
+				for (i, rect) in layout.rects.iter().enumerate() {
+					let expected = if i == 0 {
+						active
+					} else if hovered == Some(i) {
+						mixed
+					} else {
+						muted
+					};
+					let glyphs: Vec<_> = draws
+						.iter()
+						.filter_map(|draw| match draw {
+							Draw::Glyph(glyph)
+								if rect.contains(glyph.x, glyph.y) =>
+							{
+								Some(glyph)
+							}
+							_ => None,
+						})
+						.collect();
+					assert!(!glyphs.is_empty());
+					for glyph in glyphs {
+						let actual = bar.ui.stylesheet.paint(glyph.paint);
+						assert!(actual.iter().zip(expected).all(|(a, b)| {
+							(a - b).abs() <= 0.5 / 255.0 + 0.00001
+						}));
+					}
+				}
+				let hover_fills = draws
+					.iter()
+					.filter(|draw| {
+						matches!(
+							draw,
+							Draw::Rect(
+								_,
+								Paint::Styled(
+									Condition::Button,
+									C::HoverBackground
+								)
+							)
+						)
+					})
+					.count();
+				assert_eq!(hover_fills > 0, hovered == Some(1));
+			}
+		}
+	}
+}
+
+#[test]
 fn cached_tab_end_follows_scroll_theme_and_document_changes() {
 	let mut ui = crate::test_support::shaper();
 	let mut metrics = TabMetrics::default();
