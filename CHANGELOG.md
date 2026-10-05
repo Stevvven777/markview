@@ -49,6 +49,8 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Keep raw HTML inside `<summary>` literal, matching GFM, instead of parsing it as Markdown.
+
 - Package Android release APKs for ARM64 only to reduce download size; retain ARM64 and x86_64 debug builds and x86_64 KVM emulator tests.
 
 - Reduce phone list indentation and quotation/table padding across bundled reader themes.
@@ -88,6 +90,8 @@ at the same level, without `[brackets]`.
 - Make hovered inactive tab labels clearer by mixing 70% active text and 30% muted text from the effective stylesheet.
 
 - Write PDF and PNG exports, downloaded fonts and cached images through an exclusive random temporary file, so a symlink planted beside the destination is never written through.
+
+- Reuse the Markdown blocks Comrak already parsed under `<details>` instead of re-parsing each body, so repeated disclosures no longer multiply the document definitions; an unmatched opener still falls back without rescanning the tail.
 
 - Preserve block-relative session positions below text and let explicit search, scrollbar or background fragment navigation cancel pending restoration.
 

@@ -123,13 +123,13 @@ fn an_unclosed_transparent_container_keeps_the_html_source() {
 }
 
 #[test]
-fn a_single_block_transparent_tag_keeps_the_html_source() {
+fn a_single_block_transparent_tag_renders_its_text() {
 	let doc = parse("<div>raw</div>\n");
-	assert!(matches!(
-		&doc.blocks[0].kind,
-		BlockKind::Code { language, text }
-			if language == "HTML source" && text.contains("raw")
-	));
+	assert_eq!(doc.blocks.len(), 1);
+	let BlockKind::Paragraph(text) = &doc.blocks[0].kind else {
+		panic!("expected a paragraph")
+	};
+	assert_eq!(plain_text(text), "raw");
 }
 
 #[test]
@@ -1040,6 +1040,96 @@ fn an_indented_details_closer_keeps_the_element_range_on_the_tag() {
 	assert!(open);
 	assert!(summary.is_empty());
 	assert!(blocks.is_empty());
+}
+
+#[test]
+fn an_inline_details_body_is_not_markdown() {
+	// Content in the opening tag's own HTML block is raw, so Markdown
+	// markers stay literal; only a body after a blank line is Markdown.
+	let doc = parse("<details><summary>S</summary>**Bold**</details>\n");
+	let (_, _, blocks) = details(&doc);
+	let BlockKind::Paragraph(body) = &blocks[0].kind else {
+		panic!("expected a paragraph body")
+	};
+	assert_eq!(plain_text(body), "**Bold**");
+}
+
+#[test]
+fn a_commented_summary_closer_is_not_markup() {
+	// The summary scanner must skip comments and opaque elements, or a
+	// commented `</summary>` steals the real element.
+	let doc = parse(
+		"<details><summary><!-- </summary> -->Hello</summary>Body</details>\n",
+	);
+	let (_, summary, blocks) = details(&doc);
+	assert_eq!(summary, "Hello");
+	let BlockKind::Paragraph(body) = &blocks[0].kind else {
+		panic!("expected a body paragraph")
+	};
+	assert_eq!(plain_text(body), "Body");
+}
+
+#[test]
+fn a_stray_close_does_not_replay_the_whole_block() {
+	// Only the unmatched fragment falls back; later containers still render.
+	let doc = parse("<div>one</div></section><details>two</details>\n");
+	assert_eq!(doc.blocks.len(), 3);
+	let BlockKind::Paragraph(one) = &doc.blocks[0].kind else {
+		panic!("expected the first paragraph")
+	};
+	assert_eq!(plain_text(one), "one");
+	assert!(matches!(
+		&doc.blocks[1].kind,
+		BlockKind::Code { language, text }
+			if language == "HTML source" && text.trim() == "</section>"
+	));
+	let BlockKind::Details {
+		summary, blocks, ..
+	} = &doc.blocks[2].kind
+	else {
+		panic!("expected the second disclosure")
+	};
+	assert_eq!(plain_text(summary), "");
+	let BlockKind::Paragraph(two) = &blocks[0].kind else {
+		panic!("expected the second body")
+	};
+	assert_eq!(plain_text(two), "two");
+}
+
+#[test]
+fn nested_html_containers_stop_at_the_block_depth_limit() {
+	// An unbounded frame stack used to build a tree deep enough to overflow
+	// the recursive passes that walk it.
+	let n = 2000;
+	let mut source = String::new();
+	for _ in 0..n {
+		source.push_str("<details>\n<summary>s</summary>\n\n");
+	}
+	source.push_str("x\n\n");
+	for _ in 0..n {
+		source.push_str("</details>\n\n");
+	}
+	let doc = parse(source);
+	fn depth(blocks: &[Block]) -> usize {
+		blocks
+			.iter()
+			.map(|block| match &block.kind {
+				BlockKind::Details { blocks, .. } => 1 + depth(blocks),
+				_ => 1,
+			})
+			.max()
+			.unwrap_or(0)
+	}
+	let limit = crate::limits::Limits::default().block_depth;
+	assert!(depth(&doc.blocks) <= limit + 1, "{}", depth(&doc.blocks));
+}
+
+#[test]
+fn a_summary_keeps_markdown_literal() {
+	// GFM does not parse Markdown inside `<summary>`, so the markers stay.
+	let doc = parse("<details><summary>**Bold**</summary>Body</details>\n");
+	let (_, summary, _) = details(&doc);
+	assert_eq!(summary, "**Bold**");
 }
 
 #[test]

@@ -116,11 +116,11 @@ fn details_footnotes_appear_once_at_the_end_of_the_document() {
 			vec!["Last."],
 		),
 		(
-			"<details>\nBody[^n]\n\n[^n]: The note.\n\n</details>\n",
+			"<details>\n\nBody[^n]\n\n[^n]: The note.\n\n</details>\n",
 			vec!["The note."],
 		),
 		(
-			"First[^a]\n\n<details>\nBody[^b]\n\n[^b]: Body note.\n\n</details>\n\n[^a]: Outside note.\n",
+			"First[^a]\n\n<details>\n\nBody[^b]\n\n[^b]: Body note.\n\n</details>\n\n[^a]: Outside note.\n",
 			vec!["Outside note.", "Body note."],
 		),
 		(
@@ -196,7 +196,7 @@ fn notes_discovered_in_details_share_document_numbering_and_column_width() {
 		String::from("First[^outside]\n\n[^outside]: Outside note.\n\n");
 	for i in 0..9 {
 		source.push_str(&format!(
-			"<details>\nBody[^n{i}]\n\n[^n{i}]: Note {i}.\n\n</details>\n\n"
+			"<details>\n\nBody[^n{i}]\n\n[^n{i}]: Note {i}.\n\n</details>\n\n"
 		));
 	}
 	let doc = document::parse(source);
@@ -264,7 +264,7 @@ fn incomplete_prefixes_defer_hoisted_notes() {
 fn hoisted_note_headings_follow_final_reading_order() {
 	for quote in ["", "> "] {
 		let source = format!(
-			"<details>\nBody[^a]\n[^a]:\n    {quote}# Topic\n</details>\n\n{quote}# Topic\n"
+			"<details>\n\nBody[^a]\n\n[^a]:\n    {quote}# Topic\n\n</details>\n\n{quote}# Topic\n"
 		);
 		let doc = document::parse(source);
 		let anchors: Vec<_> = doc
@@ -361,7 +361,7 @@ fn quoted_details_in_wide_list_items_are_not_duplicated_or_lost() {
 fn a_note_defined_in_one_disclosure_can_be_referenced_from_another() {
 	for reversed in [false, true] {
 		let definition = "<details>\n\n[^n]: Note.\n\n</details>\n\n";
-		let reference = "<details>Body[^n]</details>\n\n";
+		let reference = "<details>\n\nBody[^n]\n\n</details>\n\n";
 		let source = if reversed {
 			format!("{reference}{definition}")
 		} else {

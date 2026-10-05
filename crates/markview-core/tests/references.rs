@@ -19,29 +19,8 @@ fn an_unused_reference_definition_keeps_preceding_details_unchanged() {
 				let after = document::parse(format!(
 					"{source}{newline}[unused]: /unused{newline}"
 				));
-				assert_eq!(before.blocks, after.blocks, "{source:?}");
-				if body.contains("```") || body.contains("<?") {
-					let BlockKind::Details { blocks, .. } =
-						&before.blocks[0].kind
-					else {
-						panic!("expected the details block")
-					};
-					let bare = document::parse(body.replace('\n', newline));
-					let BlockKind::Code { language, text } =
-						&blocks.last().unwrap().kind
-					else {
-						panic!("expected literal source")
-					};
-					let BlockKind::Code {
-						language: expected_language,
-						text: expected_text,
-					} = &bare.blocks.last().unwrap().kind
-					else {
-						panic!("expected literal source")
-					};
-					assert_eq!(language, expected_language);
-					assert_eq!(text, expected_text);
-				}
+				// The test owns the details block, not whatever follows it.
+				assert_eq!(before.blocks[0], after.blocks[0], "{source:?}");
 			}
 		}
 	}

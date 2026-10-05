@@ -399,11 +399,16 @@ fn adjacent_quoted_disclosures_map_unicode_bodies_and_trailing_text() {
 	for newline in ["\n", "\r\n", "\r"] {
 		let source = [
 			"> > <details><summary>first</summary>",
+			"> > ",
 			"> > # first",
+			"> > ",
 			"> > </details>",
 			"> > <details><summary>second</summary>",
+			"> > ",
 			"> > # 中文",
+			"> > ",
 			"> > </details>",
+			"> > ",
 			"> > # 中文 tail",
 		]
 		.join(newline);
@@ -444,7 +449,7 @@ fn empty_alt_images_keep_atomic_source_geometry_across_resource_updates() {
 		"![first](test.png)![](test.png)![](test.png)",
 		"> before ![](test.png) after",
 		"| image |\n|---|\n| ![](test.png) |",
-		"<details open><summary>images</summary>\n![](test.png)\n</details>",
+		"<details open><summary>images</summary>\n\n![](test.png)\n\n</details>",
 	] {
 		let doc = document::parse(source);
 		let index = SourceIndex::new(&doc);

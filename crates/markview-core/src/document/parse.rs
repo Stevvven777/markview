@@ -7,8 +7,10 @@ use comrak::{
 };
 use std::{
 	borrow::Cow,
+	cell::Cell,
 	collections::{HashMap, HashSet},
 	ops::Range,
+	rc::Rc,
 	sync::Arc,
 };
 
@@ -37,6 +39,11 @@ struct Reader<'s> {
 	/// a snippet the same way they do in a full parse.
 	definitions: &'s str,
 	limits: crate::limits::Limits,
+	/// Cumulative snippet bytes whose global definitions were injected. A
+	/// document-wide ceiling keeps repeated snippet parses from multiplying
+	/// the definitions.
+	reparse_used: Rc<Cell<usize>>,
+	reparse_limit: usize,
 }
 
 impl Reader<'_> {
@@ -306,48 +313,207 @@ impl Reader<'_> {
 		depth: usize,
 	) -> Vec<Block> {
 		let children: Vec<&'a AstNode<'a>> = node.children().collect();
-		let matches = container_matches(&children);
-		self.sequence(&children, depth, &matches, 0)
+		self.sequence(&children, depth)
 	}
 
-	/// One sibling list. A `<details>` element may span several siblings, so
-	/// the scan is index-based rather than one child at a time.
+	/// One sibling list. A raw HTML container may span several siblings, so
+	/// the walk keeps a stack of open frames; the Markdown siblings Comrak
+	/// already parsed become the body and are never re-parsed.
 	fn sequence<'a>(
 		&mut self,
 		children: &[&'a AstNode<'a>],
 		depth: usize,
-		matches: &Matches,
-		base: usize,
 	) -> Vec<Block> {
-		let mut blocks = Vec::new();
+		let mut out = Vec::new();
+		let mut stack: Vec<Frame> = Vec::new();
 		let mut i = 0;
 		while i < children.len() {
-			if let Some(consumed) = self.svg(children, i, depth, &mut blocks) {
-				i += consumed;
-				continue;
-			}
 			if let Some(consumed) =
-				self.transparent(children, i, depth, &mut blocks, matches, base)
+				self.svg(children, i, depth, frame_target(&mut stack, &mut out))
 			{
 				i += consumed;
 				continue;
 			}
-			if let Some(consumed) =
-				self.details(children, i, depth, &mut blocks)
-			{
-				i += consumed;
-				continue;
-			}
-			match self.child_block(children[i], depth) {
-				Child::Block(block) => blocks.push(block),
-				Child::Skip => {}
-				Child::Flatten => {
-					blocks.extend(self.blocks(children[i], depth + 1));
+			let child = children[i];
+			if matches!(&child.data.borrow().value, NodeValue::HtmlBlock(_)) {
+				self.html_events(child, depth, &mut stack, &mut out);
+			} else {
+				let content_depth = depth + stack.len();
+				match self.child_block(child, content_depth) {
+					Child::Block(block) => {
+						push_block(&mut stack, &mut out, block);
+					}
+					Child::Skip => {}
+					Child::Flatten => {
+						let blocks = self.blocks(child, content_depth + 1);
+						extend_blocks(&mut stack, &mut out, blocks);
+					}
 				}
 			}
 			i += 1;
 		}
-		blocks
+		// An element that never closed keeps the literal fallback: the opener
+		// is shown as HTML source and its collected content follows it.
+		while let Some(frame) = stack.pop() {
+			let mut blocks = Vec::new();
+			if let Some(block) = html_leaf_block(
+				self.source,
+				&frame.raw,
+				frame.start..frame.start.saturating_add(frame.raw.len()),
+			) {
+				blocks.push(block);
+			}
+			blocks.extend(frame.blocks);
+			extend_blocks(&mut stack, &mut out, blocks);
+		}
+		out
+	}
+
+	/// Feed one raw HTML block's container events into the open frames.
+	fn html_events<'a>(
+		&mut self,
+		child: &'a AstNode<'a>,
+		depth: usize,
+		stack: &mut Vec<Frame>,
+		out: &mut Vec<Block>,
+	) {
+		let source = self.source;
+		let child_range = self.range(child);
+		let markers = container_markers(child);
+		let original = HtmlSource::new(&source[child_range.clone()], &markers);
+		for event in html::block_events(&original.text) {
+			match event {
+				html::BlockEvent::Text { text, range } => {
+					let at = map_source(&original, &child_range, range);
+					if let Some(block) = html_leaf_block(source, &text, at) {
+						push_block(stack, out, block);
+					}
+				}
+				html::BlockEvent::Summary { text, range } => {
+					let set = if let Some(frame) = stack.last_mut()
+						&& let FrameKind::Details { summary, .. } =
+							&mut frame.kind && summary.is_none()
+					{
+						*summary = Some(text.clone());
+						frame.raw.push_str(&original.text[range.clone()]);
+						true
+					} else {
+						false
+					};
+					if !set {
+						let at = map_source(&original, &child_range, range);
+						let html = format!("<summary>{text}</summary>");
+						if let Some(block) = html_leaf_block(source, &html, at)
+						{
+							push_block(stack, out, block);
+						}
+					}
+				}
+				html::BlockEvent::Open { name, open, range } => {
+					let at = map_source(&original, &child_range, range.clone());
+					if depth + stack.len() >= self.limits.block_depth {
+						// Too deep: keep the tag as source instead of nesting.
+						if let Some(block) = html_leaf_block(
+							source,
+							&original.text[range.clone()],
+							at,
+						) {
+							push_block(stack, out, block);
+						}
+						continue;
+					}
+					let kind = if name == "details" {
+						let ordinal = self.details_ordinal;
+						self.details_ordinal += 1;
+						FrameKind::Details {
+							open,
+							ordinal,
+							summary: None,
+						}
+					} else {
+						FrameKind::Transparent { name }
+					};
+					stack.push(Frame {
+						kind,
+						blocks: Vec::new(),
+						raw: original.text[range.clone()].to_string(),
+						start: at.start,
+					});
+				}
+				html::BlockEvent::Close { name, range } => {
+					let at = map_source(&original, &child_range, range.clone());
+					if !self.close_frame(&name, at.end, stack, out, source) {
+						// A stray close keeps only its own fragment as source.
+						if let Some(block) = html_leaf_block(
+							source,
+							&original.text[range.clone()],
+							at,
+						) {
+							push_block(stack, out, block);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/// Pop the frame a closing tag names, or report that none matches so the
+	/// caller can keep the literal fallback.
+	fn close_frame(
+		&self,
+		name: &str,
+		end: usize,
+		stack: &mut Vec<Frame>,
+		out: &mut Vec<Block>,
+		source: &str,
+	) -> bool {
+		// An end tag closes the nearest matching frame and implicitly closes
+		// anything still open inside it.
+		let Some(index) = stack.iter().rposition(|frame| match &frame.kind {
+			FrameKind::Transparent { name: open } => name == open,
+			FrameKind::Details { .. } => name == "details",
+		}) else {
+			return false;
+		};
+		while stack.len() > index {
+			let frame = stack.pop().expect("index is in range");
+			self.finish_frame(frame, end, stack, out, source);
+		}
+		true
+	}
+
+	/// Close one frame into its parent: a transparent frame flattens and a
+	/// details frame becomes one block.
+	fn finish_frame(
+		&self,
+		frame: Frame,
+		end: usize,
+		stack: &mut [Frame],
+		out: &mut Vec<Block>,
+		source: &str,
+	) {
+		match frame.kind {
+			FrameKind::Transparent { .. } => {
+				extend_blocks(stack, out, frame.blocks);
+			}
+			FrameKind::Details {
+				open,
+				ordinal,
+				summary,
+			} => {
+				let span = frame.start..end.max(frame.start);
+				let summary = self.summary_rich(summary.as_deref(), &span);
+				let block = details_block_of(
+					source,
+					open,
+					ordinal,
+					summary,
+					frame.blocks,
+					span,
+				);
+				push_block(stack, out, block);
+			}
+		}
 	}
 
 	/// SVG may cross Comrak's blank-line HTML boundaries.
@@ -636,220 +802,6 @@ impl Reader<'_> {
 		}
 	}
 
-	/// Consumes a multi-block transparent container that starts at
-	/// `children[start]`. The body is the already-parsed sibling Markdown
-	/// between the opener and the closing tag, so it renders in place without
-	/// re-parsing. `None` keeps the raw-HTML fallback when either tag is not
-	/// a clean block of its own.
-	fn transparent<'a>(
-		&mut self,
-		children: &[&'a AstNode<'a>],
-		start: usize,
-		depth: usize,
-		out: &mut Vec<Block>,
-		matches: &Matches,
-		base: usize,
-	) -> Option<usize> {
-		if depth >= self.limits.block_depth {
-			return None;
-		}
-		let literal = match &children[start].data.borrow().value {
-			NodeValue::HtmlBlock(h) => h.literal.clone(),
-			_ => return None,
-		};
-		html::opening_tag(&literal, html::TRANSPARENT_TAGS)?;
-		let matched = matches.close.get(base + start)?;
-		let (close, range) = (*matched).clone()?;
-		if close <= base + start || close >= base + children.len() {
-			return None;
-		}
-		let close = close - base;
-		let close_literal = match &children[close].data.borrow().value {
-			NodeValue::HtmlBlock(h) => h.literal.clone(),
-			_ => return None,
-		};
-		// A closer block with raw text around the tag would lose that source.
-		if !close_literal[..range.start].trim().is_empty()
-			|| !close_literal[range.end..].trim().is_empty()
-		{
-			return None;
-		}
-		let body = self.sequence(
-			&children[start + 1..close],
-			depth + 1,
-			matches,
-			base + start + 1,
-		);
-		out.extend(body);
-		Some(close - start + 1)
-	}
-
-	/// Consumes a `<details>` element that starts at `children[start]`, when
-	/// the whole element is present. Appends one block and returns how many
-	/// siblings it owns; `None` leaves the opener as ordinary raw HTML.
-	fn details<'a>(
-		&mut self,
-		children: &[&'a AstNode<'a>],
-		start: usize,
-		depth: usize,
-		out: &mut Vec<Block>,
-	) -> Option<usize> {
-		if depth >= self.limits.block_depth {
-			return None;
-		}
-		let literal = match &children[start].data.borrow().value {
-			NodeValue::HtmlBlock(h) => h.literal.clone(),
-			_ => return None,
-		};
-		match html::details(&literal) {
-			// The whole element is in this block; its body is Markdown. Comrak
-			// can keep adjacent elements in one block, so the remainder is read
-			// iteratively at this depth: those elements are siblings, not
-			// children, and must not spend the nesting budget.
-			html::Details::Inline {
-				mut open,
-				mut summary,
-				mut body,
-				mut rest,
-			} => {
-				let html_source = self.range(children[start]);
-				let markers = container_markers(children[start]);
-				let original = HtmlSource::new(
-					&self.source[html_source.clone()],
-					&markers,
-				);
-				let offsets =
-					source_offsets(&literal, self.source, html_source.clone());
-				let mut body_start =
-					offsets[html::details_content_start(&literal)];
-				let mut at = 0;
-				loop {
-					let range =
-						html::inline_details_range(&original.text[at..])?;
-					let range = at + range.start..at + range.end;
-					at = range.end;
-					let range = original.range(range);
-					let source = html_source.start + range.start
-						..html_source.start + range.end;
-					let blocks = self.markdown_blocks_at(
-						&body,
-						depth + 1,
-						body_start..source.end,
-					);
-					let rich = self.summary_rich(
-						summary.as_deref(),
-						depth + 1,
-						&source,
-					);
-					out.push(self.details_block(open, rich, blocks, source));
-					if rest.trim().is_empty() {
-						break;
-					}
-					let html::Details::Inline {
-						open: next_open,
-						summary: next_summary,
-						body: next_body,
-						rest: next_rest,
-					} = html::details(&rest)
-					else {
-						out.extend(self.markdown_blocks_at(
-							&rest,
-							depth,
-							offsets[literal.trim_end().len() - rest.len()]
-								..html_source.end,
-						));
-						break;
-					};
-					body_start = offsets[literal.trim_end().len() - rest.len()
-						+ html::details_content_start(&rest)];
-					(open, summary, body, rest) =
-						(next_open, next_summary, next_body, next_rest);
-				}
-				Some(1)
-			}
-			// The opener ends at a blank line, so the element owns the source
-			// up to its closing tag, whether that tag shares its block with
-			// further tags or not.
-			html::Details::Open {
-				open,
-				summary,
-				lead,
-				depth: open_depth,
-			} => {
-				let (close, tag, close_depth) =
-					element_close(children, start, open_depth, "details")?;
-				let start_source = self.range(children[start]);
-				let close_source = self.range(children[close]);
-				let markers = container_markers(children[start]);
-				let original = HtmlSource::new(
-					&self.source[close_source.clone()],
-					&markers,
-				);
-				let (_, source_tag) =
-					html::close_tag(&original.text, close_depth, "details");
-				let tag_end =
-					close_source.start + original.range(source_tag?).end;
-				// The body is the source between the opener and the closing
-				// tag: a nested element that shares that closing block is
-				// parsed from the inside out, so none of its content is lost.
-				let (between, prefix, rest) = {
-					let data = children[close].data.borrow();
-					let NodeValue::HtmlBlock(h) = &data.value else {
-						return None;
-					};
-					let between = self
-						.source
-						.get(start_source.end..close_source.start)
-						.unwrap_or_default();
-					if tag.end > h.literal.len() {
-						return None;
-					}
-					// The literals around the body have already lost the
-					// enclosing quote markers, so the raw slice between them
-					// must lose the same ones or the body gains a quote.
-					(
-						HtmlSource::new(between, &markers).text.into_owned(),
-						h.literal[..tag.start].to_string(),
-						h.literal[tag.end..].to_string(),
-					)
-				};
-				let mut body = lead;
-				body.push('\n');
-				body.push_str(&between);
-				body.push_str(&prefix);
-				let source = start_source.start..tag_end;
-				let body_start =
-					source_offsets(&literal, self.source, start_source.clone())
-						[html::details_content_start(&literal)];
-				let blocks = self.markdown_blocks_at(
-					&body,
-					depth + 1,
-					body_start..source.end,
-				);
-				let summary =
-					self.summary_rich(summary.as_deref(), depth + 1, &source);
-				// Content after the closing tag is a sibling of the element,
-				// so it keeps its place instead of being dropped with the
-				// block that carries the tag.
-				out.push(self.details_block(
-					open,
-					summary,
-					blocks,
-					source.clone(),
-				));
-				if !rest.trim().is_empty() {
-					out.extend(self.markdown_blocks_at(
-						&rest,
-						depth,
-						tag_end..close_source.end,
-					));
-				}
-				Some(close - start + 1)
-			}
-			html::Details::Close | html::Details::No => None,
-		}
-	}
-
 	/// Restore snippet coordinates after removing disclosure tags and quote prefixes.
 	fn markdown_blocks_at(
 		&mut self,
@@ -922,6 +874,14 @@ impl Reader<'_> {
 		if !text.contains('[') {
 			return self.snippet(text, depth, None);
 		}
+		let cost = text.len().saturating_add(self.definitions.len());
+		if self.reparse_used.get().saturating_add(cost) > self.reparse_limit {
+			// Over the document-wide ceiling: keep the snippet readable without
+			// the global definitions so repeated parses stay bounded.
+			return self.snippet(text, depth, None);
+		}
+		self.reparse_used
+			.set(self.reparse_used.get().saturating_add(cost));
 		let definitions =
 			incremental::missing_definitions(self.definitions, text);
 		let mut joined =
@@ -1014,6 +974,8 @@ impl Reader<'_> {
 			details_ordinal: std::mem::take(&mut self.details_ordinal),
 			definitions: self.definitions,
 			limits: self.limits,
+			reparse_used: Rc::clone(&self.reparse_used),
+			reparse_limit: self.reparse_limit,
 		};
 		let blocks = reader.blocks(root, depth);
 		self.footnotes = reader.footnotes;
@@ -1024,23 +986,20 @@ impl Reader<'_> {
 
 	/// The summary's rich text: its Markdown inline content, or its plain text
 	/// when it is not phrasing content.
+	/// The summary's rich text. GFM keeps raw HTML inside `<summary>` and
+	/// does not parse Markdown, so `**Bold**` stays literal.
 	fn summary_rich(
-		&mut self,
+		&self,
 		text: Option<&str>,
-		depth: usize,
 		source: &Range<usize>,
 	) -> RichText {
 		let Some(text) = text.filter(|text| !text.trim().is_empty()) else {
 			return RichText::new();
 		};
-		let mut out = RichText::new();
-		// The summary lives inside an HTML block, so the document never numbers
-		// the notes it references; parsing it alone keeps the two in step.
-		for block in self.snippet(text, depth, None) {
-			if let BlockKind::Paragraph(rich) = block.kind {
-				out.extend(rich);
-			}
-		}
+		let mut out = match html::block(text) {
+			html::Block::Paragraph(spans) => html_rich(spans, source),
+			_ => RichText::new(),
+		};
 		if out.is_empty() {
 			out.push(Inline {
 				kind: InlineKind::Text(text.trim().to_string()),
@@ -1048,43 +1007,136 @@ impl Reader<'_> {
 				source: source.clone(),
 			});
 		}
-		// The summary has no sub-range of its own in the document; like a raw
-		// HTML block, every run is attributed to the whole element.
-		for inline in &mut out {
-			inline.source = source.clone();
-		}
 		merge_text(out)
 	}
+}
 
-	fn details_block(
-		&mut self,
+/// One open raw-HTML container while a sibling list is walked.
+struct Frame {
+	kind: FrameKind,
+	blocks: Vec<Block>,
+	/// The opener's HTML literal, used when the element never closes.
+	raw: String,
+	/// Source offset where the opener begins.
+	start: usize,
+}
+
+enum FrameKind {
+	Transparent {
+		name: String,
+	},
+	Details {
 		open: bool,
-		summary: RichText,
-		blocks: Vec<Block>,
-		source: Range<usize>,
-	) -> Block {
-		let ordinal = self.details_ordinal;
-		self.details_ordinal += 1;
-		let kind = BlockKind::Details {
-			open,
-			ordinal,
-			summary,
-			blocks,
-		};
-		// The occurrence ordinal distinguishes two identical elements, whose
-		// source text alone would fingerprint the same; `content_key` still
-		// ignores it, so matching states share geometry.
-		let id = fingerprint(&(
-			std::mem::discriminant(&kind),
-			&self.source[source.clone()],
-			ordinal,
-		));
-		Block {
-			id,
-			content_key: semantic_key(&kind),
-			source,
-			kind,
+		ordinal: u32,
+		summary: Option<String>,
+	},
+}
+
+fn frame_target<'a>(
+	stack: &'a mut [Frame],
+	out: &'a mut Vec<Block>,
+) -> &'a mut Vec<Block> {
+	match stack.last_mut() {
+		Some(frame) => &mut frame.blocks,
+		None => out,
+	}
+}
+
+fn push_block(stack: &mut [Frame], out: &mut Vec<Block>, block: Block) {
+	frame_target(stack, out).push(block);
+}
+
+fn extend_blocks(
+	stack: &mut [Frame],
+	out: &mut Vec<Block>,
+	blocks: Vec<Block>,
+) {
+	frame_target(stack, out).extend(blocks);
+}
+
+fn map_source(
+	original: &HtmlSource,
+	child: &Range<usize>,
+	range: Range<usize>,
+) -> Range<usize> {
+	let mapped = original.range(range);
+	child.start + mapped.start..child.start + mapped.end
+}
+
+fn clamp_range(source: &str, range: Range<usize>) -> Range<usize> {
+	let mut start = range.start.min(source.len());
+	let mut end = range.end.min(source.len());
+	while !source.is_char_boundary(start) {
+		start -= 1;
+	}
+	while !source.is_char_boundary(end) {
+		end -= 1;
+	}
+	start..end.max(start)
+}
+
+fn html_leaf_block(
+	source: &str,
+	text: &str,
+	range: Range<usize>,
+) -> Option<Block> {
+	let range = clamp_range(source, range);
+	let kind = match html::block(text) {
+		html::Block::Unsupported => BlockKind::Code {
+			language: "HTML source".into(),
+			text: text.to_string(),
+		},
+		html::Block::Empty => return None,
+		html::Block::Rule => BlockKind::Rule,
+		html::Block::Heading { level, text } => BlockKind::Heading {
+			level,
+			text: html_rich(text, &range),
+			anchor: String::new(),
+		},
+		html::Block::Paragraph(text) => {
+			BlockKind::Paragraph(html_rich(text, &range))
 		}
+	};
+	Some(block_of(source, kind, range))
+}
+
+fn block_of(source: &str, kind: BlockKind, range: Range<usize>) -> Block {
+	let range = clamp_range(source, range);
+	let id =
+		fingerprint(&(std::mem::discriminant(&kind), &source[range.clone()]));
+	Block {
+		id,
+		content_key: semantic_key(&kind),
+		source: range,
+		kind,
+	}
+}
+
+fn details_block_of(
+	source: &str,
+	open: bool,
+	ordinal: u32,
+	summary: RichText,
+	blocks: Vec<Block>,
+	range: Range<usize>,
+) -> Block {
+	let range = clamp_range(source, range);
+	let kind = BlockKind::Details {
+		open,
+		ordinal,
+		summary,
+		blocks,
+	};
+	let id = fingerprint(&(
+		std::mem::discriminant(&kind),
+		&source[range.clone()],
+		ordinal,
+	));
+	Block {
+		id,
+		content_key: semantic_key(&kind),
+		source: range,
+		kind,
 	}
 }
 
@@ -1096,63 +1148,6 @@ enum Child {
 	Skip,
 	/// A container that only groups its children, which take its place.
 	Flatten,
-}
-
-/// The closer of every transparent container opener in one sibling list,
-/// indexed by the opener's position. One pass fills it, so a run of
-/// unmatched openers does not rescan the tail once per opener.
-struct Matches {
-	close: Vec<Option<(usize, Range<usize>)>>,
-}
-
-fn container_matches<'a>(children: &[&'a AstNode<'a>]) -> Matches {
-	let mut close = vec![None; children.len()];
-	let mut stacks: HashMap<String, Vec<usize>> = HashMap::new();
-	for (i, child) in children.iter().enumerate() {
-		let data = child.data.borrow();
-		let NodeValue::HtmlBlock(h) = &data.value else {
-			continue;
-		};
-		for (name, closing, range) in html::transparent_tags(&h.literal) {
-			if closing {
-				if let Some(stack) = stacks.get_mut(&name)
-					&& let Some(opener) = stack.pop()
-				{
-					close[opener] = Some((i, range));
-				}
-			} else {
-				stacks.entry(name).or_default().push(i);
-			}
-		}
-	}
-	Matches { close }
-}
-
-/// The sibling where an opening element's closing `name` tag appears, as its
-/// index and the closing tag's byte range within that sibling's literal,
-/// together with the depth entering that sibling. Tags are counted
-/// individually, so a block that carries several closing tags closes several
-/// elements. `depth` is how many elements the opening block already left
-/// open, so an inner opener there does not match the outer close. `None`
-/// leaves the opener as literal source.
-fn element_close<'a>(
-	children: &[&'a AstNode<'a>],
-	start: usize,
-	mut depth: usize,
-	name: &str,
-) -> Option<(usize, Range<usize>, usize)> {
-	for (i, child) in children.iter().enumerate().skip(start + 1) {
-		let data = child.data.borrow();
-		let NodeValue::HtmlBlock(h) = &data.value else {
-			continue;
-		};
-		let (next, close) = html::close_tag(&h.literal, depth, name);
-		if let Some(range) = close {
-			return Some((i, range, depth));
-		}
-		depth = next;
-	}
-	None
 }
 
 enum ContainerMarker {
@@ -1343,6 +1338,8 @@ pub fn parse(source: impl Into<Arc<str>>) -> Document {
 		details_ordinal: 0,
 		definitions: &definitions,
 		limits: crate::limits::Limits::default(),
+		reparse_used: Rc::new(Cell::new(0)),
+		reparse_limit: source.len().saturating_mul(8).clamp(1 << 20, 64 << 20),
 	};
 	let mut blocks = reader.blocks(root, 0);
 	let column = reader

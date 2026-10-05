@@ -85,143 +85,6 @@ pub enum Block {
 	Unsupported,
 }
 
-/// A `<details>` element found in a raw HTML block.
-///
-/// Comrak ends a type-6 HTML block at a blank line, so the common multi-block
-/// form arrives as an opening block followed by ordinary Markdown blocks. The
-/// caller decides how much of that sequence the element owns.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Details {
-	/// The block opens an element whose content continues in later blocks.
-	Open {
-		/// The source declared the element initially expanded.
-		open: bool,
-		/// The raw inner text of the `<summary>` element, if this block has one.
-		summary: Option<String>,
-		/// Raw text after the summary, which becomes the first body content.
-		lead: String,
-		/// How many elements the block itself leaves open, counting nested
-		/// openers the closing scan must still match.
-		depth: usize,
-	},
-	/// The block contains a complete `<details>...</details>` element.
-	Inline {
-		open: bool,
-		summary: Option<String>,
-		body: String,
-		/// Raw source after the matching close tag. Comrak can keep adjacent
-		/// elements in one block, so the caller parses this as further blocks
-		/// rather than dropping them.
-		rest: String,
-	},
-	/// A block that is nothing but a closing `</details>`.
-	Close,
-	/// Not a `<details>` element; keep the existing block fallback.
-	No,
-}
-
-/// Classify one raw HTML block as part of a `<details>` element.
-pub fn details(source: &str) -> Details {
-	let text = source.trim();
-	let Some(len) = tag_len(text) else {
-		return Details::No;
-	};
-	let Some((name, attrs, closing)) = tag_parts(&text[..len]) else {
-		return Details::No;
-	};
-	if closing {
-		return if name == "details" && text[len..].trim().is_empty() {
-			Details::Close
-		} else {
-			Details::No
-		};
-	}
-	if name != "details" {
-		return Details::No;
-	}
-	let open = has_attribute(attrs, "open");
-	let rest = &text[len..];
-	let (summary, lead) = match summary_at(rest) {
-		Some((inner, after)) => (Some(inner.to_string()), after),
-		None => (None, rest),
-	};
-	// The element itself is open; nested openers in the lead are already open
-	// too, so the closing scan must start from that depth.
-	let (depth, close) = close_tag(lead, 1, "details");
-	match close {
-		Some(close) => Details::Inline {
-			open,
-			summary,
-			body: lead[..close.start].to_string(),
-			rest: lead[close.end..].to_string(),
-		},
-		None => Details::Open {
-			open,
-			summary,
-			lead: lead.to_string(),
-			depth,
-		},
-	}
-}
-
-/// The original byte range of a complete element, without copying its body.
-pub fn inline_details_range(source: &str) -> Option<std::ops::Range<usize>> {
-	let text = source.trim_start();
-	let len = tag_len(text)?;
-	let (name, _, closing) = tag_parts(&text[..len])?;
-	if name != "details" || closing {
-		return None;
-	}
-	let rest = &text[len..];
-	let lead = summary_at(rest).map_or(rest, |(_, after)| after);
-	let (_, close) = close_tag(lead, 1, "details");
-	let start = source.len() - text.len();
-	let end = source.len() - lead.len() + close?.end;
-	Some(start..end)
-}
-
-/// Byte offset where a valid disclosure's body begins in its HTML literal.
-pub(crate) fn details_content_start(source: &str) -> usize {
-	let text = source.trim();
-	let rest = &text[tag_len(text).unwrap()..];
-	let lead = summary_at(rest).map_or(rest, |(_, after)| after);
-	lead.as_ptr() as usize - source.as_ptr() as usize
-}
-
-/// The name of the block-level opening tag in `source`, when the block
-/// holds nothing but that tag and its name is one of `names`. A complete
-/// element, body text after the tag, or a self-closing tag all return
-/// `None`.
-pub(crate) fn opening_tag(source: &str, names: &[&str]) -> Option<String> {
-	let text = source.trim();
-	let len = tag_len(text)?;
-	let (name, attrs, closing) = tag_parts(&text[..len])?;
-	if closing
-		|| attrs.trim_end().ends_with('/')
-		|| !text[len..].trim().is_empty()
-		|| !names.contains(&name.as_str())
-	{
-		return None;
-	}
-	Some(name)
-}
-
-/// Every opening or closing tag of a transparent grouping container in
-/// `source`, in order, as `(name, closing, range)`.
-pub(crate) fn transparent_tags(
-	source: &str,
-) -> impl Iterator<Item = (String, bool, std::ops::Range<usize>)> + '_ {
-	tags(source).filter_map(move |(start, len)| {
-		let (name, attrs, closing) = tag_parts(&source[start..start + len])?;
-		if attrs.trim_end().ends_with('/')
-			|| !TRANSPARENT_TAGS.contains(&name.as_str())
-		{
-			return None;
-		}
-		Some((name, closing, start..start + len))
-	})
-}
-
 /// The name, remaining attributes and closing flag of one `<...>` tag.
 fn tag_parts(tag: &str) -> Option<(String, &str, bool)> {
 	let body = tag.strip_prefix('<')?.strip_suffix('>')?.trim();
@@ -313,73 +176,111 @@ fn tags(source: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
 	})
 }
 
-/// The inner text of the element's own first `<summary>` and what follows it.
-///
-/// Only a direct child counts: a `<summary>` inside a nested element, or one
-/// that appears after this element's closing tag, belongs to another element
-/// and must not be adopted.
-fn summary_at(source: &str) -> Option<(&str, &str)> {
-	let mut depth = 0;
-	let mut inner = None;
-	for (start, len) in tags(source) {
-		let Some((name, attrs, closing)) =
-			tag_parts(&source[start..start + len])
-		else {
-			continue;
-		};
-		if name == "details" && !attrs.trim_end().ends_with('/') {
-			if closing {
-				if depth == 0 {
-					// The element closed without declaring a summary.
-					return None;
-				}
-				depth -= 1;
-			} else {
-				depth += 1;
-			}
-			continue;
-		}
-		if depth > 0 {
-			continue;
-		}
-		if name == "summary" && !closing {
-			inner = inner.or(Some(start + len));
-		} else if name == "summary" && closing && inner.is_some() {
-			let inner = inner.unwrap();
-			return Some((&source[inner..start], &source[start + len..]));
-		}
-	}
-	None
+/// One container-level event in a raw HTML block.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum BlockEvent {
+	/// A supported container opens.
+	Open {
+		name: String,
+		open: bool,
+		range: std::ops::Range<usize>,
+	},
+	/// A supported container closes.
+	Close {
+		name: String,
+		range: std::ops::Range<usize>,
+	},
+	/// The raw inner text of a `<summary>` element.
+	Summary {
+		text: String,
+		range: std::ops::Range<usize>,
+	},
+	/// Everything else, which the HTML subset renders.
+	Text {
+		text: String,
+		range: std::ops::Range<usize>,
+	},
 }
 
-/// Scans one raw HTML block for the `tag` that closes the element opened
-/// before it. `depth` is how many elements are already open, so tags that
-/// share a block are counted individually. Returns the depth left open and,
-/// when the element closes inside the block, the closing tag's range.
-pub fn close_tag(
-	source: &str,
-	mut depth: usize,
-	tag: &str,
-) -> (usize, Option<std::ops::Range<usize>>) {
-	for (start, len) in tags(source) {
-		let Some((name, attrs, closing)) =
-			tag_parts(&source[start..start + len])
-		else {
+/// Whether `name` opens a supported block container.
+fn is_container(name: &str) -> bool {
+	name == "details" || TRANSPARENT_TAGS.contains(&name)
+}
+
+/// Scan one raw HTML block for container events. Comments and the contents
+/// of opaque elements are left out, and tags that are not containers stay in
+/// the surrounding `Text`.
+pub(crate) fn block_events(source: &str) -> Vec<BlockEvent> {
+	let mut events = Vec::new();
+	let mut text_start = 0usize;
+	let mut it = tags(source);
+	while let Some((start, len)) = it.next() {
+		let fragment = &source[start..start + len];
+		let Some((name, attrs, closing)) = tag_parts(fragment) else {
 			continue;
 		};
-		if name.as_str() != tag || attrs.trim_end().ends_with('/') {
+		let container = is_container(&name);
+		let summary = name == "summary" && !closing;
+		if (!container && !summary)
+			|| (!closing && attrs.trim_end().ends_with('/'))
+		{
 			continue;
 		}
-		if closing {
-			depth -= 1;
-			if depth == 0 {
-				return (depth, Some(start..start + len));
-			}
-		} else {
-			depth += 1;
+		if start > text_start {
+			events.push(BlockEvent::Text {
+				text: source[text_start..start].to_string(),
+				range: text_start..start,
+			});
 		}
+		if summary {
+			// Consume the summary's own tags in the same pass, so an unclosed
+			// opener cannot rescan the suffix once per opener.
+			let content_start = start + len;
+			let mut close = None;
+			for (next, next_len) in it.by_ref() {
+				let next_fragment = &source[next..next + next_len];
+				if let Some((next_name, _, next_closing)) =
+					tag_parts(next_fragment)
+					&& next_closing && next_name == "summary"
+				{
+					close = Some((next, next_len));
+					break;
+				}
+			}
+			match close {
+				Some((next, next_len)) => {
+					events.push(BlockEvent::Summary {
+						text: source[content_start..next].to_string(),
+						range: start..next + next_len,
+					});
+					text_start = next + next_len;
+				}
+				None => {
+					// Keep the opener and the rest as one text run.
+					text_start = start;
+				}
+			}
+			continue;
+		}
+		let range = start..start + len;
+		if closing {
+			events.push(BlockEvent::Close { name, range });
+		} else {
+			events.push(BlockEvent::Open {
+				open: has_attribute(attrs, "open"),
+				name,
+				range,
+			});
+		}
+		text_start = start + len;
 	}
-	(depth, None)
+	if text_start < source.len() {
+		events.push(BlockEvent::Text {
+			text: source[text_start..].to_string(),
+			range: text_start..source.len(),
+		});
+	}
+	events
 }
 
 /// Whether `source` leaves a supported block container open. `<details>`
