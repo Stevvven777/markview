@@ -1441,9 +1441,10 @@ fn sniff_file(path: &Path) -> Result<Container> {
 
 /// Unpacks the members matching `patterns` into temporary files.
 ///
-/// `*` stays inside one path segment, `**` crosses segments, and `?` matches
-/// one character. Directories, symlinks and hard links are never taken, so an
-/// archive can only ever contribute regular files, and nothing is written
+/// A pattern matches `/`-separated member paths and never crosses a separator,
+/// so `*` stays inside one segment, `?` matches one character, and `**` is not
+/// part of the grammar. Directories, symlinks and hard links are never taken,
+/// so an archive can only ever contribute regular files, and nothing is written
 /// outside `dir`.
 fn unpack(
 	container: Container,
@@ -1597,43 +1598,40 @@ fn unpack_tar(
 
 /// Whether `pattern` matches the `/`-separated member `name`.
 ///
-/// `*` matches within one segment, `**` crosses segments, `?` matches exactly
-/// one character, and every other character is literal.
+/// A pattern never crosses a separator, so both sides must have the same
+/// number of segments; `*` matches any run of characters inside one, `?`
+/// matches exactly one character, and every other character is literal.
 pub fn glob_match(pattern: &str, name: &str) -> bool {
-	let pattern: Vec<char> = pattern.chars().collect();
-	let name: Vec<char> = name.chars().collect();
-	glob_at(&pattern, 0, &name, 0)
+	let mut segments = name.split('/');
+	pattern
+		.split('/')
+		.all(|part| segments.next().is_some_and(|s| segment_match(part, s)))
+		&& segments.next().is_none()
 }
 
-fn glob_at(p: &[char], pi: usize, s: &[char], si: usize) -> bool {
-	if pi == p.len() {
-		return si == s.len();
-	}
-	match p[pi] {
-		'*' => {
-			let double = p.get(pi + 1) == Some(&'*');
-			let next = if double { pi + 2 } else { pi + 1 };
-			// `**/` also matches no segment at all.
-			if double
-				&& p.get(next) == Some(&'/')
-				&& glob_at(p, next + 1, s, si)
-			{
-				return true;
-			}
-			let mut at = si;
-			loop {
-				if glob_at(p, next, s, at) {
-					return true;
-				}
-				if at >= s.len() || (!double && s[at] == '/') {
-					return false;
-				}
-				at += 1;
-			}
+/// Whether `pattern` matches one path segment, in one linear pass.
+fn segment_match(pattern: &str, name: &str) -> bool {
+	let pattern: Vec<char> = pattern.chars().collect();
+	let name: Vec<char> = name.chars().collect();
+	let (mut pi, mut si) = (0, 0);
+	// Where the last `*` left off, so it can still grow into more characters.
+	let mut star: Option<(usize, usize)> = None;
+	while si < name.len() {
+		if pattern.get(pi).is_some_and(|&c| c == '?' || c == name[si]) {
+			pi += 1;
+			si += 1;
+		} else if pattern.get(pi) == Some(&'*') {
+			star = Some((pi, si));
+			pi += 1;
+		} else if let Some((sp, ss)) = star {
+			pi = sp + 1;
+			si = ss + 1;
+			star = Some((sp, si));
+		} else {
+			return false;
 		}
-		'?' => si < s.len() && s[si] != '/' && glob_at(p, pi + 1, s, si + 1),
-		c => si < s.len() && s[si] == c && glob_at(p, pi + 1, s, si + 1),
 	}
+	pattern[pi..].iter().all(|&c| c == '*')
 }
 
 #[cfg(test)]
@@ -1925,15 +1923,19 @@ mod tests {
 	}
 
 	#[test]
-	fn a_member_pattern_stops_at_a_separator_unless_it_is_doubled() {
+	fn a_member_pattern_never_crosses_a_separator() {
 		assert!(glob_match("*.otf", "a.otf"));
 		assert!(!glob_match("*.otf", "sub/a.otf"));
-		assert!(glob_match("**/*.otf", "sub/a.otf"));
-		assert!(glob_match("**/*.otf", "a.otf"));
-		assert!(glob_match("Sans/**/SC/*.otf", "Sans/x/y/SC/a.otf"));
+		assert!(glob_match("sub/*.otf", "sub/a.otf"));
+		assert!(!glob_match("sub/*.otf", "sub/deep/a.otf"));
+		assert!(glob_match("Sans/*/SC/*.otf", "Sans/x/SC/a.otf"));
+		assert!(!glob_match("Sans/*/SC/*.otf", "Sans/x/y/SC/a.otf"));
 		assert!(glob_match("a?c", "abc"));
 		assert!(!glob_match("a?c", "a/c"));
 		assert!(!glob_match("*.otf", "a.ttf"));
+		// Starred near-misses used to revisit states exponentially; matching
+		// stays polynomial in the pattern and name lengths.
+		assert!(!glob_match("*a*a*a*a*a*a*a*b", &"a".repeat(64)));
 	}
 
 	#[test]
@@ -1976,7 +1978,7 @@ mod tests {
 			("Sans/README.md", b"not a font"),
 		]);
 		let dir = tempfile::tempdir().unwrap();
-		let patterns = vec!["**/SubsetOTF/SC/*.otf".to_string()];
+		let patterns = vec!["Sans/SubsetOTF/SC/*.otf".to_string()];
 		let mut members =
 			unpack(Container::Zip, &archive, &patterns, dir.path()).unwrap();
 		let mut names = Vec::new();
@@ -1994,8 +1996,13 @@ mod tests {
 		);
 		// Nothing matched is an error rather than an empty success.
 		assert!(
-			unpack(Container::Zip, &archive, &["**/*.ttf".into()], dir.path())
-				.is_err()
+			unpack(
+				Container::Zip,
+				&archive,
+				&["Sans/*.ttf".into()],
+				dir.path()
+			)
+			.is_err()
 		);
 	}
 
@@ -2022,7 +2029,7 @@ mod tests {
 			zip_of(&[("a/Regular.otf", &font), ("a/Bold.otf", &font)]);
 		let dir = tempfile::tempdir().unwrap();
 		let extracted =
-			unpack(Container::Zip, &archive, &["**/*.otf".into()], dir.path())
+			unpack(Container::Zip, &archive, &["a/*.otf".into()], dir.path())
 				.unwrap();
 		assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
 		drop(extracted);
@@ -2056,9 +2063,13 @@ mod tests {
 		}
 		let container = sniff_file(&path).unwrap();
 		assert_eq!(container, Container::Gzip);
-		let mut members =
-			unpack(container, &path, &["**/SC/*.otf".into()], dir.path())
-				.unwrap();
+		let mut members = unpack(
+			container,
+			&path,
+			&["Serif/SubsetOTF/SC/*.otf".into()],
+			dir.path(),
+		)
+		.unwrap();
 		let (temp, name) = members.next_file().unwrap();
 		assert!(temp.exists());
 		assert_eq!(name, "Serif/SubsetOTF/SC/NotoSerifSC-Regular.otf");
@@ -2626,7 +2637,7 @@ mod tests {
 		family.source[0].archives.push(FontArchive {
 			url: "https://x.example/a.zip".into(),
 			sha256: None,
-			members: vec!["**/*.otf".into()],
+			members: vec!["a/*.otf".into()],
 		});
 		let summary = run(
 			&[family],
@@ -2675,7 +2686,7 @@ mod tests {
 		family.source[0].archives.push(FontArchive {
 			url: "https://x.example/a.zip".into(),
 			sha256: None,
-			members: vec!["**/*.otf".into()],
+			members: vec!["a/*.otf".into()],
 		});
 		let cancel = {
 			let cancelled = cancelled.clone();

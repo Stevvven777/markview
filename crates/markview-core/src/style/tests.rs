@@ -509,7 +509,7 @@ fn font_families_parse_metadata_and_mirrors() {
 		 name='GitHub'\n\
 		 files=['https://example.invalid/a.otf',{{url='https://example.invalid/b.otf',sha256='{digest}'}}]\n\
 		 [[font-family.source]]\n\
-		 archives=[{{url='https://example.invalid/x.tar.gz',members=['**/*.otf']}}]\n\
+		 archives=[{{url='https://example.invalid/x.tar.gz',members=['SubsetOTF/SC/*.otf']}}]\n\
 		 [[font-family]]\n\
 		 id='plain'\n\
 		 lookfor=['Plain']\n\
@@ -542,7 +542,7 @@ fn font_families_parse_metadata_and_mirrors() {
 	assert_eq!(noto.source[0].files[0].sha256(), None);
 	assert_eq!(noto.source[0].files[1].sha256(), Some(digest));
 	assert!(noto.source[1].files.is_empty());
-	assert_eq!(noto.source[1].archives[0].members, ["**/*.otf"]);
+	assert_eq!(noto.source[1].archives[0].members, ["SubsetOTF/SC/*.otf"]);
 	// A family without metadata still lists under a name, and `http` is
 	// allowed for a mirror that only serves it.
 	let plain = sheet.font_family("plain").unwrap();
@@ -618,6 +618,8 @@ fn a_font_family_is_validated_where_it_is_declared() {
 		"[[font-family]]\nid='a'\nlookfor=['A']\n[[font-family.source]]\narchives=[{url='https://example.invalid/a.zip',members=['*'],sha256='zz'}]\n",
 		"[[font-family]]\nid='a'\nlookfor=['A']\n[[font-family.source]]\narchives=[{url='https://example.invalid/a.zip'}]",
 		"[[font-family]]\nid='a'\nlookfor=['A']\n[[font-family.source]]\narchives=[{url='https://example.invalid/a.zip',members=[]}]",
+		// A member pattern stays inside one `/`-separated segment.
+		"[[font-family]]\nid='a'\nlookfor=['A']\n[[font-family.source]]\narchives=[{url='https://example.invalid/a.zip',members=['**/*.otf']}]",
 		// Unknown fields stay errors inside both tables.
 		"[[font-family]]\nid='a'\nlookfor=['A']\nsubset='SC'\n[[font-family.source]]\nfiles=['https://example.invalid/a.ttf']",
 		"[[font-family]]\nid='a'\nlookfor=['A']\n[[font-family.source]]\nfiles=['https://example.invalid/a.ttf']\nformat='zip'",

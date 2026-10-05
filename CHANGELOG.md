@@ -49,6 +49,8 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Make archive member patterns stay inside one `/`-separated segment: `**` is rejected, and matching is bounded by the pattern and member name lengths.
+
 - Keep raw HTML inside `<summary>` literal, matching GFM, instead of parsing it as Markdown.
 
 - Package Android release APKs for ARM64 only to reduce download size; retain ARM64 and x86_64 debug builds and x86_64 KVM emulator tests.

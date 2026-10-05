@@ -261,6 +261,14 @@ fn validate_font_family(
 			{
 				bail!("{}: members must not be empty", source_context());
 			}
+			// A pattern stays inside one segment, so matching never revisits a
+			// pattern/name state and cannot run away.
+			if archive.members.iter().any(|member| member.contains("**")) {
+				bail!(
+					"{}: members cannot use `**`; name each directory level",
+					source_context()
+				);
+			}
 		}
 	}
 	Ok(())
