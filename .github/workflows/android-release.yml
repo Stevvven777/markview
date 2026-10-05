@@ -52,7 +52,6 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 target/android/markview-android-release.apk
           mkdir -p out
           cp target/android/markview-android-release.apk "out/markview-${version}-android.apk"
-          (cd out && sha256sum ./*.apk > markview-android-SHA256SUMS)
       # cargo-dist downloads `artifacts-*` and attaches them to the same Release.
       - uses: actions/upload-artifact@v7
         with:

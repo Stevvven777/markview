@@ -29,12 +29,8 @@ targets = [
 installers = ["shell", "powershell", "msi"]
 unix-archive = ".tar.gz"
 windows-archive = ".zip"
-checksum = "sha256"
-source-tarball = true
-# The source tarball is the release snapshot, so it carries the browser front
-# end's sources under `web/` (about 130 KB) alongside `docs/` and `scripts/`.
-# Everything generated there -- wasm binaries, `dist/`, `node_modules/` -- is
-# gitignored, so none of it enters the archive.
+checksum = "false"
+source-tarball = false
 pr-run-mode = "upload"
 global-artifacts-jobs = ["./packaging"]
 post-announce-jobs = ["./release-notes", "./winget"]

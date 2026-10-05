@@ -1,6 +1,5 @@
 # MVaaC source navigation and TOC
 
-The iteration contract is [mvaac-design.md](../artifacts/mvaac-design.md).
 This page describes the implemented source/navigation API. See [MVaaC components](mvaac.md) for CodeMirror composition, package entries and migration.
 
 ## Coordinates and publication

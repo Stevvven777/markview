@@ -1,5 +1,6 @@
 """Exercise the release-notes command with cargo-dist and GitHub inputs."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -11,7 +12,7 @@ SCRIPT = Path(__file__).with_name("render_release_notes.py")
 
 
 class ReleaseNotesTest(unittest.TestCase):
-    def run_renderer(self, version, missing=None, body=None):
+    def run_renderer(self, version, missing=None, body=None, missing_digest=False):
         base = f"https://github.com/szdytom/markview/releases/download/v{version}"
         plan = {
             "releases": [
@@ -29,20 +30,21 @@ class ReleaseNotesTest(unittest.TestCase):
         }
         names = [
             f"markview-{version}-aarch64.app.zip",
-            "markview-macos-SHA256SUMS",
             "markview-x86_64-pc-windows-msvc.msi",
-            "markview-x86_64-pc-windows-msvc.msi.sha256",
             "markview-x86_64-pc-windows-msvc.zip",
-            "markview-x86_64-pc-windows-msvc.zip.sha256",
             f"markview-{version}-x86_64.AppImage",
-            "markview-linux-SHA256SUMS",
             f"markview-{version}-android.apk",
-            "markview-android-SHA256SUMS",
         ]
         prefix = "## Release Notes\n\nChanges.\n\n## Install markview\n\n```sh\ninstall\n```\n\n"
         suffix = "## Verifying GitHub Artifact Attestations\n\nVerification.\n"
         release = {
-            "assets": [{"name": name} for name in names if name != missing],
+            "assets": [
+                {
+                    "name": name,
+                    "digest": None if missing_digest else "sha256:" + hashlib.sha256(name.encode()).hexdigest(),
+                }
+                for name in names if name != missing
+            ],
             "body": prefix + f"## Download markview {version}\n\n"
             "| File | Platform | Checksum |\n|---|---|---|\n"
             "| old.tar.gz | old | old |\n\n" + suffix,
@@ -74,9 +76,9 @@ class ReleaseNotesTest(unittest.TestCase):
                     if line.startswith("| [")
                 ]
                 self.assertEqual(len(rows), 5)
-                for row, name, platform, checksum in zip(
+                for row, name, platform in zip(
                     rows,
-                    names[::2],
+                    names,
                     (
                         "Apple Silicon macOS",
                         "x64 Windows",
@@ -84,13 +86,14 @@ class ReleaseNotesTest(unittest.TestCase):
                         "x64 Linux",
                         "Android 9+ (ARM64)",
                     ),
-                    names[1::2],
                 ):
                     self.assertEqual(
                         row,
-                        f"| [{name}]({base}/{name}) | {platform} | [checksum]({base}/{checksum}) |",
+                        f"| [{name}]({base}/{name}) | {platform} | `{hashlib.sha256(name.encode()).hexdigest()}` |",
                     )
                 self.assertNotIn("old.tar.gz", result.stdout)
+                self.assertIn("Checksum (SHA-256)", result.stdout)
+                self.assertNotIn("[checksum]", result.stdout)
                 note = (
                     "**macOS:** Extract the `.app.zip`, drag `Markview.app` to Applications, "
                     "then run `xattr -d com.apple.quarantine /Applications/Markview.app` in Terminal "
@@ -101,13 +104,22 @@ class ReleaseNotesTest(unittest.TestCase):
                 self.assertEqual(repeated.returncode, 0, repeated.stderr)
                 self.assertEqual(repeated.stdout, result.stdout)
 
-    def test_missing_package_or_checksum_prevents_update(self):
-        for name in ("markview-0.1.10-x86_64.AppImage", "markview-macos-SHA256SUMS", "markview-0.1.10-android.apk", "markview-android-SHA256SUMS"):
+    def test_missing_package_prevents_update(self):
+        for name in (
+            "markview-0.1.10-x86_64.AppImage",
+            "markview-0.1.10-android.apk",
+        ):
             with self.subTest(name=name):
                 result, *_ = self.run_renderer("0.1.10", missing=name)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, "")
                 self.assertIn(name, result.stderr)
+
+    def test_missing_digest_prevents_update(self):
+        result, *_ = self.run_renderer("0.1.10", missing_digest=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("SHA-256 is missing", result.stderr)
 
 
 if __name__ == "__main__":

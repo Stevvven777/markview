@@ -49,6 +49,8 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Remove tracked development artifacts and redundant release checksum files, source tarball and dist manifest; show GitHub SHA-256 values in the download table.
+
 - Make archive member patterns stay inside one `/`-separated segment: `**` is rejected, and matching is bounded by the pattern and member name lengths.
 
 - Keep raw HTML inside `<summary>` literal, matching GFM, instead of parsing it as Markdown.

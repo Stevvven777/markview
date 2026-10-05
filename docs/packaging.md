@@ -17,7 +17,11 @@ each platform. The build procedure a contributor runs day to day is in the
 | macOS aarch64 | `markview-aarch64-apple-darwin.tar.gz` | cargo-dist |
 | macOS aarch64 | `markview-<version>-aarch64.app.zip` | `scripts/package_macos_app.sh` |
 | All | `markview-installer.sh`, `markview-installer.ps1` | cargo-dist |
-| All | `<asset>.sha256`, `source.tar.gz` | cargo-dist |
+
+GitHub supplies source archives and asset digests. Releases do not attach separate
+checksum files or a cargo-dist source tarball. The release-notes workflow removes
+`dist-manifest.json` after publication; internal workflow manifests remain available
+for the build jobs.
 
 Every portable archive carries `LICENSE`, `README.md`, `THIRD_PARTY.md`, and
 `licenses/KaTeX-OFL.txt`. The Linux packages additionally carry `third-party-notices.html`, which lists the complete dependency tree and
@@ -48,7 +52,8 @@ Its failure blocks publication; all assets are uploaded together.
 
 After publication, `.github/workflows/release-notes.yml` updates the download
 table to link the macOS `.app.zip`, Windows MSI and portable ZIP, and Linux
-AppImage. It checks that each package and checksum file is attached, and
+AppImage and Android APK. It checks that each package is attached, and
+writes each package’s GitHub SHA-256 digest directly in the checksum column, and
 preserves the changelog and installation commands. It also adds macOS extraction,
 Applications installation and quarantine instructions. This also runs for prereleases.
 
@@ -66,7 +71,7 @@ to rebuild the set without touching a packaging input.
 | Artifact | Contents | Runner |
 | --- | --- | --- |
 | `markview-linux-packages` | Debian package, AppImage, portable archive, checksums | ubuntu-22.04 |
-| `markview-windows-packages` | MSI, portable zip, checksums | windows-2022 |
+| `markview-windows-packages` | MSI, portable zip | windows-2022 |
 | `markview-macos-packages` | `.app.zip`, portable archive, checksums | macos-latest |
 
 Each platform builds its own archive; release packaging reuses the archives
@@ -120,8 +125,8 @@ requirement to the generated installers.
    packages, then verifies them.
 4. Only after those jobs succeed does it create the GitHub release and upload
    all assets together.
-5. Verify the release page against the artifact matrix above, and that each
-   `.sha256` matches its asset.
+5. Verify the release page against the artifact matrix above and confirm that
+   no checksum files, cargo-dist source tarball or dist manifest are attached.
 
 The tag must equal the manifest version without the `v` prefix; dist rejects a
 mismatch during the plan step, before anything is built.

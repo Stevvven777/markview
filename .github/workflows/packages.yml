@@ -107,7 +107,6 @@ jobs:
           path: |
             target/distrib/*.msi
             target/distrib/*.zip
-            target/distrib/*.sha256
           if-no-files-found: error
 
   packages-macos:

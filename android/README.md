@@ -136,8 +136,7 @@ screenshots and logcat, including on failure. Android must pass for `ci` to pass
 The existing cargo-dist Release workflow runs the same Android tests before
 publication and calls [Android release package](../.github/workflows/android-release.yml)
 through Packaging. A successful version-tag release includes
-`markview-<version>-android.apk` (ARM64 only) and
-`markview-android-SHA256SUMS`, with an Android row in the download table.
+`markview-<version>-android.apk` (ARM64 only), with an Android row in the download table.
 The Release workflow's run number supplies the APK version code; retain that
 workflow's counter so later APKs can upgrade earlier installations.
 Pull requests build release APKs with a separate, generated development key and

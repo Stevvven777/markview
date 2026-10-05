@@ -51,7 +51,6 @@ jobs:
           scripts/package_appimage.sh ./dist/markview "$version" out
           scripts/verify_linux_packages.sh out
           cp third-party-notices.html out/
-          (cd out && sha256sum ./* >markview-linux-SHA256SUMS)
       - uses: actions/upload-artifact@v7
         with:
           name: artifacts-extra-linux
@@ -73,7 +72,6 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           scripts/package_macos_app.sh ./dist "$version" out
           scripts/verify_macos_package.sh out
-          (cd out && shasum -a 256 ./* >markview-macos-SHA256SUMS)
       - uses: actions/upload-artifact@v7
         with:
           name: artifacts-extra-macos
