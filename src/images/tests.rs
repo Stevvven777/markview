@@ -911,6 +911,43 @@ fn loader_publishes_pixels_and_reports_failures() {
 	assert!(!pixels.contains_key("missing.png"));
 }
 
+/// A FIFO with no writer is refused instead of holding an image pipeline.
+#[cfg(unix)]
+#[test]
+fn a_fifo_image_is_refused_without_blocking_the_scheduler() {
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("note.md");
+	let source = "![a](pipe.png) ![b](b.png)";
+	fs::write(&path, source).unwrap();
+	fs::write(dir.path().join("b.png"), png(6, 4, [9, 8, 7, 255])).unwrap();
+	let status = std::process::Command::new("mkfifo")
+		.arg(dir.path().join("pipe.png"))
+		.status()
+		.expect("run mkfifo");
+	assert!(status.success());
+	let doc = crate::document::parse(source.to_string());
+	let mut images = images(true);
+	images.prepare(
+		&doc,
+		&path,
+		1,
+		false,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	let (send, recv) = std::sync::mpsc::channel();
+	std::thread::spawn(move || {
+		images.wait();
+		let _ = send.send(images);
+	});
+	let images = recv
+		.recv_timeout(std::time::Duration::from_secs(30))
+		.expect("a FIFO image wedged the scheduler");
+	// The FIFO fails, and the four slots stay free for the regular image.
+	assert!(images.snapshot.entries["pipe.png"].error.is_some());
+	assert_eq!(images.snapshot.entries["b.png"].size, Some((6, 4)));
+}
+
 #[test]
 fn a_changed_local_image_reloads_without_pixel_demand() {
 	let dir = tempfile::tempdir().unwrap();
@@ -1424,4 +1461,247 @@ fn repeated_document_release_reclaims_pixels_with_shared_services() {
 	}
 	drop(images);
 	drop(services);
+}
+
+/// A job that stops reporting must not hold a headless wait forever.
+#[test]
+fn a_stalled_job_is_abandoned_instead_of_waited_on() {
+	let mut images = images(true);
+	let source = Source::File(PathBuf::from("never.png"));
+	images.entries.insert(
+		source.clone(),
+		Entry {
+			cancel: images.services.cancel.child_token(),
+			target: None,
+			pdf: None,
+			ticket: 0,
+			aliases: vec!["never.png".into()],
+			info: ImageInfo::default(),
+			stamp: None,
+			busy: true,
+			svg: false,
+			raster: None,
+			theme: 0,
+		},
+	);
+	let started = std::time::Instant::now();
+	images.wait_for(Duration::from_millis(50));
+	assert!(
+		started.elapsed() < Duration::from_secs(5),
+		"the wait did not give up on a stalled job"
+	);
+	let entry = &images.snapshot.entries["never.png"];
+	assert_eq!(entry.error.as_deref(), Some(STALLED));
+	assert!(entry.size.is_none());
+}
+
+/// A failed job is pipeline progress: it freed its slot, so a run of normal
+/// failures must not read as a jam.
+///
+/// This is the shape the reviewer described: batches that fail without ever
+/// decoding must not accumulate into a deadline that cancels a healthy job
+/// which only just started.
+#[test]
+fn failing_batches_do_not_cancel_a_later_healthy_job() {
+	let mut images = images(true);
+	let deadline = Duration::from_millis(60);
+	let cancel = images.services.cancel.child_token();
+	let entry = |busy: bool, alias: &str, ticket: u64| Entry {
+		cancel: cancel.clone(),
+		target: None,
+		pdf: None,
+		ticket,
+		aliases: vec![alias.into()],
+		info: ImageInfo::default(),
+		stamp: None,
+		busy,
+		svg: false,
+		raster: None,
+		theme: 0,
+	};
+	let sources: Vec<Source> = (0..4)
+		.map(|index| {
+			Source::Http(format!("https://example.invalid/{index}.png"))
+		})
+		.collect();
+	for (ticket, source) in sources.iter().enumerate() {
+		images
+			.entries
+			.insert(source.clone(), entry(true, "failed.png", ticket as u64));
+	}
+	// A healthy image whose job is running the whole time.
+	let healthy = Source::File(PathBuf::from("healthy.png"));
+	images
+		.entries
+		.insert(healthy.clone(), entry(true, "healthy.png", 99));
+	let healthy_cancel = images.entries[&healthy].cancel.clone();
+	let done = images.done.clone();
+
+	// The failures report one at a time, each inside a deadline of the last, so
+	// their total runs well past it without anything ever decoding.
+	let waiter = std::thread::spawn(move || {
+		images.wait_for(deadline);
+		images
+	});
+	for (ticket, source) in sources.iter().enumerate() {
+		std::thread::sleep(deadline / 2);
+		done.send(Finished {
+			ticket: ticket as u64,
+			source: source.clone(),
+			generation: 0,
+			result: Err(anyhow::anyhow!("Cannot open image")),
+		})
+		.unwrap();
+	}
+	// The healthy job then succeeds, which is what lets the wait return.
+	done.send(Finished {
+		ticket: 99,
+		source: healthy.clone(),
+		generation: 0,
+		result: Ok(Loaded {
+			intrinsic: (4, 3),
+			raster: (4, 3),
+			svg: false,
+			pixels: None,
+			pdf: None,
+		}),
+	})
+	.unwrap();
+	let images = waiter.join().unwrap();
+	assert!(
+		!healthy_cancel.is_cancelled(),
+		"a healthy job was cancelled because earlier requests failed"
+	);
+	let healthy = &images.entries[&healthy];
+	assert_eq!(healthy.info.size, Some((4, 3)), "a healthy image was lost");
+	assert!(healthy.info.error.is_none(), "{:?}", healthy.info.error);
+}
+
+/// A failed job is pipeline progress: it freed its slot, so a run of normal
+/// failures must not read as a jam.
+#[test]
+fn a_failed_job_counts_as_pipeline_progress() {
+	let mut images = images(true);
+	let source = Source::Http("https://example.invalid/a.png".into());
+	let cancel = images.services.cancel.child_token();
+	images.entries.insert(
+		source.clone(),
+		Entry {
+			cancel,
+			target: None,
+			pdf: None,
+			ticket: 7,
+			aliases: vec!["a.png".into()],
+			info: ImageInfo::default(),
+			stamp: None,
+			busy: true,
+			svg: false,
+			raster: None,
+			theme: 0,
+		},
+	);
+	let before = images.completed;
+	images
+		.done
+		.send(Finished {
+			ticket: 7,
+			source: source.clone(),
+			generation: images.generation,
+			result: Err(anyhow::anyhow!("Cannot open image")),
+		})
+		.unwrap();
+	images.poll();
+	assert_eq!(
+		images.completed,
+		before + 1,
+		"a failed job did not count as progress"
+	);
+	// Its own reason stands; a wait must not overwrite it as a stall.
+	let entry = &images.entries[&source];
+	assert_eq!(entry.info.error.as_deref(), Some("Cannot open image"));
+	assert!(!entry.busy);
+}
+
+/// Abandoning a job that stopped reporting must leave the entries queued
+/// behind it loadable.
+#[test]
+fn abandoning_a_stalled_job_keeps_queued_images_loadable() {
+	let mut images = images(true);
+	let cancel = images.services.cancel.child_token();
+	let entry = |busy: bool, alias: &str| Entry {
+		cancel: cancel.clone(),
+		target: None,
+		pdf: None,
+		ticket: 0,
+		aliases: vec![alias.into()],
+		info: ImageInfo::default(),
+		stamp: None,
+		busy,
+		svg: false,
+		raster: None,
+		theme: 0,
+	};
+	let running = Source::File(PathBuf::from("running.png"));
+	let queued = Source::File(PathBuf::from("queued.png"));
+	images
+		.entries
+		.insert(running.clone(), entry(true, "running.png"));
+	images
+		.entries
+		.insert(queued.clone(), entry(false, "queued.png"));
+	// The first deadline only gives up on jobs that stopped reporting.
+	images.fail_unfinished(false);
+	assert_eq!(
+		images.snapshot.entries["running.png"].error.as_deref(),
+		Some(STALLED)
+	);
+	// A queued entry never attempted a read, so it must stay schedulable: a
+	// recorded error would stop `schedule` from ever starting it.
+	let queued = &images.entries[&queued];
+	assert!(queued.info.error.is_none(), "{:?}", queued.info.error);
+	assert!(!queued.busy);
+}
+
+/// A queue behind pipelines that never free still settles, bounded by two
+/// deadlines: the first frees the slots their jobs held, and the second gives up
+/// on the queue when those slots never come back.
+#[test]
+fn a_queue_behind_held_pipelines_settles_boundedly() {
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("note.md");
+	let mut markdown = String::new();
+	for index in 0..8 {
+		let name = format!("img{index}.png");
+		fs::write(dir.path().join(&name), png(4, 3, [1, 2, 3, 255])).unwrap();
+		markdown.push_str(&format!("![{index}]({name})\n\n"));
+	}
+	fs::write(&path, &markdown).unwrap();
+	let doc = crate::document::parse(markdown);
+	let mut images = images(true);
+	// Every pipeline is held elsewhere, so no scheduled job can ever read.
+	let _held: Vec<_> = (0..4)
+		.filter_map(|_| images.pipelines.clone().try_acquire_owned().ok())
+		.collect();
+	assert_eq!(_held.len(), 4, "the pipelines were not full");
+	images.prepare(
+		&doc,
+		&path,
+		1,
+		false,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	let started = std::time::Instant::now();
+	images.wait_for(Duration::from_millis(50));
+	assert!(
+		started.elapsed() < Duration::from_secs(5),
+		"the wait did not settle the queue behind held pipelines"
+	);
+	assert!(
+		images
+			.entries
+			.values()
+			.all(|e| !e.busy && e.info.error.as_deref() == Some(STALLED)),
+		"a queued image was left unsettled"
+	);
 }

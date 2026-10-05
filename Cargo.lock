@@ -2446,6 +2446,7 @@ dependencies = [
  "ico",
  "image",
  "jni 0.21.1",
+ "libc",
  "log",
  "lopdf",
  "markview-core",

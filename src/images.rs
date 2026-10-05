@@ -35,6 +35,18 @@ const CPU_BUDGET: usize = 256 * 1024 * 1024;
 /// remainder wait as placeholders until the reader chooses to load them.
 const MAX_REMOTE_SOURCES: usize = 128;
 const REMOTE_LIMIT: &str = "Remote image limit reached (Load all)";
+/// How long one image job may go without publishing a result before a waiting
+/// caller gives up on it, so a headless render, an export or a PDF cannot be
+/// held by a read that no cancellation token reaches.
+///
+/// A job publishes only when it finishes, so this bounds a whole job rather
+/// than a silence inside one, and it must therefore sit above every legitimate
+/// duration. A remote transfer is already bounded by `net`, which allows each
+/// of its redirect hops its own fifteen-second request budget; the deadline is
+/// only here to catch work no other layer bounds, such as a blocking open on a
+/// platform or mount that has no non-blocking form.
+const WAIT_DEADLINE: Duration = Duration::from_secs(120);
+const STALLED: &str = "Image is taking too long; skipped";
 static VERSION: AtomicU64 = AtomicU64::new(1);
 
 struct Job {
@@ -166,6 +178,10 @@ pub struct Images {
 	document: PathBuf,
 	revision: u64,
 	poll_at: Instant,
+	/// Jobs that have reported a result, success or failure. A headless wait
+	/// uses it to tell a pipeline that is working through failures from one
+	/// that has stopped producing anything at all.
+	completed: u64,
 	theme: Arc<diagram::DiagramTheme>,
 	/// Identity of the theme together with the faces it draws with, so a new
 	/// Han list redraws a diagram whose table did not change.
@@ -267,6 +283,7 @@ impl Images {
 			document: PathBuf::new(),
 			revision: 0,
 			poll_at: Instant::now(),
+			completed: 0,
 			theme_key: 0,
 			svg_theme_key: 0,
 			theme: Arc::new(diagram::resolve(&Stylesheet::default(), None)),
@@ -710,6 +727,10 @@ impl Images {
 				continue;
 			}
 			e.busy = false;
+			// A failed job is progress too: it frees its pipeline slot for the
+			// queue behind it, so only a pipeline that reports nothing at all
+			// is jammed.
+			self.completed += 1;
 			e.info.version = VERSION.fetch_add(1, Ordering::Relaxed);
 			match done.result {
 				Ok(decoded) => {
@@ -777,13 +798,83 @@ impl Images {
 	}
 
 	pub fn wait(&mut self) {
-		// A headless frame can have posted new SVG sizes since the last load.
-		self.poll();
-		while self.entries.values().any(|e| {
-			e.busy || (e.info.size.is_none() && e.info.error.is_none())
-		}) {
+		self.wait_for(WAIT_DEADLINE);
+	}
+
+	/// Waits until every entry has settled, giving up only on work that cannot
+	/// produce a result.
+	///
+	/// Progress is any completed job, not a decoded image: a document whose
+	/// images fail normally still finishes its jobs and frees their slots, so a
+	/// run of failures must never accumulate into a deadline that cancels
+	/// healthy jobs scheduled after them. Only a pipeline that reports nothing
+	/// at all for `deadline` counts as jammed.
+	fn wait_for(&mut self, deadline: Duration) {
+		let mut completed = self.completed;
+		let mut progress = Instant::now();
+		// The first silent deadline gives up on the jobs that stopped
+		// reporting, which is what frees the slots their entries hold, and lets
+		// the queue behind them try. A second silent deadline means those slots
+		// are not coming back, so there is nothing left to wait for.
+		let mut abandoned = false;
+		loop {
+			// A headless frame can have posted new SVG sizes since the last
+			// load.
 			self.poll();
+			if self.completed > completed {
+				completed = self.completed;
+				progress = Instant::now();
+				abandoned = false;
+			}
+			if !self.entries.values().any(|e| {
+				e.busy || (e.info.size.is_none() && e.info.error.is_none())
+			}) {
+				break;
+			}
+			if progress.elapsed() >= deadline {
+				if abandoned {
+					self.fail_unfinished(true);
+					break;
+				}
+				self.fail_unfinished(false);
+				abandoned = true;
+				progress = Instant::now();
+			}
 			thread::sleep(Duration::from_millis(5));
+		}
+	}
+
+	/// Fails every entry that has not produced a result, publishing the reason.
+	/// A running job keeps its pipeline slot: the permit is released by the
+	/// task itself, and a token cannot reach a thread already inside a blocking
+	/// read.
+	///
+	/// `queued_too` decides whether an entry that never attempted a read is
+	/// failed as well. It is left alone while the pipeline might recover, so a
+	/// job that stopped reporting cannot cost a valid image that was only
+	/// waiting for a slot.
+	fn fail_unfinished(&mut self, queued_too: bool) {
+		let mut changed = false;
+		for e in self.entries.values_mut() {
+			let waiting = e.info.size.is_none() && e.info.error.is_none();
+			if e.busy || (queued_too && waiting) {
+				e.cancel.cancel();
+				e.busy = false;
+				// Moving the ticket makes the abandoned job's own completion
+				// stale, so `poll` ignores it rather than replacing the reason
+				// with the cancellation it reports on its way out.
+				e.ticket = VERSION.fetch_add(1, Ordering::Relaxed);
+				e.info.error = Some(STALLED.into());
+				e.info.version = VERSION.fetch_add(1, Ordering::Relaxed);
+				changed = true;
+			}
+		}
+		if changed {
+			for e in self.entries.values() {
+				for alias in &e.aliases {
+					self.snapshot.entries.insert(alias.clone(), e.info.clone());
+				}
+			}
 		}
 	}
 

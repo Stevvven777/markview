@@ -1,9 +1,13 @@
 //! Application-owned I/O and bounded CPU capacity.
 use anyhow::{Result, bail};
 use markview_core::background::{Executor, Task, ThreadExecutor};
-use std::{future::Future, pin::Pin, sync::Arc, thread};
+use std::{future::Future, pin::Pin, sync::Arc, thread, time::Duration};
 use tokio::sync::{Notify, Semaphore, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+
+/// How long a shutting-down I/O service waits for work already inside a
+/// blocking call. Past it the process abandons that work instead of hanging.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 type Operation = Pin<Box<dyn Future<Output = ()> + Send>>;
 #[derive(Clone)]
@@ -48,10 +52,22 @@ impl Services {
                 }
                 recv.close();
                 while let Ok(operation) = recv.try_recv() { running.spawn(operation); }
-                while let Some(result) = running.join_next().await {
-                    if let Err(error) = result { log::warn!("I/O operation failed: {error}"); }
+                // Cancelled work still gets to finish, but a task inside a
+                // blocking call never observes the token; the deadline is what
+                // keeps that one from holding shutdown. Dropping the set
+                // abandons whatever is left, and the runtime's own bound then
+                // covers the blocking pool that work was using.
+                let drain = async {
+                    while let Some(result) = running.join_next().await {
+                        if let Err(error) = result { log::warn!("I/O operation failed: {error}"); }
+                    }
+                };
+                if tokio::time::timeout(SHUTDOWN_GRACE, drain).await.is_err() {
+                    log::warn!("I/O shutdown abandoned work inside a blocking call");
                 }
+                drop(running);
             });
+            runtime.shutdown_timeout(Duration::ZERO);
         }).expect("start I/O service");
 		Self {
 			handle: Handle {
@@ -188,5 +204,32 @@ mod tests {
 		recv.recv_timeout(std::time::Duration::from_secs(5))
 			.unwrap();
 		drop(services);
+	}
+
+	/// A task wedged in a blocking call outlives cancellation; shutdown has to
+	/// abandon it rather than wait for a signal it can never see.
+	#[test]
+	fn shutdown_abandons_work_inside_a_blocking_call() {
+		let services = Services::new(1);
+		let (entered, started) = std::sync::mpsc::channel();
+		let (release, gate) = std::sync::mpsc::channel::<()>();
+		services.handle.submit(async move {
+			let _ = tokio::task::spawn_blocking(move || {
+				let _ = entered.send(());
+				// Stands in for a read that no token can interrupt.
+				let _ = gate.recv();
+			})
+			.await;
+		});
+		started
+			.recv_timeout(std::time::Duration::from_secs(5))
+			.expect("the blocking task never started");
+		let leaving = std::time::Instant::now();
+		drop(services);
+		assert!(
+			leaving.elapsed() < Duration::from_secs(20),
+			"shutdown waited for a task that could never observe cancellation"
+		);
+		drop(release);
 	}
 }

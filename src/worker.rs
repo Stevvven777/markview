@@ -582,10 +582,10 @@ impl Worker {
 			inbox.pending = None;
 		}
 		wake.notify_one();
-		if let Some(t) = self.handle.take()
-			&& t.join().is_err()
-		{
-			log::warn!("Layout worker panicked");
+		if let Some(t) = self.handle.take() {
+			// A read stuck inside the open of a special file outlives the
+			// token, so this join needs a deadline as well as a stop signal.
+			crate::shutdown::join_within(t, "Layout worker");
 		}
 	}
 }

@@ -20,6 +20,7 @@ mod pdf;
 mod platform;
 mod services;
 mod settings;
+mod shutdown;
 mod state;
 mod stylesheet;
 #[cfg(test)]

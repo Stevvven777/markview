@@ -163,6 +163,11 @@ tempfile.workspace = true
 [dev-dependencies]
 lopdf = { version = "0.45", default-features = false }
 
+# `O_NONBLOCK` keeps a special-file open from waiting; only the Unix targets
+# need it.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(not(target_os = "android"))'.dependencies]
 arboard.workspace = true
 rfd.workspace = true

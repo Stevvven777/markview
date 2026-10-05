@@ -180,10 +180,8 @@ impl Worker {
 			inbox.pending = None;
 		}
 		wake.notify_one();
-		if let Some(handle) = self.handle.take()
-			&& handle.join().is_err()
-		{
-			log::warn!("Search worker panicked");
+		if let Some(handle) = self.handle.take() {
+			crate::shutdown::join_within(handle, "Search worker");
 		}
 	}
 }

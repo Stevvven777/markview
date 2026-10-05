@@ -75,10 +75,11 @@ pub(super) fn fetch(
 ) -> Result<Vec<u8>> {
 	match source {
 		Source::File(path) => {
-			let file = fs::File::open(path).context("Cannot open image")?;
-			if !file.metadata()?.is_file() {
-				bail!("Image is not a regular file");
-			}
+			// A sibling FIFO would otherwise hold one of the four image
+			// pipelines for as long as it has no writer, so the type check must
+			// happen without a waiting open.
+			let file =
+				crate::file::open_regular(path).context("Cannot open image")?;
 			bounded(file)
 		}
 		Source::Http(_) => {

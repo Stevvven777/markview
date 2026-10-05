@@ -80,6 +80,10 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Open local documents and images without waiting and accept only regular files, so a FIFO beside the document can no longer wedge a read, an export or a tab.
+
+- Bound shutdown and headless waits: a worker blocked in an uninterruptible call is abandoned at a deadline instead of holding exit or an export forever.
+
 - Make hovered inactive tab labels clearer by mixing 70% active text and 30% muted text from the effective stylesheet.
 
 - Write PDF and PNG exports, downloaded fonts and cached images through an exclusive random temporary file, so a symlink planted beside the destination is never written through.
