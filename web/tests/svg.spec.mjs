@@ -339,7 +339,8 @@ test("inline SVG preserves overlapping Markdown text and empty-alt source geomet
 }) => {
 	await host(page);
 	const image = '<svg width="100" height="140"><text>*hi</text></svg>';
-	const source = `before ${image} after* tail\n\n> > <details open><summary>first</summary>\n> > # first\n> > </details>\n> > <details open><summary>second</summary>\n> > # 中文\n> > </details>`;
+	// Blank lines separate Markdown headings from the raw HTML blocks.
+	const source = `before ${image} after* tail\n\n> > <details open><summary>first</summary>\n> >\n> > # first\n> >\n> > </details>\n> > <details open><summary>second</summary>\n> >\n> > # 中文\n> >\n> > </details>`;
 	await page.evaluate(async (source) => {
 		window.viewer = await window.api.Viewer.mount(
 			document.querySelector("#host"),

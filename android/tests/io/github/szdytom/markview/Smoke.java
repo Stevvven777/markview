@@ -36,6 +36,9 @@ public class Smoke extends Instrumentation {
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            // The emulator's `vulkan.ranchu` crashes when naming swapchain views.
+            // Keep validation enabled, but disable driver debug labels in tests.
+            android.system.Os.setenv("WGPU_DEBUG", "0", true);
             if (sessionPhase != null) {
                 checkSession();
                 result.putString("stream", results.toString() + "MARKVIEW_ANDROID_INTEGRATION_OK\n");
@@ -654,7 +657,16 @@ public class Smoke extends Instrumentation {
         }
         throw new AssertionError("Layout did not settle");
     }
-    private JSONObject state() throws Exception { return new JSONObject(MarkviewActivity.nativeSnapshot()); }
+    private JSONObject state() throws Exception {
+        long deadline = SystemClock.uptimeMillis() + 20000;
+        do {
+            JSONObject current = new JSONObject(MarkviewActivity.nativeSnapshot());
+            // A busy or suspended native event loop returns `{}` after three seconds.
+            if (current.length() > 0) return current;
+            SystemClock.sleep(100);
+        } while (SystemClock.uptimeMillis() < deadline);
+        throw new AssertionError("Native inspection did not respond");
+    }
     private JSONObject waitFor(Check check) throws Exception {
         long deadline = SystemClock.uptimeMillis() + 20000;
         JSONObject latest = new JSONObject();
@@ -708,22 +720,25 @@ public class Smoke extends Instrumentation {
         return count;
     }
     private void checkSystemBars(boolean light) throws Exception {
-        JSONObject current = state();
-        double scale = current.getJSONArray("dimensions").getDouble(2);
-        int top = (int)Math.round(current.getJSONArray("insets").getDouble(1) * scale);
-        int bottom = top + (int)Math.round(current.getJSONArray("dimensions").getDouble(1) * scale);
         SystemClock.sleep(250);
         // Wait for the clipboard preview and theme transition to finish.
         long deadline = SystemClock.uptimeMillis() + 10000;
         while (true) {
             waitSystem(getTargetContext().getPackageName());
+            JSONObject current = state();
+            double scale = current.getJSONArray("dimensions").getDouble(2);
+            int[] origin = new int[2];
+            runOnMainSync(() -> activity.getWindow().getDecorView().getLocationOnScreen(origin));
+            int insetTop = (int)Math.round(current.getJSONArray("insets").getDouble(1) * scale);
+            int top = origin[1] + insetTop;
+            int bottom = top + (int)Math.round(current.getJSONArray("dimensions").getDouble(1) * scale);
             Bitmap pixels = getUiAutomation().takeScreenshot();
             require(pixels != null, "System bar screenshot");
             try {
-                int x = pixels.getWidth() / 8;
-                if (top > 4) {
+                int x = origin[0] + (int)Math.round(current.getJSONArray("dimensions").getDouble(0) * scale / 8);
+                if (insetTop > 4) {
                     int middle = pixels.getWidth() / 2;
-                    require(sameColor(pixels.getPixel(middle, top / 2), pixels.getPixel(middle, top + 2)), "Status bar blends into the toolbar");
+                    require(sameColor(pixels.getPixel(middle, origin[1] + insetTop / 2), pixels.getPixel(middle, top + 2)), "Status bar blends into the toolbar");
                 }
                 if (bottom + 4 < pixels.getHeight()) {
                     require(sameColor(pixels.getPixel(x, bottom - 2), pixels.getPixel(x, (bottom + pixels.getHeight()) / 2)), "Navigation bar blends into the footer");

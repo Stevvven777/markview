@@ -123,6 +123,10 @@ Instrumentation closes ANR dialogs from Quickstep or Pixel Launcher and waits
 for Markview to regain focus before reader touches.
 CI explicitly selects gesture navigation on both devices.
 Device tests wait for viewport and reading-width layout to settle before assertions.
+Native inspection retries empty replies while rendering or resuming; system-bar
+pixel checks include the native window's screen offset. Instrumentation disables
+GPU debug labels to avoid `vulkan.ranchu` crashes when naming swapchain views,
+while retaining GPU validation.
 Instrumentation intercepts PDF and PNG preview intents after publication,
 so external viewers cannot capture subsequent reader input.
 `markview-android-debug` keeps the APK and instrumentation build inputs;

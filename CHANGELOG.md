@@ -85,6 +85,12 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Stabilize Android integration checks for native inspection timeouts and window offsets, and avoid emulator Vulkan debug-label crashes.
+
+- Wait for Web scroll measurements before assertions, and separate Markdown headings from HTML tags in the SVG regression fixture.
+
+- Use a controlled clock in the image pipeline progress regression test so scheduler delays cannot cancel its healthy fixture.
+
 - Open local documents and images without waiting and accept only regular files, so a FIFO beside the document can no longer wedge a read, an export or a tab.
 
 - Bound shutdown and headless waits: a worker blocked in an uninterruptible call is abandoned at a deadline instead of holding exit or an export forever.

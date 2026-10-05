@@ -1537,37 +1537,38 @@ fn failing_batches_do_not_cancel_a_later_healthy_job() {
 	let healthy_cancel = images.entries[&healthy].cancel.clone();
 	let done = images.done.clone();
 
-	// The failures report one at a time, each inside a deadline of the last, so
-	// their total runs well past it without anything ever decoding.
-	let waiter = std::thread::spawn(move || {
-		images.wait_for(deadline);
-		images
+	// Advance time and report one job per poll. Total time exceeds the
+	// deadline, but every completion must reset it regardless of its result.
+	let start = Instant::now();
+	let mut tick = 0;
+	images.wait_with_clock(deadline, || {
+		if tick < sources.len() {
+			done.send(Finished {
+				ticket: tick as u64,
+				source: sources[tick].clone(),
+				generation: 0,
+				result: Err(anyhow::anyhow!("Cannot open image")),
+			})
+			.unwrap();
+		} else if tick == sources.len() {
+			done.send(Finished {
+				ticket: 99,
+				source: healthy.clone(),
+				generation: 0,
+				result: Ok(Loaded {
+					intrinsic: (4, 3),
+					raster: (4, 3),
+					svg: false,
+					pixels: None,
+					pdf: None,
+				}),
+			})
+			.unwrap();
+		}
+		let now = start + deadline / 2 * tick as u32;
+		tick += 1;
+		now
 	});
-	for (ticket, source) in sources.iter().enumerate() {
-		std::thread::sleep(deadline / 2);
-		done.send(Finished {
-			ticket: ticket as u64,
-			source: source.clone(),
-			generation: 0,
-			result: Err(anyhow::anyhow!("Cannot open image")),
-		})
-		.unwrap();
-	}
-	// The healthy job then succeeds, which is what lets the wait return.
-	done.send(Finished {
-		ticket: 99,
-		source: healthy.clone(),
-		generation: 0,
-		result: Ok(Loaded {
-			intrinsic: (4, 3),
-			raster: (4, 3),
-			svg: false,
-			pixels: None,
-			pdf: None,
-		}),
-	})
-	.unwrap();
-	let images = waiter.join().unwrap();
 	assert!(
 		!healthy_cancel.is_cancelled(),
 		"a healthy job was cancelled because earlier requests failed"

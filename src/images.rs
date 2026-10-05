@@ -810,8 +810,16 @@ impl Images {
 	/// healthy jobs scheduled after them. Only a pipeline that reports nothing
 	/// at all for `deadline` counts as jammed.
 	fn wait_for(&mut self, deadline: Duration) {
+		self.wait_with_clock(deadline, Instant::now);
+	}
+
+	fn wait_with_clock(
+		&mut self,
+		deadline: Duration,
+		mut now: impl FnMut() -> Instant,
+	) {
 		let mut completed = self.completed;
-		let mut progress = Instant::now();
+		let mut progress = now();
 		// The first silent deadline gives up on the jobs that stopped
 		// reporting, which is what frees the slots their entries hold, and lets
 		// the queue behind them try. A second silent deadline means those slots
@@ -821,9 +829,10 @@ impl Images {
 			// A headless frame can have posted new SVG sizes since the last
 			// load.
 			self.poll();
+			let current = now();
 			if self.completed > completed {
 				completed = self.completed;
-				progress = Instant::now();
+				progress = current;
 				abandoned = false;
 			}
 			if !self.entries.values().any(|e| {
@@ -831,14 +840,14 @@ impl Images {
 			}) {
 				break;
 			}
-			if progress.elapsed() >= deadline {
+			if current.duration_since(progress) >= deadline {
 				if abandoned {
 					self.fail_unfinished(true);
 					break;
 				}
 				self.fail_unfinished(false);
 				abandoned = true;
-				progress = Instant::now();
+				progress = current;
 			}
 			thread::sleep(Duration::from_millis(5));
 		}

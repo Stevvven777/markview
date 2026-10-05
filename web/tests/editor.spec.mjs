@@ -305,7 +305,15 @@ test("both panes scroll continuously across prose, blank lines, code and images"
 						(direction === 1 ? step / 100 : 1 - step / 100);
 					if (origin === "source") scroller.scrollTop = target;
 					else viewer.scrollTo(target);
-					await new Promise((resolve) => setTimeout(resolve, 35));
+					// Let the scroll event queue its follow measurement, then wait
+					// for CodeMirror's write phase before sampling either pane.
+					await new Promise(requestAnimationFrame);
+					await new Promise((resolve) =>
+						view.requestMeasure({
+							read: () => null,
+							write: resolve,
+						}),
+					);
 					samples.push({
 						direction,
 						source: scroller.scrollTop,
