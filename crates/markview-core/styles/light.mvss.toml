@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 7
+version = 8
 
 [meta]
 name = "Light"
@@ -187,3 +187,17 @@ padding = [0.2, 0.2, 0.2, 0.6]
 when = ["table", "cell"]
 media = ["phone"]
 padding = 0.35
+
+[[rule]]
+when = ["list"]
+media = ["phone"]
+indent = 0.15
+marker_width = 1.0
+space_after = 0.6
+
+[[rule]]
+when = ["enum"]
+media = ["phone"]
+indent = 0.15
+marker_width = 1.0
+space_after = 0.6

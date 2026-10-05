@@ -221,6 +221,8 @@ Text conditions accept `color`, `font`, `weight`, `size`, `decoration`, and `bac
 
 A list marker reserves a column before its item text. `marker` covers bullets, `task_marker` covers checkboxes, and `enum` covers ordered numbers, so each kind can be placed on its own with `align = "left"`, `"center"`, or `"right"`; the bundled styles center all three. A number without an `enum` alignment follows the `marker` one. A bullet is drawn rather than typed—`shape` is `disc`, `square`, `triangle`, `diamond`, `plus`, or `minus`—so bullets and checkboxes are never part of copied text, while ordered numbers stay text, written and copied exactly as the numbering pattern spells them. A checkbox is a rounded box centered on its item's first line: `background` fills a pending box, `accent` fills a completed one, `border_color` and `border_width` draw its outline, `radius` rounds it, and `color` draws the check. Box and mark are both vector geometry, so no font can substitute a different shape or size.
 
+`marker_width` on `list` or `enum` sets the minimum marker column width, including the gap, in base-font-size units; omission retains 30 logical pixels. The column always grows to fit bullets, checkboxes and ordered labels with their gap. Bundled reader themes use `marker_width = 1.0` and `indent = 0.15` on phones. A list's final child contributes no closing space: the list's own `space_after` separates it from the next block, so nested list tails do not accumulate; spacing between items remains intact.
+
 `shape` also takes a list, one entry per bullet nesting level and then repeating: `shape = ["plus", "minus"]` draws a plus on the first level and a minus on the second, and a plus again on the third. Ordered levels do not advance the cycle.
 
 ```toml

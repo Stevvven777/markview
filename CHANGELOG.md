@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Add MVSS `marker_width` for theme-controlled list marker columns, with automatic expansion for wide numbers and checkboxes.
+
 - Add per-rule MVSS `media` filters with OR matching; resolve shared parsed declarations on environment changes, keeping media checks outside rendering.
 
 - Add a localized Android “Read in Markview” open/share entry for Markdown files, including generic attachments and URI shares supplied through `ClipData`.
@@ -43,6 +45,8 @@ at the same level, without `[brackets]`.
 - Add connected rounded tabs alongside underlined tabs, selectable in general settings without document reflow.
 
 ### Changed
+
+- Reduce phone list indentation and quotation/table padding across bundled reader themes.
 
 - Compact Light theme headings, quotations and table cells on phones using MVSS media rules.
 
@@ -70,6 +74,10 @@ at the same level, without `[brackets]`.
 - Batch a pan's sub-pixel travel until it adds up to a whole physical pixel, and flush the residue on release: the OS inertia tail stops redrawing the page for motion the display cannot show, while the page still lands exactly where the viewport does.
 
 ### Fixed
+
+- Reserve alignment insets in narrow list marker columns so small bullets, checkboxes and ordered labels cannot overlap item text.
+
+- Prevent nested list closing spaces from accumulating, and keep lower heading fonts consistent in Celadon, Rosewood and artist PDF themes.
 
 - Follow the Linux desktop's light/dark preference through the settings portal, including live changes and the Styles “Follow system” action.
 - Align the reader viewport with the toolbar and bottom bar, removing blank strips that clipped scrolling content at both edges.

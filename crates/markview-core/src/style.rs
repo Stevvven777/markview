@@ -714,7 +714,10 @@ impl Stylesheet {
 				"{:?}{:?}{:?}{:?}",
 				rule.radius, rule.gutter, rule.shape, rule.numbering
 			));
-			s.push_str(&format!("{:?}{:?}", rule.wrap, rule.border_collapse));
+			s.push_str(&format!(
+				"{:?}{:?}{:?}",
+				rule.wrap, rule.border_collapse, rule.marker_width
+			));
 			s.push_str(&format!(
 				"{:?}{:?}{:?}{:?}{:?}",
 				rule.top_edge,

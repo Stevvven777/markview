@@ -1,5 +1,5 @@
 format_version = 2
-version = 7
+version = 8
 targets = ["pdf"]
 
 [meta]
@@ -106,6 +106,36 @@ color = "#272B30"
 line_height = 1.28
 space_before = 0.7826
 space_after = 0.6522
+
+[[rule]]
+when = ["h4"]
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", min_weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 1.0
+weight = 600
+color = "#272B30"
+line_height = 1.28
+space_before = 0.65
+space_after = 0.45
+
+[[rule]]
+when = ["h5"]
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", min_weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 0.95
+weight = 600
+color = "#272B30"
+line_height = 1.28
+space_before = 0.65
+space_after = 0.45
+
+[[rule]]
+when = ["h6"]
+font = [{ family = "assignment-heading" }, { family = "assignment-heading", weight = 700 }, { family = "serif[cjk]", min_weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+size = 0.9
+weight = 600
+color = "#272B30"
+line_height = 1.28
+space_before = 0.65
+space_after = 0.45
 
 [[rule]]
 when = ["link"]

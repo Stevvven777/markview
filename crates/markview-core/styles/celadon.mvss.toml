@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 3
+version = 4
 
 [meta]
 name = "Celadon"
@@ -143,3 +143,42 @@ size = 1.22
 color = "#263F37"
 space_before = 0.85
 space_after = 0.65
+
+[[rule]]
+when = ["blockquote"]
+media = ["phone"]
+padding = [0.2, 0.2, 0.2, 0.6]
+
+[[rule]]
+when = ["table", "cell"]
+media = ["phone"]
+padding = 0.35
+
+[[rule]]
+when = ["list"]
+media = ["phone"]
+indent = 0.15
+marker_width = 1.0
+space_after = 0.6
+
+[[rule]]
+when = ["enum"]
+media = ["phone"]
+indent = 0.15
+marker_width = 1.0
+space_after = 0.6
+
+[[rule]]
+when = ["h4"]
+font = [{ family = "serif" }, { family = "serif[cjk]", min_weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+color = "#263F37"
+
+[[rule]]
+when = ["h5"]
+font = [{ family = "serif" }, { family = "serif[cjk]", min_weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+color = "#263F37"
+
+[[rule]]
+when = ["h6"]
+font = [{ family = "serif" }, { family = "serif[cjk]", min_weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+color = "#263F37"

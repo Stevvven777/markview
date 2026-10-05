@@ -798,6 +798,8 @@ pub struct Rule {
 	pub space_after: Option<f32>,
 	/// Extra indent a theme adds to a list, in base-size units.
 	pub indent: Option<f32>,
+	/// Minimum list marker column width, including its gap, in base-size units.
+	pub marker_width: Option<f32>,
 	pub padding: Option<Padding>,
 	pub border_width: Option<f32>,
 	pub border_collapse: Option<BorderCollapse>,
@@ -857,6 +859,7 @@ impl Rule {
 			|| self.space_before.is_some()
 			|| self.space_after.is_some()
 			|| self.indent.is_some()
+			|| self.marker_width.is_some()
 			|| self.padding.is_some()
 			|| self.border_width.is_some()
 			|| self.border_collapse.is_some()
@@ -895,6 +898,7 @@ impl Rule {
 			space_before,
 			space_after,
 			indent,
+			marker_width,
 			padding,
 			border_width,
 			border_collapse,

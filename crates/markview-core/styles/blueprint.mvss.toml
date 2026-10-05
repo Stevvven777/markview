@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 4
+version = 5
 
 [meta]
 name = "Blueprint"
@@ -185,3 +185,27 @@ space_after = 0.65
 [[rule]]
 when = ["em"]
 font = [{ family = "sans-serif", variant = "italic" }, { family = "regularscript[cjk]" }, { family = "regularscript[cjk]", weight = 500 }, { family = "regularscript[cjk]", weight = 400 }, { family = "sans-serif[cjk]", variant = "italic", synthetic_italic = true, min_weight = 500 }, { family = "sans-serif[cjk]", variant = "italic", synthetic_italic = true }, { family = "emoji", weight = 400 }]
+
+[[rule]]
+when = ["blockquote"]
+media = ["phone"]
+padding = [0.2, 0.2, 0.2, 0.6]
+
+[[rule]]
+when = ["table", "cell"]
+media = ["phone"]
+padding = 0.35
+
+[[rule]]
+when = ["list"]
+media = ["phone"]
+indent = 0.15
+marker_width = 1.0
+space_after = 0.6
+
+[[rule]]
+when = ["enum"]
+media = ["phone"]
+indent = 0.15
+marker_width = 1.0
+space_after = 0.6

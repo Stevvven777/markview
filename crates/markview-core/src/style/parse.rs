@@ -468,6 +468,7 @@ fn validate_numbers(name: &str, rule: &Rule) -> Result<()> {
 		("space_before", rule.space_before, false),
 		("space_after", rule.space_after, false),
 		("indent", rule.indent, false),
+		("marker_width", rule.marker_width, false),
 		("border_width", rule.border_width, false),
 		("radius", rule.radius, false),
 		("thickness", rule.thickness, true),
@@ -607,7 +608,7 @@ fn validate_field(conditions: ConditionSet, key: &str) -> Result<()> {
 			"line_height" | "space_before" | "space_after" => {
 				conditions.has_block() || has(K::Caption)
 			}
-			"indent" => has(K::List) || has(K::Enum),
+			"indent" | "marker_width" => has(K::List) || has(K::Enum),
 			"align" => {
 				has(K::Marker)
 					|| has(K::TaskMarker)

@@ -71,6 +71,11 @@ fn marker_offset(align: TextAlign, column: f32, width: f32) -> f32 {
 	}
 }
 
+/// Reserve both marker geometry and the alignment's minimum inset.
+fn marker_min_width(align: TextAlign, width: f32, gap: f32) -> f32 {
+	width + gap + marker_offset(align, width, width)
+}
+
 /// A bullet's vertices, relative to its center, fitting a square `side` wide.
 fn marker_points(shape: MarkerShape, side: f32) -> Arc<[[f32; 2]]> {
 	let radius = side / 2.;
@@ -763,9 +768,24 @@ impl BlockContext<'_> {
 				let number_align = opts.stylesheet.enum_align();
 				// One column holds every marker of the list, so the item text
 				// starts at one x. An ordered list widens it to its own numbers.
-				let mut column = MARKER_COLUMN;
+				let gap = MARKER_GAP * opts.font_size * bullet.size;
+				let mut column = opts
+					.stylesheet
+					.element_rule(list_appearance.chain, block_role(block))
+					.marker_width
+					.map_or(MARKER_COLUMN, |v| v * opts.font_size);
+				if items.iter().any(|item| item.checked.is_some()) {
+					column = column
+						.max(marker_min_width(task_align, task_side, gap));
+				}
+				if items.iter().any(|item| item.checked.is_none()) {
+					column = column.max(marker_min_width(
+						opts.stylesheet.marker_align(false),
+						bullet_side,
+						gap,
+					));
+				}
 				if let Some(start) = *start {
-					let gap = MARKER_GAP * opts.font_size * bullet.size;
 					for (i, item) in items.iter().enumerate() {
 						if item.checked.is_some() {
 							continue;
@@ -781,7 +801,11 @@ impl BlockContext<'_> {
 							bullet.paint,
 							None,
 						);
-						column = column.max(width + gap);
+						column = column.max(marker_min_width(
+							number_align,
+							width,
+							gap,
+						));
 					}
 				}
 				for (i, item) in items.iter().enumerate() {
@@ -933,17 +957,34 @@ impl BlockContext<'_> {
 							paint: bullet.paint,
 						});
 					}
-					top += self
-						.children(
-							&item.blocks,
-							item_x + column,
-							top,
-							(item_width - column).max(1.),
-							&item_opts,
-							size * 0.6,
-							out,
-						)
+					let child_height = self.children(
+						&item.blocks,
+						item_x + column,
+						top,
+						(item_width - column).max(1.),
+						&item_opts,
+						size * 0.6,
+						out,
+					);
+					// The list owns its closing space; retain child spacing only
+					// between items, so nested tails do not accumulate.
+					let trailing = if i + 1 == items.len()
+						&& let Some(last) = item.blocks.last()
+					{
+						let parent = opts.stylesheet.child(
+							&item_appearance,
+							item.blocks.len() - 1,
+							item.blocks.len(),
+						);
+						outer_spacing(last, &parent, opts).1
+					} else {
+						0.0
+					};
+					top += (child_height - trailing)
 						.max(size * self.shaper.appearance.line_height);
+					if trailing > 0.0 {
+						out.height = out.height.min(top);
+					}
 					top += padding[2];
 					out.draws[box_index] = Draw::Box {
 						rect: Rect {

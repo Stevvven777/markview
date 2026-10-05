@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 5
+version = 6
 
 [meta]
 name = "Dark"
@@ -174,3 +174,27 @@ background = "#EBC86B47"
 [[rule]]
 when = ["search_current"]
 background = "#EBC86B88"
+
+[[rule]]
+when = ["blockquote"]
+media = ["phone"]
+padding = [0.2, 0.2, 0.2, 0.6]
+
+[[rule]]
+when = ["table", "cell"]
+media = ["phone"]
+padding = 0.35
+
+[[rule]]
+when = ["list"]
+media = ["phone"]
+indent = 0.15
+marker_width = 1.0
+space_after = 0.6
+
+[[rule]]
+when = ["enum"]
+media = ["phone"]
+indent = 0.15
+marker_width = 1.0
+space_after = 0.6
