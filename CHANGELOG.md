@@ -21,6 +21,17 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+## 0.2.0 - 2026-10-06
+
+**Highlights**:
+
+- A native Android app for phones and tablets, sharing settings, tabs, fonts, image caching and export with the desktop reader.
+- Tabs, reading positions and open disclosures restored on the next launch.
+- Tabs drawn into platform-style window chrome, with a System, macOS, Windows or Linux layout choice.
+- Windows precision touchpad panning that follows the finger and the system's own inertia.
+- MVSS themes with per-rule media filters, instance-local registration and dynamic theme selection.
+- Continued robustness and security hardening.
+
 ### Added
 
 - Restore tabs, reading positions and disclosure states across launches with an optional desktop setting; Android keeps sessions by default.
@@ -80,8 +91,6 @@ at the same level, without `[brackets]`.
 - Strengthen light-theme hover feedback, unify right-side toolbar and window-button spacing without a separator, and add Linux chevron and diamond controls.
 - Choose window layout from a dropdown, matching the language selector.
 - Share caption input routing across viewer and reader modes, keep layout queries free of native-window mutations, and cache tab-strip extents.
-
-### Changed
 
 - Batch a pan's sub-pixel travel until it adds up to a whole physical pixel, and flush the residue on release: the OS inertia tail stops redrawing the page for motion the display cannot show, while the page still lands exactly where the viewport does.
 

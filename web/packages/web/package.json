@@ -1,6 +1,6 @@
 {
   "name": "@markview/web",
-  "version": "0.1.11",
+  "version": "0.2.0",
   "description": "Deprecated compatibility entry for Markview viewer and browser image helpers",
   "license": "MIT",
   "type": "module",
