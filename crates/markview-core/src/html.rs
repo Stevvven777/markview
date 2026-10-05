@@ -8,6 +8,7 @@
 //! elements become atomic host-decoded images.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Block-level HTML tags whose multi-block form only groups Markdown
 /// content. The group has no visual semantics of its own, so its children
@@ -66,8 +67,58 @@ pub enum Inline {
 pub struct Span {
 	pub image: Option<crate::image::ImageSpec>,
 	pub text: String,
-	/// Style patches in opening order.
-	pub styles: Vec<Patch>,
+	/// The style in force for this run.
+	pub style: Style,
+}
+
+/// The style one run inherited from the open tags around it.
+///
+/// The supported set is small and applying a patch twice adds nothing, so the
+/// resolved state stays a few flags plus the active link however deep the tags
+/// nest. Keeping the tags instead made every run carry a snapshot that grew
+/// with the nesting depth. The link is shared so that copying the state — once
+/// per run and once per open tag — never copies the URL.
+#[derive(Clone, Debug, Default)]
+pub struct Style {
+	pub bold: bool,
+	pub italic: bool,
+	pub strike: bool,
+	pub code: bool,
+	pub superscript: bool,
+	pub link: Option<Arc<str>>,
+}
+
+impl PartialEq for Style {
+	fn eq(&self, other: &Self) -> bool {
+		self.bold == other.bold
+			&& self.italic == other.italic
+			&& self.strike == other.strike
+			&& self.code == other.code
+			&& self.superscript == other.superscript
+			&& match (&self.link, &other.link) {
+				// Copies of one `href` share their buffer, so the usual
+				// comparison reads one pointer instead of the whole URL.
+				(Some(a), Some(b)) => Arc::ptr_eq(a, b) || a == b,
+				(None, None) => true,
+				_ => false,
+			}
+	}
+}
+
+impl Eq for Style {}
+
+impl Style {
+	fn apply(&mut self, patch: &Patch) {
+		match patch {
+			Patch::Bold => self.bold = true,
+			Patch::Italic => self.italic = true,
+			Patch::Strike => self.strike = true,
+			Patch::Code => self.code = true,
+			Patch::Superscript => self.superscript = true,
+			Patch::Link(url) => self.link = Some(Arc::from(url.as_str())),
+			Patch::None => {}
+		}
+	}
 }
 
 /// Meaning of a raw HTML block.
@@ -394,8 +445,10 @@ pub fn inline(fragment: &str) -> Inline {
 /// Interpret a raw HTML block; block-level tags must be self-contained.
 pub fn block(source: &str) -> Block {
 	let mut spans: Vec<Span> = Vec::new();
-	let mut styles: Vec<Patch> = Vec::new();
-	let mut scopes: Vec<(String, usize)> = Vec::new();
+	let mut style = Style::default();
+	// Each open tag remembers the style its contents inherited, so closing it
+	// restores that state and drops whatever the tags inside it added.
+	let mut scopes: Vec<(String, Style)> = Vec::new();
 	let mut first_open: Option<String> = None;
 	let mut containers = 0;
 	let mut rule = false;
@@ -405,12 +458,12 @@ pub fn block(source: &str) -> Block {
 				spans.push(Span {
 					image: Some(image),
 					text: String::new(),
-					styles: styles.clone(),
+					style: style.clone(),
 				});
 				continue;
 			}
 			Token::Text(t) => {
-				push_text(&mut spans, &t, &styles);
+				push_text(&mut spans, &t, &style);
 				continue;
 			}
 			Token::Comment => continue,
@@ -420,7 +473,7 @@ pub fn block(source: &str) -> Block {
 			Tag::Image(image) => spans.push(Span {
 				image: Some(image),
 				text: String::new(),
-				styles: styles.clone(),
+				style: style.clone(),
 			}),
 			Tag::Comment => {}
 			Tag::Unknown => return Block::Unsupported,
@@ -428,7 +481,7 @@ pub fn block(source: &str) -> Block {
 				if name == "hr" {
 					rule = true;
 				} else {
-					push_span(&mut spans, "\n".into(), &styles);
+					push_span(&mut spans, "\n".into(), &style);
 				}
 			}
 			Tag::Open { name, patch } => {
@@ -438,16 +491,14 @@ pub fn block(source: &str) -> Block {
 				if name == "p" || heading_level(&name).is_some() {
 					containers += 1;
 				}
-				scopes.push((name, styles.len()));
-				if patch != Patch::None {
-					styles.push(patch);
-				}
+				scopes.push((name, style.clone()));
+				style.apply(&patch);
 			}
 			Tag::Close { name } => {
 				if let Some(i) =
 					scopes.iter().rposition(|(open, _)| *open == name)
 				{
-					styles.truncate(scopes[i].1);
+					style = std::mem::take(&mut scopes[i].1);
 					scopes.truncate(i);
 				}
 			}
@@ -748,7 +799,7 @@ pub(crate) fn tag_len(source: &str) -> Option<usize> {
 	None
 }
 
-fn push_text(spans: &mut Vec<Span>, text: &str, styles: &[Patch]) {
+fn push_text(spans: &mut Vec<Span>, text: &str, style: &Style) {
 	let mut collapsed = String::with_capacity(text.len());
 	let mut space = false;
 	for c in text.chars() {
@@ -765,16 +816,16 @@ fn push_text(spans: &mut Vec<Span>, text: &str, styles: &[Patch]) {
 	if space {
 		collapsed.push(' ');
 	}
-	push_span(spans, collapsed, styles);
+	push_span(spans, collapsed, style);
 }
 
-fn push_span(spans: &mut Vec<Span>, text: String, styles: &[Patch]) {
+fn push_span(spans: &mut Vec<Span>, text: String, style: &Style) {
 	if text.is_empty() {
 		return;
 	}
 	if let Some(last) = spans.last_mut()
 		&& last.image.is_none()
-		&& last.styles == styles
+		&& &last.style == style
 	{
 		last.text.push_str(&text);
 		return;
@@ -782,7 +833,7 @@ fn push_span(spans: &mut Vec<Span>, text: String, styles: &[Patch]) {
 	spans.push(Span {
 		image: None,
 		text,
-		styles: styles.to_vec(),
+		style: style.clone(),
 	});
 }
 
@@ -805,7 +856,7 @@ fn normalize(spans: Vec<Span>) -> Vec<Span> {
 		let mut merged = false;
 		if let Some(last) = out.last_mut()
 			&& last.image.is_none()
-			&& last.styles == span.styles
+			&& last.style == span.style
 		{
 			last.text.push_str(text);
 			merged = true;
@@ -814,7 +865,7 @@ fn normalize(spans: Vec<Span>) -> Vec<Span> {
 			out.push(Span {
 				image: None,
 				text: text.to_string(),
-				styles: span.styles,
+				style: span.style,
 			});
 		}
 	}

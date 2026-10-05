@@ -55,7 +55,7 @@ fn blocks_map_to_rule_heading_and_paragraph() {
 			text: vec![Span {
 				image: None,
 				text: "Title".into(),
-				styles: vec![]
+				style: Style::default()
 			}]
 		}
 	);
@@ -65,17 +65,20 @@ fn blocks_map_to_rule_heading_and_paragraph() {
 			Span {
 				image: None,
 				text: "a ".into(),
-				styles: vec![]
+				style: Style::default()
 			},
 			Span {
 				image: None,
 				text: "b".into(),
-				styles: vec![Patch::Italic]
+				style: Style {
+					italic: true,
+					..Style::default()
+				}
 			},
 			Span {
 				image: None,
 				text: " c".into(),
-				styles: vec![]
+				style: Style::default()
 			},
 		])
 	);
@@ -99,7 +102,7 @@ fn block_text_collapses_whitespace_across_lines() {
 			text: vec![Span {
 				image: None,
 				text: "Hello world".into(),
-				styles: vec![]
+				style: Style::default()
 			}]
 		}
 	);
@@ -136,7 +139,7 @@ fn malformed_markup_is_readable_and_never_panics() {
 		Block::Paragraph(vec![Span {
 			image: None,
 			text: "a < b".into(),
-			styles: vec![]
+			style: Style::default()
 		}])
 	);
 	assert_eq!(
@@ -146,7 +149,7 @@ fn malformed_markup_is_readable_and_never_panics() {
 			text: vec![Span {
 				image: None,
 				text: "中文".into(),
-				styles: vec![]
+				style: Style::default()
 			}]
 		}
 	);
@@ -202,4 +205,120 @@ fn a_multibyte_space_exposed_by_a_stray_slash_is_skipped_whole() {
 	assert!(has_attribute(" /\u{a0}open", "open"));
 	assert_eq!(attribute(" /\u{a0}src=x", "src").as_deref(), Some("x"));
 	assert_eq!(attribute(" /\u{a0}src", "src"), None);
+}
+
+#[test]
+fn block_style_follows_the_open_tags() {
+	let bold = Style {
+		bold: true,
+		..Style::default()
+	};
+	// A close restores the style its contents inherited.
+	assert_eq!(
+		block("<b><i>x</i>y</b>\n"),
+		Block::Paragraph(vec![
+			Span {
+				image: None,
+				text: "x".into(),
+				style: Style {
+					bold: true,
+					italic: true,
+					..Style::default()
+				}
+			},
+			Span {
+				image: None,
+				text: "y".into(),
+				style: bold.clone()
+			},
+		])
+	);
+	// Closing an outer tag drops the styles the tags inside it added.
+	assert_eq!(
+		block("<b><i>x</b>y\n"),
+		Block::Paragraph(vec![
+			Span {
+				image: None,
+				text: "x".into(),
+				style: Style {
+					bold: true,
+					italic: true,
+					..Style::default()
+				}
+			},
+			Span {
+				image: None,
+				text: "y".into(),
+				style: Style::default()
+			},
+		])
+	);
+	// Repeating a tag adds nothing, and the order of two different tags does
+	// not reach the run, so runs that resolve alike share one span.
+	assert_eq!(
+		block("<b><b>x\n"),
+		Block::Paragraph(vec![Span {
+			image: None,
+			text: "x".into(),
+			style: bold
+		}])
+	);
+	assert_eq!(
+		block("<b><i>a</i></b><i><b>b\n"),
+		Block::Paragraph(vec![Span {
+			image: None,
+			text: "ab".into(),
+			style: Style {
+				bold: true,
+				italic: true,
+				..Style::default()
+			}
+		}])
+	);
+}
+
+#[test]
+fn block_links_nest_and_images_carry_the_run_style() {
+	let linked = |url: &str| Style {
+		link: Some(url.into()),
+		..Style::default()
+	};
+	// A nested link overrides the outer one, which comes back on its close.
+	assert_eq!(
+		block("<a href=\"/a\">x<a href=\"/b\">y</a>z</a>\n"),
+		Block::Paragraph(vec![
+			Span {
+				image: None,
+				text: "x".into(),
+				style: linked("/a")
+			},
+			Span {
+				image: None,
+				text: "y".into(),
+				style: linked("/b")
+			},
+			Span {
+				image: None,
+				text: "z".into(),
+				style: linked("/a")
+			},
+		])
+	);
+	// An anchor without `href` keeps the link its contents inherited.
+	assert_eq!(
+		block("<a href=\"/a\">x<a name=\"n\">y</a>z</a>\n"),
+		Block::Paragraph(vec![Span {
+			image: None,
+			text: "xyz".into(),
+			style: linked("/a")
+		}])
+	);
+	// An image is its own run and keeps the style around it.
+	let parsed = block("<b><img src=\"a.png\"></b>\n");
+	let Block::Paragraph(spans) = parsed else {
+		panic!("expected a paragraph");
+	};
+	assert_eq!(spans.len(), 1);
+	assert!(spans[0].image.is_some());
+	assert!(spans[0].style.bold);
 }

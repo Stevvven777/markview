@@ -93,6 +93,8 @@ at the same level, without `[brackets]`.
 
 - Reuse the Markdown blocks Comrak already parsed under `<details>` instead of re-parsing each body, so repeated disclosures no longer multiply the document definitions; an unmatched opener still falls back without rescanning the tail.
 
+- Resolve a raw HTML block's styles into one fixed-size state per run instead of a snapshot per open tag, so deeply nested or repeated tags no longer cost quadratic time and memory.
+
 - Preserve block-relative session positions below text and let explicit search, scrollbar or background fragment navigation cancel pending restoration.
 
 - Skip WinGet updates without failing release CI while the initial community submission is still pending.

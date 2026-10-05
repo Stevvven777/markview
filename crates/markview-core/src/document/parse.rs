@@ -1457,19 +1457,20 @@ fn source_offsets(
 fn html_rich(spans: Vec<html::Span>, source: &Range<usize>) -> RichText {
 	spans
 		.into_iter()
-		.map(|span| {
-			let mut style = TextStyle::default();
-			for patch in &span.styles {
-				apply_patch(patch, &mut style);
-			}
-			Inline {
-				kind: span.image.map_or_else(
-					|| InlineKind::Text(span.text),
-					InlineKind::Image,
-				),
-				style,
-				source: source.clone(),
-			}
+		.map(|span| Inline {
+			kind: span
+				.image
+				.map_or_else(|| InlineKind::Text(span.text), InlineKind::Image),
+			style: TextStyle {
+				bold: span.style.bold,
+				italic: span.style.italic,
+				strike: span.style.strike,
+				code: span.style.code,
+				superscript: span.style.superscript,
+				link: span.style.link.map(|url| url.to_string()),
+				..TextStyle::default()
+			},
+			source: source.clone(),
 		})
 		.collect()
 }
