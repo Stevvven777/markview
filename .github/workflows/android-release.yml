@@ -26,7 +26,7 @@ jobs:
           cache-key: android-release
       - name: Build a release APK for pull requests
         if: github.event_name == 'pull_request'
-        run: python3 android/build.py --release --version-code "$VERSION_CODE"
+        run: python3 android/build.py --release --abi arm64-v8a --version-code "$VERSION_CODE"
       - name: Build and sign the release APK
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         env:
@@ -43,7 +43,7 @@ jobs:
           trap 'rm -f "$keystore"' EXIT
           umask 077
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
-          python3 android/build.py --release --version-code "$VERSION_CODE" \
+          python3 android/build.py --release --abi arm64-v8a --version-code "$VERSION_CODE" \
             --keystore "$keystore" --key-alias "$ANDROID_KEY_ALIAS"
       - name: Verify and stage the APK
         run: |

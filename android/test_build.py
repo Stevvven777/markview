@@ -17,9 +17,18 @@ import build
 
 class AndroidBuildTest(unittest.TestCase):
     def test_debug_pr_and_distribution_apk_assembly(self):
-        for profile, distribution in (("debug", False), ("release", False), ("release", True)):
+        cases = (
+            ("debug", False, None, set(build.TARGETS)),
+            ("debug", False, "x86_64", {"x86_64"}),
+            ("release", False, None, {"arm64-v8a"}),
+            ("release", True, None, {"arm64-v8a"}),
+            ("release", True, "arm64-v8a", {"arm64-v8a"}),
+            ("release", False, "all", set(build.TARGETS)),
+            ("release", False, "x86_64", {"x86_64"}),
+        )
+        for profile, distribution, abi, expected_abis in cases:
             release = profile == "release"
-            with self.subTest(profile=profile, distribution=distribution), tempfile.TemporaryDirectory() as directory:
+            with self.subTest(profile=profile, distribution=distribution, abi=abi), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / "android").mkdir()
                 shutil.copy2(build.ROOT / "android/AndroidManifest.xml", root / "android/AndroidManifest.xml")
@@ -53,6 +62,8 @@ class AndroidBuildTest(unittest.TestCase):
                 options = ["build.py"]
                 if release:
                     options += ["--release", "--version-code", "42"]
+                if abi:
+                    options += ["--abi", abi]
                 if distribution:
                     options += ["--keystore", str(key), "--key-alias", "distribution"]
                 credentials = {"ANDROID_KEYSTORE_PASSWORD": "store secret", "ANDROID_KEY_PASSWORD": "key secret"} if distribution else {}
@@ -72,7 +83,9 @@ class AndroidBuildTest(unittest.TestCase):
                 self.assertEqual(manifest.find("application").get(android + "debuggable"), str(not release).lower())
                 apk = root / f"target/android/markview-android-{profile}.apk"
                 with zipfile.ZipFile(apk) as archive:
-                    self.assertEqual(set(archive.namelist()), {"classes.dex", "lib/arm64-v8a/libmarkview.so", "lib/x86_64/libmarkview.so"})
+                    self.assertEqual(set(archive.namelist()), {"classes.dex"} | {f"lib/{abi}/libmarkview.so" for abi in expected_abis})
+                targets = {args[args.index("--target") + 1] for args in commands if args[0] == "cargo"}
+                self.assertEqual(targets, {build.TARGETS[abi] for abi in expected_abis})
                 sign = next(args for args in commands if Path(args[0]).name == "apksigner" and args[1] == "sign")
                 self.assertEqual(sign[sign.index("--ks") + 1], str(key) if distribution else str(root / "target/android/debug.keystore"))
                 self.assertEqual(sign[sign.index("--ks-key-alias") + 1], "distribution" if distribution else "androiddebugkey")

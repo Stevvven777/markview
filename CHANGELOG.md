@@ -31,7 +31,7 @@ at the same level, without `[brackets]`.
 
 - Add a localized Android “Read in Markview” open/share entry for Markdown files, including generic attachments and URI shares supplied through `ClipData`.
 
-- Run Android phone, tablet and sw600dp boundary integration tests in GitHub Actions, and attach signed universal APKs and checksums to releases.
+- Run Android phone, tablet and sw600dp boundary integration tests in GitHub Actions, and attach signed APKs and checksums to releases.
 
 - Open the phone Tabs Drawer with a right swipe and right-side Contents with a left swipe on any touchscreen, including tablets and desktop computers.
 
@@ -47,6 +47,8 @@ at the same level, without `[brackets]`.
 - Add connected rounded tabs alongside underlined tabs, selectable in general settings without document reflow.
 
 ### Changed
+
+- Package Android release APKs for ARM64 only to reduce download size; retain ARM64 and x86_64 debug builds and x86_64 KVM emulator tests.
 
 - Reduce phone list indentation and quotation/table padding across bundled reader themes.
 

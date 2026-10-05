@@ -96,7 +96,9 @@ adb install -r target/android/markview-android-debug.apk
 
 `ANDROID_NDK_HOME` overrides the NDK location. If `ANDROID_HOME` is absent, the
 script uses `.tools/android-sdk` in the repository. `--abi arm64-v8a` and
-`--abi x86_64` build one architecture; the default APK contains both. Native
+`--abi x86_64` build one architecture; debug APKs contain both by default, while
+release APKs default to ARM64 (`arm64-v8a`, aarch64). `--abi all` includes both
+architectures in either build profile for testing. Native
 libraries and APK entries are aligned for 16 KiB pages.
 
 `--release` enables Rust optimizations, disables Android debugging and writes
@@ -130,7 +132,7 @@ screenshots and logcat, including on failure. Android must pass for `ci` to pass
 The existing cargo-dist Release workflow runs the same Android tests before
 publication and calls [Android release package](../.github/workflows/android-release.yml)
 through Packaging. A successful version-tag release includes
-`markview-<version>-android.apk` (ARM64 and x86_64) and
+`markview-<version>-android.apk` (ARM64 only) and
 `markview-android-SHA256SUMS`, with an Android row in the download table.
 The Release workflow's run number supplies the APK version code; retain that
 workflow's counter so later APKs can upgrade earlier installations.

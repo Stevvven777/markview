@@ -20,12 +20,13 @@ def run(*args, env=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--abi", choices=[*TARGETS, "all"], default="all")
+    parser.add_argument("--abi", choices=[*TARGETS, "all"], help="APK architectures (default: arm64-v8a for release, all for debug)")
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--version-code", type=int, default=1)
     parser.add_argument("--keystore", type=Path, help="Release keystore; passwords come from ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_PASSWORD")
     parser.add_argument("--key-alias", default="markview")
     args = parser.parse_args()
+    selected_abi = args.abi or ("arm64-v8a" if args.release else "all")
     if not 1 <= args.version_code <= 2100000000:
         parser.error("--version-code must be between 1 and 2100000000")
     if args.keystore:
@@ -48,7 +49,7 @@ def main():
     fcntl.flock(lock, fcntl.LOCK_EX)
     libs = {}
     profile = "release" if args.release else "debug"
-    for abi in TARGETS if args.abi == "all" else [args.abi]:
+    for abi in TARGETS if selected_abi == "all" else [selected_abi]:
         target = TARGETS[abi]
         clang = llvm / f"{target}28-clang"
         env = dict(os.environ)

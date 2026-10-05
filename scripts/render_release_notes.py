@@ -40,7 +40,7 @@ def render(plan, release):
         ),
         (
             f"markview-{version}-android.apk",
-            "Android 9+ (ARM64 / x86_64)",
+            "Android 9+ (ARM64)",
             "markview-android-SHA256SUMS",
         ),
     ]
