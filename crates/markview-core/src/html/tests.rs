@@ -153,6 +153,47 @@ fn malformed_markup_is_readable_and_never_panics() {
 }
 
 #[test]
+fn tag_scanning_skips_html_comments() {
+	for comment in ["<!-- <div> -->", "<!-- x > <div> -->", "<!-- </div> -->"] {
+		let source = format!("{comment}<p>a</p>");
+		let found: Vec<&str> = tags(&source)
+			.map(|(start, len)| &source[start..start + len])
+			.collect();
+		assert_eq!(found, ["<p>", "</p>"], "{comment}");
+	}
+	// An unclosed comment swallows the rest of the block.
+	assert!(tags("<!-- <div>").next().is_none());
+}
+
+#[test]
+fn tag_scanning_skips_opaque_element_contents() {
+	for body in [
+		"<script></div></script>",
+		"<style><div></style>",
+		"<pre></div></pre>",
+		"<textarea></div></textarea>",
+		"<title></div></title>",
+		"<svg></div></svg>",
+		"<math></div></math>",
+	] {
+		let source = format!("{body}<p>a</p>");
+		let found: Vec<&str> = tags(&source)
+			.map(|(start, len)| &source[start..start + len])
+			.collect();
+		assert_eq!(found, ["<p>", "</p>"], "{body}");
+	}
+	// An unclosed opaque element swallows the rest of the block.
+	assert!(tags("<pre></div>").next().is_none());
+}
+
+#[test]
+fn a_stray_close_does_not_close_a_later_container() {
+	assert!(!has_open_container("</div>\n"));
+	assert!(has_open_container("</div>\n\n<div>\n"));
+	assert!(has_open_container("<details>\n"));
+}
+
+#[test]
 fn details_close_matches_nested_elements() {
 	let Details::Inline { body, rest, .. } = details(
 		"<details><summary>Outer</summary>\
@@ -221,18 +262,18 @@ fn odd_details_openers_never_panic() {
 fn close_tag_counts_tags_that_share_a_block() {
 	let source = "</details>\n</details>\n";
 	// The first close leaves one element open; the second one closes it.
-	let (depth, close) = close_tag(source, 2);
+	let (depth, close) = close_tag(source, 2, "details");
 	assert_eq!(depth, 0);
 	let close = close.expect("the outer close");
 	assert_eq!(close.start, source.rfind("</details>").unwrap());
 	assert_eq!(&source[close], "</details>");
 	// Starting one element lower, the first tag is the match.
-	let (depth, close) = close_tag(source, 1);
+	let (depth, close) = close_tag(source, 1, "details");
 	assert_eq!(depth, 0);
 	assert_eq!(close.map(|range| range.start), Some(0));
 	// An unbalanced block reports what is still open and no match.
-	assert_eq!(close_tag("</details>\n", 2).0, 1);
-	assert!(close_tag("<details>\n", 1).1.is_none());
+	assert_eq!(close_tag("</details>\n", 2, "details").0, 1);
+	assert!(close_tag("<details>\n", 1, "details").1.is_none());
 }
 
 #[test]

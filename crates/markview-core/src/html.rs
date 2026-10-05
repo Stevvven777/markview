@@ -7,6 +7,26 @@
 //! the existing fallback: the raw source is shown as code. Complete SVG
 //! elements become atomic host-decoded images.
 
+use std::collections::HashMap;
+
+/// Block-level HTML tags whose multi-block form only groups Markdown
+/// content. The group has no visual semantics of its own, so its children
+/// render in place.
+pub(crate) const TRANSPARENT_TAGS: &[&str] = &[
+	"address",
+	"article",
+	"aside",
+	"div",
+	"figcaption",
+	"figure",
+	"footer",
+	"header",
+	"main",
+	"nav",
+	"p",
+	"section",
+];
+
 /// One style delta carried by a supported tag.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Patch {
@@ -127,7 +147,7 @@ pub fn details(source: &str) -> Details {
 	};
 	// The element itself is open; nested openers in the lead are already open
 	// too, so the closing scan must start from that depth.
-	let (depth, close) = close_tag(lead, 1);
+	let (depth, close) = close_tag(lead, 1, "details");
 	match close {
 		Some(close) => Details::Inline {
 			open,
@@ -154,7 +174,7 @@ pub fn inline_details_range(source: &str) -> Option<std::ops::Range<usize>> {
 	}
 	let rest = &text[len..];
 	let lead = summary_at(rest).map_or(rest, |(_, after)| after);
-	let (_, close) = close_tag(lead, 1);
+	let (_, close) = close_tag(lead, 1, "details");
 	let start = source.len() - text.len();
 	let end = source.len() - lead.len() + close?.end;
 	Some(start..end)
@@ -166,6 +186,40 @@ pub(crate) fn details_content_start(source: &str) -> usize {
 	let rest = &text[tag_len(text).unwrap()..];
 	let lead = summary_at(rest).map_or(rest, |(_, after)| after);
 	lead.as_ptr() as usize - source.as_ptr() as usize
+}
+
+/// The name of the block-level opening tag in `source`, when the block
+/// holds nothing but that tag and its name is one of `names`. A complete
+/// element, body text after the tag, or a self-closing tag all return
+/// `None`.
+pub(crate) fn opening_tag(source: &str, names: &[&str]) -> Option<String> {
+	let text = source.trim();
+	let len = tag_len(text)?;
+	let (name, attrs, closing) = tag_parts(&text[..len])?;
+	if closing
+		|| attrs.trim_end().ends_with('/')
+		|| !text[len..].trim().is_empty()
+		|| !names.contains(&name.as_str())
+	{
+		return None;
+	}
+	Some(name)
+}
+
+/// Every opening or closing tag of a transparent grouping container in
+/// `source`, in order, as `(name, closing, range)`.
+pub(crate) fn transparent_tags(
+	source: &str,
+) -> impl Iterator<Item = (String, bool, std::ops::Range<usize>)> + '_ {
+	tags(source).filter_map(move |(start, len)| {
+		let (name, attrs, closing) = tag_parts(&source[start..start + len])?;
+		if attrs.trim_end().ends_with('/')
+			|| !TRANSPARENT_TAGS.contains(&name.as_str())
+		{
+			return None;
+		}
+		Some((name, closing, start..start + len))
+	})
 }
 
 /// The name, remaining attributes and closing flag of one `<...>` tag.
@@ -184,14 +238,71 @@ fn tag_parts(tag: &str) -> Option<(String, &str, bool)> {
 	Some((name.to_ascii_lowercase(), &body[name.len()..], closing))
 }
 
-/// Every `<...>` tag in `source`, as `(start, length)`.
+/// Elements whose content is not markup for the reader: raw text, RCDATA,
+/// foreign content, and `<pre>`, which the reader shows as literal source.
+const OPAQUE_ELEMENTS: &[&str] =
+	&["math", "pre", "script", "style", "svg", "textarea", "title"];
+
+/// Opaque elements whose content ends at the first matching close tag.
+const RAW_ELEMENTS: &[&str] = &["script", "style", "textarea", "title"];
+
+/// The offset just past the opaque element `name` whose opening tag ends
+/// at `start`, when `name` is opaque. An unclosed element is skipped to
+/// the end of `source`.
+fn opaque_end(source: &str, start: usize, name: &str) -> Option<usize> {
+	if RAW_ELEMENTS.contains(&name) {
+		return Some(raw_end(source, start, name));
+	}
+	if OPAQUE_ELEMENTS.contains(&name) {
+		return Some(enclosed_end(source, start, name).unwrap_or(source.len()));
+	}
+	None
+}
+
+/// The offset just past the first `</name>` at or after `start`, or the
+/// end of `source` when the element never closes.
+fn raw_end(source: &str, start: usize, name: &str) -> usize {
+	let mut at = start;
+	while let Some(found) = source[at..].find("</") {
+		let found = at + found;
+		let rest = &source[found..];
+		if let Some(len) = tag_len(rest)
+			&& let Some((tag, _, closing)) = tag_parts(&rest[..len])
+			&& closing
+			&& tag == name
+		{
+			return found + len;
+		}
+		at = found + 2;
+	}
+	source.len()
+}
+
+/// Every `<...>` tag in `source`, as `(start, length)`. A tag written
+/// inside an HTML comment is not markup and is skipped.
 fn tags(source: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
 	let mut at = 0;
 	std::iter::from_fn(move || {
 		while at < source.len() {
 			let open = source[at..].find('<')? + at;
-			match tag_len(&source[open..]) {
+			let rest = &source[open..];
+			if let Some(body) = rest.strip_prefix("<!--") {
+				at = match body.find("-->") {
+					Some(end) => open + "<!--".len() + end + "-->".len(),
+					None => source.len(),
+				};
+				continue;
+			}
+			match tag_len(rest) {
 				Some(len) => {
+					if let Some((name, attrs, closing)) =
+						tag_parts(&rest[..len])
+						&& !closing && !attrs.trim_end().ends_with('/')
+						&& let Some(end) = opaque_end(source, open + len, &name)
+					{
+						at = end;
+						continue;
+					}
 					at = open + len;
 					return Some((open, len));
 				}
@@ -241,13 +352,14 @@ fn summary_at(source: &str) -> Option<(&str, &str)> {
 	None
 }
 
-/// Scans one raw HTML block for the `</details>` tag that closes the element
-/// opened before it. `depth` is how many elements are already open, so tags
-/// that share a block are counted individually. Returns the depth left open
-/// and, when the element closes inside the block, the closing tag's range.
+/// Scans one raw HTML block for the `tag` that closes the element opened
+/// before it. `depth` is how many elements are already open, so tags that
+/// share a block are counted individually. Returns the depth left open and,
+/// when the element closes inside the block, the closing tag's range.
 pub fn close_tag(
 	source: &str,
 	mut depth: usize,
+	tag: &str,
 ) -> (usize, Option<std::ops::Range<usize>>) {
 	for (start, len) in tags(source) {
 		let Some((name, attrs, closing)) =
@@ -255,7 +367,7 @@ pub fn close_tag(
 		else {
 			continue;
 		};
-		if name != "details" || attrs.trim_end().ends_with('/') {
+		if name.as_str() != tag || attrs.trim_end().ends_with('/') {
 			continue;
 		}
 		if closing {
@@ -270,24 +382,30 @@ pub fn close_tag(
 	(depth, None)
 }
 
-/// Whether the source leaves a `<details>` opener without a closing tag.
-pub fn has_open_details(source: &str) -> bool {
-	let mut depth = 0usize;
+/// Whether `source` leaves a supported block container open. `<details>`
+/// and the transparent grouping tags both span ordinary Markdown blocks,
+/// so a prefix that cuts one open cannot be parsed on its own.
+pub(crate) fn has_open_container(source: &str) -> bool {
+	let mut open: HashMap<String, u32> = HashMap::new();
 	for (start, len) in tags(source) {
 		let Some((name, attrs, closing)) =
 			tag_parts(&source[start..start + len])
 		else {
 			continue;
 		};
-		if name == "details" && !attrs.trim_end().ends_with('/') {
-			depth = if closing {
-				depth.saturating_sub(1)
-			} else {
-				depth + 1
-			};
+		if attrs.trim_end().ends_with('/')
+			|| name != "details" && !TRANSPARENT_TAGS.contains(&name.as_str())
+		{
+			continue;
 		}
+		let depth = open.entry(name).or_insert(0);
+		*depth = if closing {
+			depth.saturating_sub(1)
+		} else {
+			depth.saturating_add(1)
+		};
 	}
-	depth > 0
+	open.values().any(|depth| *depth > 0)
 }
 
 /// Whether an attribute is present, with or without a value. `open` is the one
@@ -629,6 +747,39 @@ fn tokenize(source: &str) -> Vec<Token> {
 }
 
 /// One complete SVG element as an atomic, host-decoded image.
+/// The offset just past the matching close tag of one `name` element whose
+/// opening tag ends at `start`. Nested same-name elements are counted, and
+/// comments and CDATA are skipped. `None` when the element never closes.
+fn enclosed_end(source: &str, start: usize, name: &str) -> Option<usize> {
+	let mut depth = 1usize;
+	let mut at = start;
+	while depth > 0 {
+		let open = source[at..].find('<')? + at;
+		let rest = &source[open..];
+		if let Some(body) = rest.strip_prefix("<!--") {
+			at = open + "<!--".len() + body.find("-->")? + "-->".len();
+			continue;
+		}
+		if let Some(body) = rest.strip_prefix("<![CDATA[") {
+			at = open + "<![CDATA[".len() + body.find("]]>")? + "]]>".len();
+			continue;
+		}
+		let end = open + tag_len(rest)?;
+		if let Some((tag, attrs, closing)) = tag_parts(&source[open..end])
+			&& tag == name
+			&& !attrs.trim_end().ends_with('/')
+		{
+			if closing {
+				depth -= 1;
+			} else {
+				depth += 1;
+			}
+		}
+		at = end;
+	}
+	Some(at)
+}
+
 pub(crate) fn svg_len(source: &str) -> Option<usize> {
 	if !source.starts_with('<') {
 		return None;
@@ -638,31 +789,10 @@ pub(crate) fn svg_len(source: &str) -> Option<usize> {
 	if name != "svg" || closing {
 		return None;
 	}
-	let mut depth = usize::from(!attrs.trim_end().ends_with('/'));
-	let mut end = first;
-	while depth > 0 {
-		let open = source[end..].find('<')? + end;
-		let rest = &source[open..];
-		if rest.starts_with("<!--") {
-			end = open + rest.find("-->")? + 3;
-			continue;
-		}
-		if rest.starts_with("<![CDATA[") {
-			end = open + rest.find("]]>")? + 3;
-			continue;
-		}
-		end = open + tag_len(rest)?;
-		if let Some((name, attrs, closing)) = tag_parts(&source[open..end])
-			&& name == "svg"
-		{
-			if closing {
-				depth -= 1;
-			} else if !attrs.trim_end().ends_with('/') {
-				depth += 1;
-			}
-		}
+	if attrs.trim_end().ends_with('/') {
+		return Some(first);
 	}
-	Some(end)
+	enclosed_end(source, first, "svg")
 }
 
 pub(crate) fn svg(source: &str) -> Option<(usize, crate::image::ImageSpec)> {

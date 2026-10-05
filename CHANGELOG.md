@@ -45,6 +45,7 @@ at the same level, without `[brackets]`.
 - Add configurable text and inline background edges with local-em baseline shifts, shared by reader and PDF typography.
 - Integrate tabs into platform-style window chrome, with a persisted System, macOS, Windows or Linux layout choice and native window movement and resizing.
 - Add connected rounded tabs alongside underlined tabs, selectable in general settings without document reflow.
+- Render multi-block grouping HTML tags such as `<div>` and `<section>` as transparent containers, laying out their already-parsed Markdown body in place instead of showing the raw source.
 
 ### Changed
 

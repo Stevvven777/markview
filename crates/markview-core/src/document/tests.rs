@@ -78,6 +78,74 @@ fn unsupported_html_keeps_the_source() {
 	};
 	assert!(plain_text(p).contains("<span>s</span>"));
 }
+
+#[test]
+fn a_transparent_container_renders_its_markdown_body_in_place() {
+	let doc = parse("<div>\n\n**Hello**\n\n</div>\n");
+	assert_eq!(doc.blocks.len(), 1);
+	let BlockKind::Paragraph(text) = &doc.blocks[0].kind else {
+		panic!("expected a paragraph")
+	};
+	assert!(text.iter().any(|t| t.style.bold));
+	assert_eq!(plain_text(text), "Hello");
+	// The body keeps its own range; the group adds nothing.
+	let start = doc.source.find("**Hello**").unwrap();
+	assert_eq!(doc.blocks[0].source, start..start + "**Hello**".len());
+}
+
+#[test]
+fn transparent_containers_nest_and_resolve_document_references() {
+	let doc = parse(
+		"<div>\n\n<section>\n\n[link][ref]\n\n</section>\n\n</div>\n\n[ref]: https://example.com\n",
+	);
+	assert_eq!(doc.blocks.len(), 1);
+	let BlockKind::Paragraph(text) = &doc.blocks[0].kind else {
+		panic!("expected a paragraph")
+	};
+	assert!(
+		text.iter()
+			.any(|i| i.style.link.as_deref() == Some("https://example.com"))
+	);
+}
+
+#[test]
+fn an_unclosed_transparent_container_keeps_the_html_source() {
+	let doc = parse("<div>\n\nBody\n");
+	assert!(matches!(
+		&doc.blocks[0].kind,
+		BlockKind::Code { language, text }
+			if language == "HTML source" && text.contains("<div>")
+	));
+	let BlockKind::Paragraph(body) = &doc.blocks[1].kind else {
+		panic!("expected the body paragraph")
+	};
+	assert_eq!(plain_text(body), "Body");
+}
+
+#[test]
+fn a_single_block_transparent_tag_keeps_the_html_source() {
+	let doc = parse("<div>raw</div>\n");
+	assert!(matches!(
+		&doc.blocks[0].kind,
+		BlockKind::Code { language, text }
+			if language == "HTML source" && text.contains("raw")
+	));
+}
+
+#[test]
+fn a_quoted_transparent_container_is_not_quoted_again() {
+	let doc = parse("> <div>\n>\n> Body\n>\n> </div>\n");
+	assert_eq!(doc.blocks.len(), 1);
+	let BlockKind::Quote { blocks, .. } = &doc.blocks[0].kind else {
+		panic!("expected the enclosing quote")
+	};
+	assert_eq!(blocks.len(), 1);
+	let BlockKind::Paragraph(body) = &blocks[0].kind else {
+		panic!("expected the body paragraph")
+	};
+	assert_eq!(plain_text(body), "Body");
+}
+
 #[test]
 fn deeply_nested_emphasis_is_bounded_and_keeps_the_text() {
 	// Regression for a 12 KB document that used to abort the process: comrak
@@ -1825,6 +1893,108 @@ fn a_prefix_never_cuts_through_front_matter() {
 	let full = parse(source.as_ref());
 	let prefix = parse_prefix(&source, 5).expect("a prefix past the closer");
 	assert_eq!(prefix.blocks, full.blocks);
+}
+
+#[test]
+fn a_prefix_never_cuts_through_an_open_container() {
+	// The full parse drops the opener into a transparent container, so a
+	// prefix that ends inside it would show the raw `<div>` block instead.
+	let source: Arc<str> = Arc::from("<div>\n\nHello\n\nWorld\n\n</div>\n");
+	assert!(parse_prefix(&source, 10).is_none());
+	assert!(parse_prefix(&source, 15).is_none());
+	let full = parse(source.as_ref());
+	let prefix = parse_prefix(&source, source.len() - 1)
+		.expect("a prefix past the closer");
+	assert_eq!(prefix.blocks, full.blocks);
+}
+
+#[test]
+fn a_stray_container_close_does_not_hide_a_later_opener() {
+	// The stray `</div>` must not drive the open depth below zero, or the
+	// prefix guard lets a cut inside the real container publish raw HTML.
+	let source: Arc<str> =
+		Arc::from("</div>\n\n<div>\n\nHello\n\nWorld\n\n</div>\n");
+	assert!(parse_prefix(&source, 15).is_none());
+	let full = parse(source.as_ref());
+	assert_eq!(full.blocks.len(), 3);
+	let prefix = parse_prefix(&source, source.len() - 1)
+		.expect("a prefix past the closer");
+	assert_eq!(prefix.blocks, full.blocks);
+}
+
+#[test]
+fn a_commented_container_tag_is_not_markup() {
+	// A tag inside an HTML comment must not open or close the real
+	// container, which would otherwise steal the wrapper's closer.
+	for body in ["<!-- <div> -->", "<!-- </div> -->"] {
+		let doc = parse(format!("<div>\n\n{body}\n\nHello\n\n</div>\n"));
+		assert_eq!(doc.blocks.len(), 1);
+		let BlockKind::Paragraph(text) = &doc.blocks[0].kind else {
+			panic!("expected the body paragraph")
+		};
+		assert_eq!(plain_text(text), "Hello");
+	}
+}
+
+#[test]
+fn opaque_elements_hide_their_contents_from_container_matching() {
+	// A container tag written inside raw text, RCDATA, foreign content
+	// or `<pre>` is not markup, so it must not close the real container.
+	for body in [
+		"<script></div></script>",
+		"<style><div></style>",
+		"<pre></div></pre>",
+		"<textarea></div></textarea>",
+		"<title></div></title>",
+	] {
+		let doc = parse(format!("<div>\n\n{body}\n\nHello\n\n</div>\n"));
+		assert!(
+			!doc.blocks.iter().any(|b| matches!(
+				&b.kind,
+				BlockKind::Code { text, .. } if text.trim() == "<div>"
+			)),
+			"{body}: the outer container fell back to source"
+		);
+		assert!(
+			doc.blocks.iter().any(|b| matches!(
+				&b.kind,
+				BlockKind::Paragraph(t) if plain_text(t) == "Hello"
+			)),
+			"{body}: the body is missing"
+		);
+	}
+	// The same skip keeps a `<details>` element open.
+	let doc = parse(
+		"<details>\n<summary>S</summary>\n\n<script></details></script>\n\nBody\n\n</details>\n",
+	);
+	assert_eq!(doc.blocks.len(), 1);
+	let BlockKind::Details { blocks, .. } = &doc.blocks[0].kind else {
+		panic!("expected the details element")
+	};
+	assert!(blocks.iter().any(|b| matches!(
+		&b.kind,
+		BlockKind::Paragraph(t) if plain_text(t) == "Body"
+	)));
+}
+
+#[test]
+fn unmatched_container_openers_keep_the_html_source() {
+	// No closer follows either opener, so both stay literal and the text
+	// between them still renders.
+	let doc = parse("<div>\n\n<div>\n\nText\n");
+	assert_eq!(doc.blocks.len(), 3);
+	assert!(matches!(
+		&doc.blocks[0].kind,
+		BlockKind::Code { language, .. } if language == "HTML source"
+	));
+	assert!(matches!(
+		&doc.blocks[1].kind,
+		BlockKind::Code { language, .. } if language == "HTML source"
+	));
+	let BlockKind::Paragraph(text) = &doc.blocks[2].kind else {
+		panic!("expected the body paragraph")
+	};
+	assert_eq!(plain_text(text), "Text");
 }
 
 #[test]

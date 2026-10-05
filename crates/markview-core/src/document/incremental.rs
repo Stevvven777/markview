@@ -541,7 +541,7 @@ fn front_matter_close(source: &str) -> Option<usize> {
 fn ends_in_open_html(source: &str) -> bool {
 	// A `<details>` inside a code span or fence is literal text, not HTML.
 	let masked = mask_code(source);
-	if crate::html::has_open_details(&masked) {
+	if crate::html::has_open_container(&masked) {
 		return true;
 	}
 	for range in line_ranges(&masked).iter().rev() {

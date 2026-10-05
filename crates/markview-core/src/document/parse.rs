@@ -17,6 +17,7 @@ use super::{
 	RichText, TextStyle, content_identity, fingerprint, front_matter,
 	incremental, plain_text, semantic_key,
 };
+
 struct Reader<'s> {
 	source: &'s str,
 	lines: Vec<usize>,
@@ -305,7 +306,8 @@ impl Reader<'_> {
 		depth: usize,
 	) -> Vec<Block> {
 		let children: Vec<&'a AstNode<'a>> = node.children().collect();
-		self.sequence(&children, depth)
+		let matches = container_matches(&children);
+		self.sequence(&children, depth, &matches, 0)
 	}
 
 	/// One sibling list. A `<details>` element may span several siblings, so
@@ -314,11 +316,19 @@ impl Reader<'_> {
 		&mut self,
 		children: &[&'a AstNode<'a>],
 		depth: usize,
+		matches: &Matches,
+		base: usize,
 	) -> Vec<Block> {
 		let mut blocks = Vec::new();
 		let mut i = 0;
 		while i < children.len() {
 			if let Some(consumed) = self.svg(children, i, depth, &mut blocks) {
+				i += consumed;
+				continue;
+			}
+			if let Some(consumed) =
+				self.transparent(children, i, depth, &mut blocks, matches, base)
+			{
 				i += consumed;
 				continue;
 			}
@@ -626,6 +636,54 @@ impl Reader<'_> {
 		}
 	}
 
+	/// Consumes a multi-block transparent container that starts at
+	/// `children[start]`. The body is the already-parsed sibling Markdown
+	/// between the opener and the closing tag, so it renders in place without
+	/// re-parsing. `None` keeps the raw-HTML fallback when either tag is not
+	/// a clean block of its own.
+	fn transparent<'a>(
+		&mut self,
+		children: &[&'a AstNode<'a>],
+		start: usize,
+		depth: usize,
+		out: &mut Vec<Block>,
+		matches: &Matches,
+		base: usize,
+	) -> Option<usize> {
+		if depth >= self.limits.block_depth {
+			return None;
+		}
+		let literal = match &children[start].data.borrow().value {
+			NodeValue::HtmlBlock(h) => h.literal.clone(),
+			_ => return None,
+		};
+		html::opening_tag(&literal, html::TRANSPARENT_TAGS)?;
+		let matched = matches.close.get(base + start)?;
+		let (close, range) = (*matched).clone()?;
+		if close <= base + start || close >= base + children.len() {
+			return None;
+		}
+		let close = close - base;
+		let close_literal = match &children[close].data.borrow().value {
+			NodeValue::HtmlBlock(h) => h.literal.clone(),
+			_ => return None,
+		};
+		// A closer block with raw text around the tag would lose that source.
+		if !close_literal[..range.start].trim().is_empty()
+			|| !close_literal[range.end..].trim().is_empty()
+		{
+			return None;
+		}
+		let body = self.sequence(
+			&children[start + 1..close],
+			depth + 1,
+			matches,
+			base + start + 1,
+		);
+		out.extend(body);
+		Some(close - start + 1)
+	}
+
 	/// Consumes a `<details>` element that starts at `children[start]`, when
 	/// the whole element is present. Appends one block and returns how many
 	/// siblings it owns; `None` leaves the opener as ordinary raw HTML.
@@ -719,7 +777,7 @@ impl Reader<'_> {
 				depth: open_depth,
 			} => {
 				let (close, tag, close_depth) =
-					details_close(children, start, open_depth)?;
+					element_close(children, start, open_depth, "details")?;
 				let start_source = self.range(children[start]);
 				let close_source = self.range(children[close]);
 				let markers = container_markers(children[start]);
@@ -728,7 +786,7 @@ impl Reader<'_> {
 					&markers,
 				);
 				let (_, source_tag) =
-					html::close_tag(&original.text, close_depth);
+					html::close_tag(&original.text, close_depth, "details");
 				let tag_end =
 					close_source.start + original.range(source_tag?).end;
 				// The body is the source between the opener and the closing
@@ -1040,24 +1098,55 @@ enum Child {
 	Flatten,
 }
 
-/// The sibling where an opening element's `</details>` appears, as its index
-/// and the closing tag's byte range within that sibling's literal, together
-/// with the depth entering that sibling. Tags are
-/// counted individually, so a block that carries several closing tags closes
-/// several elements. `depth` is how many elements the opening block already
-/// left open, so an inner opener there does not match the outer close. `None`
+/// The closer of every transparent container opener in one sibling list,
+/// indexed by the opener's position. One pass fills it, so a run of
+/// unmatched openers does not rescan the tail once per opener.
+struct Matches {
+	close: Vec<Option<(usize, Range<usize>)>>,
+}
+
+fn container_matches<'a>(children: &[&'a AstNode<'a>]) -> Matches {
+	let mut close = vec![None; children.len()];
+	let mut stacks: HashMap<String, Vec<usize>> = HashMap::new();
+	for (i, child) in children.iter().enumerate() {
+		let data = child.data.borrow();
+		let NodeValue::HtmlBlock(h) = &data.value else {
+			continue;
+		};
+		for (name, closing, range) in html::transparent_tags(&h.literal) {
+			if closing {
+				if let Some(stack) = stacks.get_mut(&name)
+					&& let Some(opener) = stack.pop()
+				{
+					close[opener] = Some((i, range));
+				}
+			} else {
+				stacks.entry(name).or_default().push(i);
+			}
+		}
+	}
+	Matches { close }
+}
+
+/// The sibling where an opening element's closing `name` tag appears, as its
+/// index and the closing tag's byte range within that sibling's literal,
+/// together with the depth entering that sibling. Tags are counted
+/// individually, so a block that carries several closing tags closes several
+/// elements. `depth` is how many elements the opening block already left
+/// open, so an inner opener there does not match the outer close. `None`
 /// leaves the opener as literal source.
-fn details_close<'a>(
+fn element_close<'a>(
 	children: &[&'a AstNode<'a>],
 	start: usize,
 	mut depth: usize,
+	name: &str,
 ) -> Option<(usize, Range<usize>, usize)> {
 	for (i, child) in children.iter().enumerate().skip(start + 1) {
 		let data = child.data.borrow();
 		let NodeValue::HtmlBlock(h) = &data.value else {
 			continue;
 		};
-		let (next, close) = html::close_tag(&h.literal, depth);
+		let (next, close) = html::close_tag(&h.literal, depth, name);
 		if let Some(range) = close {
 			return Some((i, range, depth));
 		}
