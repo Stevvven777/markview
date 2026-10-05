@@ -242,12 +242,22 @@ impl<P: super::SendEvent> App<P> {
 				self.close_tab(index);
 				return;
 			}
-			Command::SingleInstance => {
-				self.preferences.values.single_instance =
-					!self.preferences.values.single_instance;
+			Command::SingleInstance | Command::RestoreSession => {
+				if action == Command::RestoreSession {
+					self.preferences.values.restore_session =
+						!self.preferences.values.restore_session;
+					self.preferences.values.single_instance |=
+						self.preferences.values.restore_session;
+				} else {
+					self.preferences.values.single_instance =
+						!self.preferences.values.single_instance;
+					self.preferences.values.restore_session &=
+						self.preferences.values.single_instance;
+				}
+				self.setting_changed(Some(Setting::RestoreSession));
 				self.setting_changed(Some(Setting::SingleInstance));
+				self.sync_session_settings();
 				self.flush_settings();
-				self.register_instance();
 				self.redraw();
 				return;
 			}
@@ -610,6 +620,9 @@ impl<P: super::SendEvent> App<P> {
 			_ => None,
 		};
 		self.setting_changed(field);
+		if field.is_none() {
+			self.sync_session_settings();
+		}
 		self.request(false);
 		self.redraw();
 	}
@@ -702,6 +715,7 @@ impl<P: super::SendEvent> App<P> {
 		let (x, y) = self.interaction.cursor;
 		match drag.target {
 			ScrollbarAxis::Document => {
+				self.readers.session.saved_reading = None;
 				if let Some(bar) = self.document_scrollbar() {
 					// The thumb follows the pointer; nothing eases under a drag.
 					self.readers.session.cancel_scroll_animation();
@@ -844,7 +858,7 @@ impl<P: super::SendEvent> App<P> {
 		for field in &self.args.overrides {
 			self.preferences.values.copy_field(&previous, *field);
 		}
-		self.register_instance();
+		self.sync_session_settings();
 		self.reload_styles();
 		if self.options() != options
 			&& self.readers.session.requested_options.as_ref()

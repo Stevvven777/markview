@@ -267,3 +267,5 @@ settings_tab_style = "Tab style"
 settings_tabs_underline = "Underline"
 settings_tabs_connected = "Connected"
 settings_window_layout = "Window layout"
+
+settings_restore_session = "Keep last browsing session"

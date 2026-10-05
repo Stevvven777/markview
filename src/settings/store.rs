@@ -104,6 +104,8 @@ struct Config {
 	scroll_speed: f32,
 	#[serde(rename = "single-instance")]
 	single_instance: bool,
+	#[serde(rename = "restore-session")]
+	restore_session: bool,
 	/// The reader's export preferences, kept apart from the reading view.
 	export: ExportSettings,
 }
@@ -129,6 +131,7 @@ impl Default for Config {
 			codeblock_wrap: settings.codeblock_wrap,
 			scroll_speed: settings.scroll_speed,
 			single_instance: settings.single_instance,
+			restore_session: settings.restore_session,
 			export: ExportSettings::default(),
 		}
 	}
@@ -175,7 +178,8 @@ impl Config {
 			codeblock_theme_override: self.codeblock_theme_override.clone(),
 			codeblock_wrap: self.codeblock_wrap,
 			scroll_speed: self.scroll_speed,
-			single_instance: self.single_instance,
+			single_instance: self.single_instance || self.restore_session,
+			restore_session: self.restore_session,
 			..Default::default()
 		}
 	}
@@ -307,6 +311,7 @@ impl SettingsStore {
 		for field in &self.pending {
 			next.saved.copy_field(&self.saved, *field);
 		}
+		next.saved.single_instance |= next.saved.restore_session;
 		next.pending = self.pending.clone();
 		next.dirty = self.dirty;
 		*self = next;
@@ -404,6 +409,7 @@ impl SettingsStore {
 					Setting::CodeblockWrap,
 					Setting::ScrollSpeed,
 					Setting::SingleInstance,
+					Setting::RestoreSession,
 					Setting::FontFamily,
 				];
 				self.saved = effective.clone();
@@ -460,6 +466,7 @@ impl SettingsStore {
 			codeblock_wrap: self.saved.codeblock_wrap,
 			scroll_speed: self.saved.scroll_speed,
 			single_instance: self.saved.single_instance,
+			restore_session: self.saved.restore_session,
 			export: self.saved_export.clone(),
 		};
 		let mut values = toml_edit::ser::to_document(&config)?;

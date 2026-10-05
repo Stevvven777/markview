@@ -24,6 +24,23 @@ pub(super) enum Closed {
 	Active,
 }
 impl Tabs {
+	pub(super) fn restore_tab(
+		&mut self,
+		path: PathBuf,
+		reading: super::session::Reading,
+	) -> usize {
+		let mut tab = ReaderTab::new(path.clone());
+		tab.session.path = Some(path);
+		tab.session.content_version = 1;
+		tab.session.details_open = std::sync::Arc::new(reading.details.clone());
+		tab.session.saved_reading = Some(reading);
+		self.entries.push(tab);
+		if self.entries.len() == 1 {
+			self.session = std::mem::take(&mut self.entries[0].session);
+		}
+		self.entries.len() - 1
+	}
+
 	pub(super) fn entries(&self) -> &[ReaderTab] {
 		&self.entries
 	}
@@ -101,11 +118,17 @@ impl Tabs {
 		index: usize,
 		anchor: Option<String>,
 	) {
-		if index == self.active {
-			self.session.pending_anchor = anchor;
+		let session = if index == self.active {
+			&mut self.session
 		} else if let Some(tab) = self.entries.get_mut(index) {
-			tab.session.pending_anchor = anchor;
+			&mut tab.session
+		} else {
+			return;
+		};
+		if anchor.is_some() {
+			session.saved_reading = None;
 		}
+		session.pending_anchor = anchor;
 	}
 	pub(super) fn select(&mut self, index: usize, now: Instant) -> bool {
 		if index >= self.entries.len() || index == self.active {

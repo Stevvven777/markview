@@ -574,12 +574,15 @@ fn a_han_family_follows_a_change_of_cjk_variant() {
 }
 
 #[test]
-fn single_instance_defaults_off_and_survives_settings_merge() {
+fn single_instance_platform_default_and_settings_merge() {
 	let dir = tempfile::tempdir().unwrap();
 	let path = dir.path().join("settings.toml");
 	let (mut store, warning) = SettingsStore::load(Some(path.clone()));
 	assert!(warning.is_none());
-	assert!(!store.settings().single_instance);
+	assert_eq!(
+		store.settings().single_instance,
+		cfg!(target_os = "android")
+	);
 	store.ensure_file().unwrap();
 	let mut settings = store.settings();
 	settings.single_instance = true;
@@ -592,5 +595,50 @@ fn single_instance_defaults_off_and_survives_settings_merge() {
 	assert_eq!(loaded.settings().width, 900.0);
 	loaded.changed(&ReaderSettings::default(), None);
 	loaded.flush().unwrap();
-	assert!(!loaded.settings().single_instance);
+	assert_eq!(
+		loaded.settings().single_instance,
+		cfg!(target_os = "android")
+	);
+}
+
+#[test]
+fn restore_session_defaults_legacy_conflicts_reload_and_save() {
+	let defaults = ReaderSettings::default();
+	assert_eq!(defaults.restore_session, cfg!(target_os = "android"));
+	assert_eq!(defaults.single_instance, cfg!(target_os = "android"));
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("settings.toml");
+	std::fs::write(
+		&path,
+		"version = 1\nsingle-instance = false\nrestore-session = true\n",
+	)
+	.unwrap();
+	let (mut store, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	assert!(
+		store.settings().restore_session && store.settings().single_instance
+	);
+	store.changed(&store.settings(), Some(Setting::RestoreSession));
+	store.flush().unwrap();
+	assert!(
+		std::fs::read_to_string(&path)
+			.unwrap()
+			.contains("single-instance = true")
+	);
+	std::fs::write(
+		&path,
+		"version = 1\nsingle-instance = false\nrestore-session = true\nwidth = 500\n",
+	)
+	.unwrap();
+	assert!(store.reload().unwrap());
+	assert!(store.settings().single_instance);
+	std::fs::write(&path, "version = 1\n").unwrap();
+	assert!(store.reload().unwrap());
+	assert_eq!(store.settings().restore_session, defaults.restore_session);
+	store.changed(&defaults, None);
+	store.flush().unwrap();
+	assert_eq!(
+		SettingsStore::load(Some(path)).0.settings().restore_session,
+		defaults.restore_session
+	);
 }

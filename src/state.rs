@@ -41,6 +41,7 @@ pub(crate) enum Command {
 	Hyphens,
 	CodeWrap,
 	SingleInstance,
+	RestoreSession,
 	/// Step the reader's scroll-speed multiplier by whole steps.
 	ScrollSpeed(i8),
 	/// First-line paragraph indent in whole em units.
@@ -454,6 +455,7 @@ pub(crate) struct ReaderSession {
 	pub(crate) layout_pending: bool,
 	/// A heading anchor waiting for its heading to be laid out.
 	pub(crate) pending_anchor: Option<String>,
+	pub(crate) saved_reading: Option<crate::app::session::Reading>,
 	/// The internal fragment the reader last jumped to, with the scroll offset
 	/// it left, so a footnote's number can return to its reference.
 	pub(crate) jump_origin: Option<(String, f32)>,
@@ -912,6 +914,9 @@ impl ReaderSession {
 		reader: &crate::worker::ReaderSnapshot,
 		viewport: f32,
 	) -> bool {
+		if self.saved_reading.is_some() && !reader.parse_complete {
+			return false;
+		}
 		if reader.complete {
 			return true;
 		}
@@ -951,6 +956,7 @@ impl ReaderSession {
 	}
 	pub(crate) fn scroll_by(&mut self, dy: f32, viewport: f32) {
 		if dy != 0.0 {
+			self.saved_reading = None;
 			self.pending_anchor = None;
 			self.follow_update = false;
 		}
@@ -958,6 +964,7 @@ impl ReaderSession {
 	}
 	pub(crate) fn animate_scroll_by(&mut self, dy: f32, now: Instant) {
 		if dy != 0.0 {
+			self.saved_reading = None;
 			self.pending_anchor = None;
 			self.follow_update = false;
 		}
@@ -965,6 +972,7 @@ impl ReaderSession {
 	}
 	pub(crate) fn animate_wheel_by(&mut self, dy: f32, now: Instant) {
 		if dy != 0.0 {
+			self.saved_reading = None;
 			self.pending_anchor = None;
 			self.follow_update = false;
 		}
@@ -972,6 +980,7 @@ impl ReaderSession {
 	}
 	pub(crate) fn coast_wheel_by(&mut self, dy: f32, now: Instant) {
 		if dy != 0.0 {
+			self.saved_reading = None;
 			self.pending_anchor = None;
 			self.follow_update = false;
 		}
@@ -983,6 +992,7 @@ impl ReaderSession {
 		self.scrolling.wheel_stream_alive(now)
 	}
 	pub(crate) fn animate_scroll_to(&mut self, target: f32, now: Instant) {
+		self.saved_reading = None;
 		self.pending_anchor = None;
 		self.follow_update = false;
 		self.scrolling.animate_to(target, now);
@@ -1016,6 +1026,7 @@ impl ReaderSession {
 			+ viewport * 1.5
 	}
 	pub(crate) fn release_heavy(&mut self) {
+		self.saved_reading = Some(crate::app::session::Reading::capture(self));
 		self.counts = TextCounts::default();
 		self.snapshot = LayoutSnapshot::default();
 		self.snapshot_complete = false;
@@ -1129,6 +1140,7 @@ impl ReaderSession {
 		self.resolve_scroll(viewport);
 		self.accepted_revision = reader.content_version;
 		self.follow_update = false;
+		self.restore_reading(viewport);
 		self.horizontal.retain(|(bi, oi), offset| {
 			if changed {
 				return false;

@@ -111,10 +111,17 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 			}
 			self.reload_styles();
 			self.gpu()?;
-			if self.readers.session.path.is_none()
-				&& let Some(path) = self.args.path.clone()
+			if !self.persistence.initialized {
+				self.restore_session();
+				if let Some(path) = self.args.path.clone() {
+					self.open(path);
+				}
+			}
+			if self.readers.session.path.is_some()
+				&& self.readers.session.requested_options.as_ref()
+					!= Some(&self.options())
 			{
-				self.open(path);
+				self.request(false);
 			}
 			self.redraw();
 			Ok(())
@@ -128,6 +135,7 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 	fn suspended(&mut self, _: &ActiveEventLoop) {
 		self.cancel_gestures();
 		self.flush_settings();
+		self.flush_session();
 		self.renderer.take();
 		self.window.take();
 	}
@@ -150,6 +158,7 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 		);
 	}
 	fn exiting(&mut self, _: &ActiveEventLoop) {
+		self.flush_session();
 		self.instance_path = None;
 		self.instance.take();
 	}
@@ -203,6 +212,24 @@ impl<P: super::SendEvent> App<P> {
 			} if self.readers.session.path.as_ref() == Some(&path)
 				&& self.readers.session.content_version == content_version =>
 			{
+				if self
+					.readers
+					.session
+					.saved_reading
+					.as_ref()
+					.is_some_and(|saved| saved.content != document.content_id)
+					&& !self.readers.session.details_open.is_empty()
+				{
+					self.readers.session.details_open = Default::default();
+					self.readers
+						.session
+						.saved_reading
+						.as_mut()
+						.unwrap()
+						.details
+						.clear();
+					self.request(false);
+				}
 				self.readers.session.parse_complete = true;
 				self.readers.session.search.document = Some(document);
 				self.search_tick();
@@ -483,6 +510,7 @@ impl<P: super::SendEvent> App<P> {
 		self.advance_scroll(now);
 		self.advance_gestures(now);
 		self.readers.release_inactive(now);
+		self.session_tick(now);
 		// One PNG strip per frame keeps the window responsive and the status
 		// line counting; the draw requests the next frame while work remains.
 		self.advance_png_export();
@@ -549,6 +577,7 @@ impl<P: super::SendEvent> App<P> {
 			.chain(self.watch_at)
 			.chain(self.status_until)
 			.chain(self.preferences.save_deadline())
+			.chain(self.persistence.deadline)
 			.chain(self.interaction.drag_at)
 			.chain(self.readers.session.scroll_animation_deadline(now))
 			.chain(self.tab_strip.scroll_at)

@@ -1167,3 +1167,50 @@ fn only_window_layout_changes_replace_the_saved_hint_until_reverted() {
 	assert!(!app.overlay().iter().any(|draw| matches!(draw,
 		Draw::Glyph(g) if g.paint == Paint::Styled(Condition::Panel, ColorField::Warning))));
 }
+
+#[test]
+fn document_thumb_drag_cancels_restoration_during_reflow() {
+	let (mut app, document) = reader(&"Paragraph.\n\n".repeat(200), 760.0);
+	let full = app.readers.session.snapshot.clone();
+	let bar = app.document_scrollbar().unwrap();
+	let (_, thumb) = bar.bars(false);
+	for loading in [false, true] {
+		let session = &mut app.readers.session;
+		session.saved_reading = None;
+		session.snapshot = full.clone();
+		session.scrolling.offset = full.blocks.last().unwrap().y;
+		session.saved_reading =
+			Some(crate::app::session::Reading::capture(session));
+		session.snapshot.blocks.truncate(100);
+		session.snapshot.height = session.snapshot.blocks[99].y
+			+ session.snapshot.blocks[99].layout.height;
+		session.snapshot_complete = false;
+		session.layout_pending = loading;
+		session.scrolling.offset = 0.0;
+		app.interaction.scrollbar = Some(crate::state::ScrollbarDrag {
+			target: crate::state::ScrollbarAxis::Document,
+			grab: 10.0,
+		});
+		app.interaction.cursor = (thumb.x + thumb.w / 2.0, thumb.y + 110.0);
+		app.drag_scrollbar();
+		assert!(app.readers.session.saved_reading.is_none());
+		let dragged = app.readers.session.scrolling.offset;
+		if !loading {
+			assert!(dragged > 0.0);
+		}
+		let viewport = app.viewport();
+		app.readers.session.accept(
+			ReaderSnapshot {
+				document: document.clone(),
+				layout: full.clone(),
+				content_version: 1,
+				complete: true,
+				parse_complete: true,
+				remote_deferred: 0,
+			},
+			viewport,
+			None,
+		);
+		assert!((app.readers.session.scrolling.offset - dragged).abs() < 0.01);
+	}
+}

@@ -99,6 +99,7 @@ impl Preferences {
 			codeblock_wrap: settings.codeblock_wrap,
 			scroll_speed: settings.scroll_speed,
 			single_instance: settings.single_instance,
+			restore_session: settings.restore_session,
 		};
 		for field in &args.overrides {
 			settings.copy_field(&explicit, *field);

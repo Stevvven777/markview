@@ -38,6 +38,7 @@ impl<P: super::SendEvent> App<P> {
 		});
 	}
 	pub(super) fn open(&mut self, path: PathBuf) {
+		self.restore_session();
 		self.clear_input_focus();
 		self.cancel_gestures();
 		self.abandon_dm();

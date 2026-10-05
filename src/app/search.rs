@@ -331,12 +331,14 @@ impl<P: SendEvent> App<P> {
 		let session = &mut self.readers.session;
 		let search = &mut session.search;
 		if search.open && search.preparing {
+			session.saved_reading = None;
 			search.queued_navigation = Some(backwards);
 			return;
 		}
 		if !search.open || search.matches.is_empty() {
 			return;
 		}
+		session.saved_reading = None;
 		let count = search.matches.len();
 		let index = search.current.map_or_else(
 			|| {
@@ -407,9 +409,11 @@ impl<P: SendEvent> App<P> {
 		let viewport = self.viewport();
 		let session = &mut self.readers.session;
 		let search = &mut session.search;
-		if !search.open
-			|| !search.pending_navigation
-			|| session.accepted_revision != session.content_version
+		if !search.open || !search.pending_navigation {
+			return;
+		}
+		session.saved_reading = None;
+		if session.accepted_revision != session.content_version
 			|| session
 				.requested_options
 				.as_ref()

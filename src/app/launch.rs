@@ -298,6 +298,7 @@ pub(super) fn run() -> Result<()> {
 		primary.listen(move |event| proxy.send_event(event).is_ok())
 	});
 	let result = event_loop.run_app(&mut app);
+	app.flush_session();
 	app.instance_path = None;
 	app.instance.take();
 	result?;

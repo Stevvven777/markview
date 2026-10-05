@@ -16,6 +16,7 @@ from build import ROOT, run
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", default="emulator-5554")
+    parser.add_argument("--session-only", action="store_true", help="Check background persistence and restoration after a process restart")
     parser.add_argument("--lifecycle-only", action="store_true", help="Check repeated Activity destruction and recreation in one process")
     parser.add_argument("--mermaid-only", action="store_true", help="Check Mermaid label pixels in light and dark styles")
     parser.add_argument("--layout-only", action="store_true", help="Check resource selection, orientation and controls at a screen-size boundary")
@@ -65,6 +66,17 @@ def main():
         adb("push", fixture, "/data/local/tmp/" + name)
         adb("shell", "run-as", "io.github.szdytom.markview", "mkdir", "-p", "files/markview/cache/images")
         adb("shell", "run-as", "io.github.szdytom.markview", "cp", "/data/local/tmp/" + name, "files/markview/cache/images/" + name)
+    if args.session_only:
+        reports = []
+        for phase in ("seed", "restore"):
+            adb("shell", "am", "force-stop", "io.github.szdytom.markview")
+            result = subprocess.run([str(sdk / "platform-tools/adb"), "-s", args.serial, "shell", "am", "instrument", "-w", "-e", "session-phase", phase, "io.github.szdytom.markview.test/io.github.szdytom.markview.Smoke"], capture_output=True, text=True, timeout=args.timeout)
+            report = result.stdout + result.stderr
+            reports.append(report)
+            assert result.returncode == 0 and "MARKVIEW_ANDROID_INTEGRATION_OK" in report, report
+        (artifacts / "session.txt").write_text("\n".join(reports))
+        print("\n".join(reports))
+        return
     result = subprocess.run([str(sdk / "platform-tools/adb"), "-s", args.serial, "shell", "am", "instrument", "-w", "-e", "layout", args.layout, "-e", "layout-only", str(args.layout_only).lower(), "-e", "lifecycle-only", str(args.lifecycle_only).lower(), "-e", "mermaid-only", str(args.mermaid_only).lower(), "io.github.szdytom.markview.test/io.github.szdytom.markview.Smoke"], capture_output=True, text=True, timeout=args.timeout)
     report = result.stdout + result.stderr
     (artifacts / "integration.txt").write_text(report)

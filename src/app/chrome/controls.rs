@@ -113,6 +113,18 @@ fn rows(settings: &ReaderSettings, phone: bool) -> Vec<Row> {
 				),
 			),
 			Row::new(
+				t.settings_restore_session(),
+				vec![action(
+					if settings.restore_session {
+						t.settings_on()
+					} else {
+						t.settings_off()
+					},
+					settings.restore_session,
+					Command::RestoreSession,
+				)],
+			),
+			Row::new(
 				t.settings_single_instance(),
 				vec![action(
 					if settings.single_instance {

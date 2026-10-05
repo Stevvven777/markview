@@ -70,7 +70,8 @@ change touch scrolling.
 
 The device mode follows the smallest width, independent of rotation and keyboard
 visibility; configuration changes update it without discarding reader sessions. Desktop window-layout and single-instance settings are hidden and
-ignored on Android; Android reuses the `singleTask` activity. System bars and
+ignored on Android; Android reuses the `singleTask` activity. Browsing sessions are
+retained by default, and the desktop session-restore setting is hidden. System bars and
 the keyboard are excluded from the reader's content area.
 
 Upstream tracking: [Destroy handling #4303](https://github.com/rust-windowing/winit/issues/4303),
@@ -232,6 +233,8 @@ GPU PNG export, and repeated Activity destruction/recreation in the same process
 Use `--lifecycle-only` to run just the Activity checks, including Android
 **Don't keep activities**. Both devices can run without an emulator window by
 adding `-no-window` to the emulator command.
+Use `--session-only` to verify background saves and tab/reading-position restoration
+after a process restart, including external-open deduplication.
 Use `--mermaid-only` to verify all three diagram labels have visible pixels in
 light and dark styles, including Android's variable Roboto Flex font.
 Reports and screenshots are written to `artifacts/android/phone/` and

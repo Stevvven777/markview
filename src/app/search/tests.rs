@@ -675,3 +675,51 @@ fn a_panicked_search_thread_does_not_panic_on_drop() {
 	crate::test_support::poison(&worker.inbox.0);
 	drop(worker);
 }
+
+#[test]
+fn search_navigation_cancels_restoration_before_later_layouts_arrive() {
+	let source = format!(
+		"needle\n\n{}needle\n\n{}",
+		"Paragraph.\n\n".repeat(80),
+		"Following.\n\n".repeat(200)
+	);
+	let mut h = Harness::new(&source);
+	h.query("needle");
+	let full = h.app.readers.session.snapshot.clone();
+	let document = h.app.readers.session.document.clone().unwrap();
+	for hit in [0, 1] {
+		let session = &mut h.app.readers.session;
+		session.snapshot = full.clone();
+		session.scrolling.offset = full.blocks.last().unwrap().y;
+		session.saved_reading =
+			Some(crate::app::session::Reading::capture(session));
+		session.snapshot.blocks.truncate(40);
+		session.snapshot.height = session.snapshot.blocks[39].y
+			+ session.snapshot.blocks[39].layout.height;
+		session.snapshot_complete = false;
+		session.layout_pending = true;
+		session.scrolling.offset = 0.0;
+		session.search.current = Some(hit);
+		session.search.pending_navigation = true;
+		h.app.apply_search_navigation();
+		assert!(h.app.readers.session.saved_reading.is_none());
+		assert_eq!(h.app.readers.session.search.pending_navigation, hit == 1);
+		let navigated = h.app.readers.session.scrolling.offset;
+		let viewport = h.app.viewport();
+		h.app.readers.session.accept(
+			crate::worker::ReaderSnapshot {
+				document: document.clone(),
+				layout: full.clone(),
+				content_version: 1,
+				complete: true,
+				parse_complete: true,
+				remote_deferred: 0,
+			},
+			viewport,
+			None,
+		);
+		assert!(
+			(h.app.readers.session.scrolling.offset - navigated).abs() < 0.01
+		);
+	}
+}

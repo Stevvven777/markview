@@ -680,6 +680,7 @@ fn single_instance_control_reflects_the_saved_choice() {
 	for enabled in [false, true] {
 		let settings = ReaderSettings {
 			single_instance: enabled,
+			restore_session: enabled,
 			..Default::default()
 		};
 		let buttons = controls(&mut shaper, &settings, true, 1200.0, 800.0);
@@ -688,6 +689,11 @@ fn single_instance_control_reflects_the_saved_choice() {
 			.find(|b| b.action == Command::SingleInstance)
 			.unwrap();
 		assert_eq!(button.active, enabled);
+		let restore = buttons
+			.iter()
+			.find(|b| b.action == Command::RestoreSession)
+			.unwrap();
+		assert_eq!(restore.active, enabled);
 	}
 }
 

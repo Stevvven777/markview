@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Restore tabs, reading positions and disclosure states across launches with an optional desktop setting; Android keeps sessions by default.
+
 - Add MVSS `marker_width` for theme-controlled list marker columns, with automatic expansion for wide numbers and checkboxes.
 
 - Add per-rule MVSS `media` filters with OR matching; resolve shared parsed declarations on environment changes, keeping media checks outside rendering.
@@ -74,6 +76,8 @@ at the same level, without `[brackets]`.
 - Batch a pan's sub-pixel travel until it adds up to a whole physical pixel, and flush the residue on release: the OS inertia tail stops redrawing the page for motion the display cannot show, while the page still lands exactly where the viewport does.
 
 ### Fixed
+
+- Preserve block-relative session positions below text and let explicit search, scrollbar or background fragment navigation cancel pending restoration.
 
 - Skip WinGet updates without failing release CI while the initial community submission is still pending.
 

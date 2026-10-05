@@ -41,6 +41,7 @@ pub(super) fn footnote_link(link: &str) -> bool {
 impl<P: super::SendEvent> App<P> {
 	/// Queues an anchor and applies it as soon as it is laid out.
 	pub(super) fn goto_anchor(&mut self, anchor: String) {
+		self.readers.session.saved_reading = None;
 		// A jump is direct input, so any easing for the previous destination
 		// ends here.
 		self.readers.session.cancel_scroll_animation();

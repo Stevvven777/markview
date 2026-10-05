@@ -26,18 +26,26 @@ public class Smoke extends Instrumentation {
     private String expectedLayout;
     private boolean layoutOnly;
     private boolean lifecycleOnly;
+    private String sessionPhase;
     private boolean mermaidOnly;
     private boolean phone;
     private int portraitRotation;
     private final StringBuilder results = new StringBuilder();
     private interface Check { boolean matches(JSONObject state) throws Exception; }
-    @Override public void onCreate(Bundle args) { super.onCreate(args); expectedLayout = args.getString("layout", "phone"); layoutOnly = args.getBoolean("layout-only", false) || "true".equals(args.getString("layout-only")); lifecycleOnly = "true".equals(args.getString("lifecycle-only")); mermaidOnly = "true".equals(args.getString("mermaid-only")); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); sessionPhase = args.getString("session-phase"); expectedLayout = args.getString("layout", "phone"); layoutOnly = args.getBoolean("layout-only", false) || "true".equals(args.getString("layout-only")); lifecycleOnly = "true".equals(args.getString("lifecycle-only")); mermaidOnly = "true".equals(args.getString("mermaid-only")); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (sessionPhase != null) {
+                checkSession();
+                result.putString("stream", results.toString() + "MARKVIEW_ANDROID_INTEGRATION_OK\n");
+                finish(Activity.RESULT_OK, result);
+                return;
+            }
             require("Markview".contentEquals(getTargetContext().getApplicationInfo().loadLabel(getTargetContext().getPackageManager())), "Application display name");
             pass("Markview application display name");
             checkExternalIntents();
+            new File(getTargetContext().getFilesDir(), "markview/session.json").delete();
             File config = new File(getTargetContext().getFilesDir(), "markview/settings.toml");
             config.getParentFile().mkdirs();
             String stored = config.exists() ? new String(Files.readAllBytes(config.toPath()), StandardCharsets.UTF_8) : "";
@@ -155,7 +163,7 @@ public class Smoke extends Instrumentation {
             waitFor(s -> s.optString("panel").equals("Settings(Generic)"));
             requireSettingsLayout();
             JSONObject settingsState = state();
-            require(button(settingsState, "ToggleDropdown(WindowLayout") == null && button(settingsState, "SingleInstance") == null,
+            require(button(settingsState, "ToggleDropdown(WindowLayout") == null && button(settingsState, "SingleInstance") == null && button(settingsState, "RestoreSession") == null,
                 "Desktop-only window and instance controls are absent");
             require((button(settingsState, "ToggleDropdown(TabStyle") == null) == phone, "Tab style is offered only on tablets");
             if (!phone) {
@@ -454,9 +462,57 @@ public class Smoke extends Instrumentation {
         require(!activity.isDestroyed(), "External shares retain the Activity");
         pass("ClipData file sharing and CharSequence Markdown text sharing");
     }
+    private void checkSession() throws Exception {
+        File directory = new File(getTargetContext().getFilesDir(), "markview");
+        File session = new File(directory, "session.json");
+        File expectedFile = new File(directory, "session-test.json");
+        if (sessionPhase.equals("seed")) {
+            directory.mkdirs();
+            session.delete();
+            Files.write(new File(directory, "settings.toml").toPath(), "version = 1\nstyle = [\"light\"]\n".getBytes(StandardCharsets.UTF_8));
+            activity = startActivitySync(intent("reader.md", Intent.ACTION_VIEW));
+            waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("reader.md"));
+            swipe(180, 590, 180, 180);
+            waitFor(s -> s.optDouble("scroll") > 100);
+            swipe(180, 300, 180, 300);
+            stableLayout();
+            Activity previous = activity;
+            getTargetContext().startActivity(intent("second.md", Intent.ACTION_VIEW));
+            waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("second.md"));
+            getTargetContext().startActivity(intent("reader.md", Intent.ACTION_VIEW));
+            JSONObject expected = waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("reader.md"));
+            require(activity == previous && !previous.isDestroyed() && expected.getJSONArray("tabs").length() == 2, "External opens reuse the singleTask Activity");
+            require(expected.getBoolean("restore_session") && expected.getBoolean("single_instance") && !expected.getBoolean("instance_listener"), "Android defaults enable session restore without desktop IPC");
+            Files.write(expectedFile.toPath(), expected.toString().getBytes(StandardCharsets.UTF_8));
+            sendKeyDownUpSync(KeyEvent.KEYCODE_HOME);
+            long deadline = SystemClock.uptimeMillis() + 5000;
+            while ((!session.exists() || new JSONObject(new String(Files.readAllBytes(session.toPath()), StandardCharsets.UTF_8)).getJSONArray("tabs").length() != 2) && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(50);
+            require(session.exists(), "Background saves the session");
+            JSONObject saved = new JSONObject(new String(Files.readAllBytes(session.toPath()), StandardCharsets.UTF_8));
+            require(saved.getJSONArray("tabs").length() == 2 && saved.getInt("active") == expected.getInt("active"), "Background saves all tabs and the active tab");
+            pass("Android background persistence and singleTask external opens");
+        } else {
+            JSONObject expected = new JSONObject(new String(Files.readAllBytes(expectedFile.toPath()), StandardCharsets.UTF_8));
+            activity = startActivitySync(new Intent(getTargetContext(), MarkviewActivity.class).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            JSONObject restored = waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("reader.md"));
+            restored = stableLayout();
+            require(restored.getJSONArray("tabs").toString().equals(expected.getJSONArray("tabs").toString()) && restored.getInt("active") == expected.getInt("active"), "Process restart restores tab order and current tab");
+            require(Math.abs(restored.getDouble("scroll") - expected.getDouble("scroll")) < 2, "Process restart restores the reading position");
+            getTargetContext().startActivity(intent("reader.md", Intent.ACTION_VIEW));
+            JSONObject opened = waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("reader.md"));
+            require(opened.getJSONArray("tabs").length() == 2, "External opening selects the restored tab without duplicates");
+            pass("Android process restart restores tabs and reading positions");
+        }
+    }
     private void checkLifecycle() throws Exception {
         getTargetContext().startActivity(intent("reader.md", Intent.ACTION_VIEW));
         waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("reader.md") && loadedImages(s) >= 2);
+        org.json.JSONArray retained = new org.json.JSONArray();
+        org.json.JSONArray openedTabs = state().getJSONArray("tabs");
+        for (int i = 0; i < openedTabs.length(); i++) {
+            String path = openedTabs.getString(i);
+            if (path.contains("/files/documents/") || path.contains("/files/shared/")) retained.put(path);
+        }
         int pid = android.os.Process.myPid();
         double fontSize = state().getDouble("font_size");
         for (int attempt = 0; attempt < 4; attempt++) {
@@ -481,12 +537,12 @@ public class Smoke extends Instrumentation {
                 JSONObject recreated = waitFor(s -> s.optBoolean("ready") && s.optInt("blocks") > 20 && loadedImages(s) >= 2);
                 require(android.os.Process.myPid() == pid, "Activity restart preserves the process");
                 require(recreated.getDouble("font_size") == fontSize, "Activity restart retains preferences");
-                require(recreated.getJSONArray("tabs").length() == 1, "Activity restart opens a fresh tab session");
+                require(recreated.getJSONArray("tabs").toString().equals(retained.toString()), "Activity restart restores the existing tab session");
                 java.lang.reflect.Method deliver = MarkviewActivity.class.getDeclaredMethod("deliver", int.class, String.class);
                 deliver.setAccessible(true);
                 deliver.invoke(previous, 0, new File(previous.getFilesDir(), "stale.md").getAbsolutePath());
                 SystemClock.sleep(250);
-                require(state().getJSONArray("tabs").length() == 1, "Destroyed Activity cannot deliver stale I/O results");
+                require(state().getJSONArray("tabs").toString().equals(retained.toString()), "Destroyed Activity cannot deliver stale I/O results");
             } finally {
                 removeMonitor(monitor);
                 if (discardOnBackground) {
@@ -530,6 +586,7 @@ public class Smoke extends Instrumentation {
     private void requireSettingsLayout() throws Exception {
         JSONObject current = state();
         require(button(current, "ScrollSpeed(") == null, "Scroll speed controls are absent on Android");
+        require(button(current, "RestoreSession") == null, "Session restore control is absent on Android");
         require(button(current, "OpenConfig") == null && button(current, "Fonts(OpenFolder)") == null && button(current, "StylesFolder") == null,
             "Desktop settings-file and folder controls are absent on Android");
         if (current.getString("panel").equals("Settings(Generic)")) {

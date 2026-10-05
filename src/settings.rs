@@ -76,6 +76,7 @@ pub struct ReaderSettings {
 	/// baseline; this is the only handle where the platform reports none.
 	pub scroll_speed: f32,
 	pub single_instance: bool,
+	pub restore_session: bool,
 }
 impl Default for ReaderSettings {
 	fn default() -> Self {
@@ -97,7 +98,8 @@ impl Default for ReaderSettings {
 			codeblock_theme_override: None,
 			codeblock_wrap: false,
 			scroll_speed: 1.0,
-			single_instance: false,
+			single_instance: cfg!(target_os = "android"),
+			restore_session: cfg!(target_os = "android"),
 		}
 	}
 }
@@ -162,6 +164,7 @@ pub enum Setting {
 	CodeblockWrap,
 	ScrollSpeed,
 	SingleInstance,
+	RestoreSession,
 	/// Every per-role font family, which is one list of overrides.
 	FontFamily,
 }
@@ -361,6 +364,9 @@ impl ReaderSettings {
 				self.codeblock_wrap = other.codeblock_wrap
 			}
 			Setting::ScrollSpeed => self.scroll_speed = other.scroll_speed,
+			Setting::RestoreSession => {
+				self.restore_session = other.restore_session
+			}
 			Setting::SingleInstance => {
 				self.single_instance = other.single_instance
 			}

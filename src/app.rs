@@ -20,6 +20,7 @@ mod painting;
 mod pointer;
 mod preferences;
 pub(crate) mod search;
+pub(crate) mod session;
 mod settings_load;
 mod single_instance;
 mod surface;
@@ -219,6 +220,7 @@ struct App<P = EventLoopProxy<Event>> {
 	/// sources, so an export matches what the reader shows.
 	fonts_config: FontConfig,
 	proxy: P,
+	persistence: session::Persistence,
 	instance_path: Option<PathBuf>,
 	instance: Option<single_instance::Listener>,
 	window: Option<Arc<Window>>,
@@ -273,6 +275,7 @@ struct App<P = EventLoopProxy<Event>> {
 }
 impl<P> Drop for App<P> {
 	fn drop(&mut self) {
+		self.flush_session();
 		self.instance.take();
 		self.services.handle.cancel.cancel();
 		self.worker.shutdown();
@@ -362,6 +365,12 @@ impl<P: SendEvent> App<P> {
 			args,
 			fonts_config,
 			proxy,
+			persistence: session::Persistence {
+				path: preferences
+					.path()
+					.map(|p| p.with_file_name("session.json")),
+				..Default::default()
+			},
 			instance_path,
 			instance: None,
 			window: None,
