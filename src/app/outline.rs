@@ -65,12 +65,14 @@ impl<P: super::SendEvent> App<P> {
 	/// The drawer's rectangle, matching what the chrome draws.
 	pub(super) fn outline_drawer(&self) -> Rect {
 		let (width, height, _) = self.dimensions();
-		super::chrome::outline::rect_above(
+		let mut drawer = super::chrome::outline::rect_above(
 			width,
 			height,
 			self.content_top(),
 			self.bottom(),
-		)
+		);
+		drawer.x += drawer.w * (1.0 - self.interaction.outline_reveal());
+		drawer
 	}
 
 	/// Whether the pointer is over the open drawer, with no panel or

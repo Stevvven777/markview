@@ -20,6 +20,34 @@ pub(in crate::app) fn rect(width: f32, height: f32) -> Rect {
 		h: height,
 	}
 }
+
+pub(in crate::app) fn animated_rect(
+	width: f32,
+	height: f32,
+	reveal: f32,
+) -> Rect {
+	let mut panel = rect(width, height);
+	panel.x = -panel.w * (1.0 - reveal);
+	panel
+}
+
+pub(super) fn slide_buttons(
+	buttons: &mut [Button],
+	width: f32,
+	height: f32,
+	reveal: f32,
+) {
+	let panel = animated_rect(width, height, reveal);
+	for button in buttons {
+		if button.rect.x >= panel.w {
+			button.rect.x = panel.x + panel.w;
+			button.rect.w = width - button.rect.x;
+		} else {
+			button.rect.x += panel.x;
+		}
+	}
+}
+
 pub(in crate::app) fn list(
 	width: f32,
 	height: f32,
@@ -104,7 +132,7 @@ fn controls(panel: Rect, width: f32, lang: Lang) -> Vec<Button> {
 		lang.panel_close(),
 		Command::Tabs,
 		Rect {
-			x: panel.w - 52.,
+			x: panel.x + panel.w - 52.,
 			y: 6.,
 			w: 44.,
 			h: 44.,
@@ -116,7 +144,7 @@ fn controls(panel: Rect, width: f32, lang: Lang) -> Vec<Button> {
 		lang.toolbar_open(),
 		Command::Open,
 		Rect {
-			x: 16.,
+			x: panel.x + 16.,
 			y: panel.h - 54.,
 			w: (panel.w - 32.).max(0.),
 			h: 44.,
@@ -128,9 +156,9 @@ fn controls(panel: Rect, width: f32, lang: Lang) -> Vec<Button> {
 		"",
 		Command::Tabs,
 		Rect {
-			x: panel.w,
+			x: panel.x + panel.w,
 			y: 0.,
-			w: width - panel.w,
+			w: width - panel.x - panel.w,
 			h: panel.h,
 		},
 	);
@@ -195,7 +223,16 @@ pub(super) fn draw(
 ) -> Vec<Draw> {
 	components::appearance(ui);
 	let (width, height) = size;
-	let list = list(width, height, tabs.len(), scroll);
+	let reveal = interaction.tabs_reveal();
+	let mut list = list(width, height, tabs.len(), scroll);
+	let offset = animated_rect(width, height, reveal).x;
+	list.panel.x += offset;
+	list.viewport.x += offset;
+	let mut scrim = ui.stylesheet.color(Condition::Ui, C::Scrim);
+	scrim[3] *= reveal;
+	let scrim = Paint::Color(Color(u32::from_be_bytes(
+		scrim.map(|c| (c * 255.).round() as u8),
+	)));
 	let mut out = vec![
 		Draw::Rect(
 			Rect {
@@ -204,25 +241,25 @@ pub(super) fn draw(
 				w: width,
 				h: height,
 			},
-			Paint::Scrim,
+			scrim,
 		),
 		Draw::Rect(list.panel, Paint::Styled(Condition::Panel, C::Background)),
 		Draw::Icon {
 			paths: icons::APP,
 			paint: Paint::Styled(Condition::Panel, C::Color),
-			x: 12.,
+			x: offset + 12.,
 			y: 14.,
 			size: 28.,
 		},
 	];
 	for r in [
 		Rect {
-			x: list.panel.w - 1.,
+			x: offset + list.panel.w - 1.,
 			w: 1.,
 			..list.panel
 		},
 		Rect {
-			x: 16.,
+			x: offset + 16.,
 			y: 55.,
 			w: list.panel.w - 32.,
 			h: 1.,
@@ -240,14 +277,14 @@ pub(super) fn draw(
 	out.extend(ui.label(
 		&title,
 		16.,
-		48.,
+		offset + 48.,
 		34.,
 		Paint::Styled(Condition::Panel, C::Color),
 	));
 	out.extend(ui.label(
 		&format!("· {}", tabs.len()),
 		13.,
-		48. + title_width + 8.,
+		offset + 48. + title_width + 8.,
 		34.,
 		Paint::Styled(Condition::Panel, C::Muted),
 	));
@@ -291,7 +328,7 @@ pub(super) fn draw(
 	for b in controls(list.panel, width, lang) {
 		if b.action == Command::Open {
 			out.extend(draw_entry(ui, interaction, &b));
-		} else if b.rect.x < list.panel.w {
+		} else if b.rect.x < list.panel.x + list.panel.w {
 			out.extend(components::draw_button(ui, interaction, &b, true));
 		}
 	}
@@ -301,6 +338,24 @@ pub(super) fn draw(
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn moving_buttons_and_scrim_follow_the_visible_drawer() {
+		let mut ui = crate::test_support::shaper();
+		for reveal in [0.0, 0.25, 0.875, 1.0] {
+			let mut buttons =
+				buttons(&mut ui, &[], 0, 0., (400., 760.), Lang::En);
+			slide_buttons(&mut buttons, 400., 760., reveal);
+			let panel = animated_rect(400., 760., reveal);
+			let scrim = buttons.last().unwrap();
+			assert_eq!(scrim.rect.x, panel.x + panel.w);
+			assert_eq!(scrim.rect.x + scrim.rect.w, 400.);
+			let close = &buttons[0];
+			assert_eq!(close.rect.x, panel.x + panel.w - 52.);
+			assert!(panel.contains(close.rect.x + 22., close.rect.y + 22.));
+		}
+	}
+
 	#[test]
 	fn drawer_labels_follow_partial_scroll_without_recentering() {
 		let mut ui = crate::test_support::shaper();
@@ -328,7 +383,10 @@ mod tests {
 				&tabs,
 				0,
 				0.,
-				&InteractionState::default(),
+				&InteractionState {
+					panel: crate::state::PanelPage::Tabs,
+					..Default::default()
+				},
 				(320., 760.),
 				Lang::En,
 			));
@@ -337,7 +395,10 @@ mod tests {
 				&tabs,
 				0,
 				17.,
-				&InteractionState::default(),
+				&InteractionState {
+					panel: crate::state::PanelPage::Tabs,
+					..Default::default()
+				},
 				(320., 760.),
 				Lang::En,
 			));
@@ -402,7 +463,10 @@ mod tests {
 					&tabs,
 					29,
 					list.scroll,
-					&InteractionState::default(),
+					&InteractionState {
+						panel: crate::state::PanelPage::Tabs,
+						..Default::default()
+					},
 					(width, 760.),
 					Lang::En
 				)

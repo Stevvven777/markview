@@ -126,12 +126,21 @@ impl<P: super::SendEvent> App<P> {
 	fn panel_list(&self) -> Option<chrome::list::List> {
 		let (width, height, _) = self.dimensions();
 		if self.interaction.panel == crate::state::PanelPage::Tabs {
-			Some(chrome::tab_drawer::list(
+			let mut list = chrome::tab_drawer::list(
 				width,
 				height,
 				self.readers.entries().len(),
 				self.tab_strip.drawer_scroll,
-			))
+			);
+			let offset = chrome::tab_drawer::animated_rect(
+				width,
+				height,
+				self.interaction.tabs_reveal(),
+			)
+			.x;
+			list.panel.x += offset;
+			list.viewport.x += offset;
+			Some(list)
 		} else if self.interaction.styles_open()
 			|| self.interaction.export_styles_open()
 		{

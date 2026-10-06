@@ -292,14 +292,21 @@ impl Chrome<'_> {
 				self.settings.lang(),
 			)
 		} else if self.interaction.panel == crate::state::PanelPage::Tabs {
-			tab_drawer::buttons(
+			let mut buttons = tab_drawer::buttons(
 				self.ui,
 				self.tabs,
 				self.active_tab,
 				self.tab_strip.drawer_scroll,
 				(width, height),
 				self.settings.lang(),
-			)
+			);
+			tab_drawer::slide_buttons(
+				&mut buttons,
+				width,
+				height,
+				self.interaction.tabs_reveal(),
+			);
+			buttons
 		} else if self.interaction.panel_open()
 			&& self.interaction.export_styles_open()
 		{
@@ -609,7 +616,7 @@ impl Chrome<'_> {
 				),
 			));
 		}
-		if self.interaction.outline_open {
+		if self.interaction.outline_reveal() > 0.0 {
 			out.extend(outline::draw(
 				self.ui,
 				self.interaction,
@@ -620,8 +627,9 @@ impl Chrome<'_> {
 				self.settings.lang(),
 			));
 		}
-		if self.interaction.panel == crate::state::PanelPage::Tabs {
-			out.extend(tab_drawer::draw(
+		let tabs_reveal = self.interaction.tabs_reveal();
+		if tabs_reveal > 0.0 {
+			let draws = tab_drawer::draw(
 				self.ui,
 				self.tabs,
 				self.active_tab,
@@ -629,8 +637,10 @@ impl Chrome<'_> {
 				self.interaction,
 				(width, height),
 				self.settings.lang(),
-			));
-		} else if self.interaction.panel_open()
+			);
+			out.extend(draws);
+		}
+		if self.interaction.panel_open()
 			&& self.interaction.export_styles_open()
 		{
 			out.extend(draw_styles(
@@ -692,7 +702,9 @@ impl Chrome<'_> {
 				self.settings.lang(),
 				self.resource_load,
 			));
-		} else if self.interaction.panel_open() {
+		} else if self.interaction.panel_open()
+			&& self.interaction.panel != crate::state::PanelPage::Tabs
+		{
 			out.extend(draw_controls(
 				self.ui,
 				self.settings,
@@ -863,12 +875,14 @@ impl Chrome<'_> {
 
 	/// The outline drawer's rectangle for this window and notice strip.
 	pub(super) fn outline_drawer(&self) -> Rect {
-		outline::rect_above(
+		let mut drawer = outline::rect_above(
 			self.width,
 			self.height,
 			content_top(self.remote_notice.is_some()),
 			super::search::bottom(self.session.search.open),
-		)
+		);
+		drawer.x += drawer.w * (1.0 - self.interaction.outline_reveal());
+		drawer
 	}
 }
 

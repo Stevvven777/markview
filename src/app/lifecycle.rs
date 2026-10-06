@@ -509,6 +509,10 @@ impl<P: super::SendEvent> App<P> {
 		}
 		self.advance_scroll(now);
 		self.advance_gestures(now);
+		if self.interaction.advance_drawers(now) {
+			self.refresh_hover();
+			self.redraw();
+		}
 		self.readers.release_inactive(now);
 		self.session_tick(now);
 		// One PNG strip per frame keeps the window responsive and the status
@@ -582,6 +586,7 @@ impl<P: super::SendEvent> App<P> {
 			.chain(self.readers.session.scroll_animation_deadline(now))
 			.chain(self.tab_strip.scroll_at)
 			.chain(self.gestures.deadline(now))
+			.chain(self.interaction.drawer_deadline(now))
 			.chain(self.dm.as_ref().and_then(|dm| dm.deadline(now)))
 			.chain(self.readers.release_deadline())
 			.chain(

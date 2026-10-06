@@ -12,7 +12,9 @@ use std::{
 };
 use winit::{event::TouchPhase, keyboard::ModifiersState};
 
+mod drawer;
 mod outline;
+use drawer::DrawerAnimation;
 pub(crate) use outline::OutlineTree;
 
 pub(crate) use markview_core::layout::scroll_limit;
@@ -159,6 +161,11 @@ impl InteractionState {
 
 	/// Changes pages without losing the parent form's scroll position.
 	pub(crate) fn show_panel(&mut self, page: PanelPage) {
+		DrawerAnimation::retarget(
+			&mut self.tabs_animation,
+			page == PanelPage::Tabs,
+			self.panel == PanelPage::Tabs,
+		);
 		self.panel = page;
 		self.focus = None;
 		self.pressed = None;
@@ -577,6 +584,8 @@ impl ReaderTab {
 
 #[derive(Default)]
 pub(crate) struct InteractionState {
+	pub(crate) tabs_animation: Option<DrawerAnimation>,
+	pub(crate) outline_animation: Option<DrawerAnimation>,
 	pub(crate) selection_counts: Option<(TextSelection, TextCounts)>,
 	pub(crate) panel: PanelPage,
 	pub(crate) settings_scroll: f32,
@@ -768,6 +777,11 @@ impl InteractionState {
 		entries: usize,
 		current: Option<usize>,
 	) -> bool {
+		DrawerAnimation::retarget(
+			&mut self.outline_animation,
+			!self.outline_open,
+			self.outline_open,
+		);
 		self.outline_open = !self.outline_open;
 		if self.outline_open {
 			self.focus = None;
@@ -782,6 +796,11 @@ impl InteractionState {
 
 	/// Closes the drawer, as Escape and the toolbar toggle do.
 	pub(crate) fn close_outline(&mut self) {
+		DrawerAnimation::retarget(
+			&mut self.outline_animation,
+			false,
+			self.outline_open,
+		);
 		self.outline_open = false;
 		self.outline_selection = None;
 	}

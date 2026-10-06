@@ -73,7 +73,11 @@ impl<P: super::SendEvent> App<P> {
 	pub(super) fn pointer_in_panel(&self) -> bool {
 		let (width, height, _) = self.dimensions();
 		let rect = if self.interaction.panel == crate::state::PanelPage::Tabs {
-			chrome::tab_drawer::rect(width, height)
+			chrome::tab_drawer::animated_rect(
+				width,
+				height,
+				self.interaction.tabs_reveal(),
+			)
 		} else {
 			chrome::panel_rect(width, height)
 		};

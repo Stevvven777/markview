@@ -900,6 +900,8 @@ fn touch_swipes_open_drawers_without_toggling_them_closed() {
 				force: None,
 			});
 		}
+		app.interaction
+			.advance_drawers(Instant::now() + Duration::from_secs(1));
 	};
 	for phone in [false, true] {
 		app.tab_strip.phone = phone;
@@ -938,6 +940,55 @@ fn touch_swipes_open_drawers_without_toggling_them_closed() {
 		app.interaction.show_panel(PanelPage::Closed);
 		app.interaction.close_outline();
 	}
+}
+
+#[test]
+fn drawer_animations_keep_outgoing_content_until_the_final_frame() {
+	use crate::layout::{Draw, Paint};
+	use crate::state::PanelPage;
+	use markview_core::style::{ColorField, Condition};
+	let (mut app, _) = reader("# Heading\n\nText.", 400.0);
+	let has_drawer = |draws: Vec<Draw>| {
+		draws.iter().any(|draw| {
+			matches!(
+				draw,
+				Draw::Rect(
+					_,
+					Paint::Styled(Condition::Panel, ColorField::Background)
+				)
+			)
+		})
+	};
+	let settle = |app: &mut App<StubProxy>| {
+		assert!(
+			app.interaction
+				.advance_drawers(Instant::now() + Duration::from_secs(1))
+		);
+		assert!(app.interaction.drawer_deadline(Instant::now()).is_none());
+	};
+	for phone in [false, true] {
+		app.tab_strip.phone = phone;
+		let closed = app.outline_drawer();
+		app.action(Command::Outline);
+		assert!(app.outline_drawer().x > closed.x - closed.w);
+		settle(&mut app);
+		let open = app.outline_drawer();
+		assert_eq!(open.x + open.w, app.dimensions().0);
+		assert!(has_drawer(app.overlay()));
+		app.action(Command::Outline);
+		assert!(!app.interaction.outline_open);
+		assert!(has_drawer(app.overlay()));
+		settle(&mut app);
+		assert!(!has_drawer(app.overlay()));
+	}
+	app.action(Command::Tabs);
+	settle(&mut app);
+	assert!(has_drawer(app.overlay()));
+	app.action(Command::Tabs);
+	assert_eq!(app.interaction.panel, PanelPage::Closed);
+	assert!(has_drawer(app.overlay()));
+	settle(&mut app);
+	assert!(!has_drawer(app.overlay()));
 }
 
 #[test]

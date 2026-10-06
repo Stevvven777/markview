@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Animate the Tabs and Contents drawers with nonlinear sliding transitions, including desktop Contents and smooth reversals.
+
 ### Fixed
 
 - Close the open Tabs Drawer on a left swipe without also opening Contents.
