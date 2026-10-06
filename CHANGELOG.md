@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Fixed
+
+- Close the open Tabs Drawer on a left swipe without also opening Contents.
+
 ## 0.2.0 - 2026-10-06
 
 **Highlights**:

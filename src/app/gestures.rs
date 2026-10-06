@@ -358,8 +358,7 @@ impl<P: super::SendEvent> App<P> {
 			self.cancel_gestures();
 			if self.interaction.panel == PanelPage::Tabs {
 				self.action(Command::Tabs);
-			}
-			if !self.interaction.outline_open {
+			} else if !self.interaction.outline_open {
 				self.action(Command::Outline);
 			}
 		} else if distance >= 64.0 && self.tab_strip.phone {

@@ -916,6 +916,10 @@ fn touch_swipes_open_drawers_without_toggling_them_closed() {
 			swipe(&mut app, 100.0, 220.0);
 			assert_eq!(app.interaction.panel, PanelPage::Tabs);
 			swipe(&mut app, 220.0, 100.0);
+			assert_eq!(app.interaction.panel, PanelPage::Closed);
+			assert!(!app.interaction.outline_open);
+			assert!(app.gestures.deadline(Instant::now()).is_none());
+			swipe(&mut app, 720.0, 600.0);
 		} else {
 			swipe(&mut app, 720.0, 600.0);
 		}
