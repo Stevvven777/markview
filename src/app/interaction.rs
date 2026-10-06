@@ -155,7 +155,7 @@ impl<P: super::SendEvent> App<P> {
 				} else {
 					PanelPage::Closed
 				});
-				if open {
+				if open && self.readers.session.path.is_some() {
 					let (width, height, _) = self.dimensions();
 					let list = super::chrome::tab_drawer::list(
 						width,
@@ -507,6 +507,10 @@ impl<P: super::SendEvent> App<P> {
 				if let Some(theme) = self.system_theme() {
 					self.preferences.values.theme = theme;
 				}
+			}
+			Command::NewPage => {
+				self.new_page();
+				return;
 			}
 			Command::Open => {
 				if self.interaction.panel == PanelPage::Tabs {

@@ -332,3 +332,82 @@ fn gpu_restored_tabs_draw_images_after_switching_or_closing()
 	}
 	Ok(())
 }
+
+#[test]
+fn new_page_preserves_tabs_and_opening_or_selecting_resumes_documents() {
+	let mut h = Harness::new();
+	h.open("README.md", 2);
+	let first = h.app.readers.session.path.clone();
+	h.app.interaction.viewer = Some(crate::state::Viewer {
+		src: "first.png".into(),
+		pixels: (512., 512.),
+		scale: 1.,
+		zoom: 1.,
+		pan: (0., 0.),
+		grab: None,
+		pressed_at: None,
+		dragged: false,
+	});
+	h.app.readers.session.scrolling.offset = 120.;
+	h.app.interaction.show_panel(crate::state::PanelPage::Tabs);
+	h.app.action(crate::state::Command::NewPage);
+	assert_eq!(h.app.readers.entries().len(), 1);
+	assert!(h.app.readers.session.path.is_none());
+	assert!(h.app.readers.session.snapshot.blocks.is_empty());
+	assert!(h.app.watch.is_none());
+	assert!(h.app.interaction.viewer.is_none());
+	assert_eq!(h.app.interaction.panel, crate::state::PanelPage::Closed);
+	assert!(
+		h.app
+			.buttons()
+			.iter()
+			.any(|b| b.action == crate::state::Command::NewPage)
+	);
+	h.app.action(crate::state::Command::NewPage);
+	assert_eq!(h.app.readers.entries().len(), 1);
+	h.app.select_tab(0);
+	h.wait_images(2);
+	assert_eq!(h.app.readers.session.path, first);
+	assert_eq!(h.app.readers.session.scrolling.offset, 120.);
+	h.app.new_page();
+	h.open("README.zh-cn.md", 1);
+	assert_eq!(h.app.readers.entries().len(), 2);
+	assert_eq!(h.app.readers.active(), 1);
+	h.app.new_page();
+	h.app.close_tab(1);
+	assert!(h.app.readers.session.path.is_none());
+	h.app.open(h.dir.path().join("README.md"));
+	h.wait_images(2);
+	assert_eq!(h.app.readers.entries().len(), 1);
+	assert_eq!(h.app.readers.session.path, first);
+}
+
+#[test]
+fn closing_last_parked_tab_releases_the_workers_document() {
+	let mut h = Harness::new();
+	fs::write(h.dir.path().join("first.md"), "First document").unwrap();
+	fs::write(h.dir.path().join("second.md"), "Second document").unwrap();
+	h.open("first.md", 0);
+	h.open("second.md", 0);
+	let document = std::sync::Arc::downgrade(
+		h.app.readers.session.document.as_ref().unwrap(),
+	);
+	h.app.new_page();
+	h.app.close_tab(0);
+	assert_eq!(h.app.readers.entries().len(), 1);
+	assert!(h.app.readers.session.path.is_none());
+	assert!(document.upgrade().is_some());
+	h.app.interaction.show_panel(crate::state::PanelPage::Tabs);
+	h.app.close_tab(0);
+	assert!(h.app.readers.entries().is_empty());
+	assert!(h.app.readers.session.path.is_none());
+	let deadline = Instant::now() + Duration::from_secs(5);
+	while document.upgrade().is_some() {
+		assert!(
+			Instant::now() < deadline,
+			"worker retained the closed document"
+		);
+		std::thread::sleep(Duration::from_millis(10));
+	}
+	assert_eq!(h.app.interaction.panel, crate::state::PanelPage::Closed);
+}

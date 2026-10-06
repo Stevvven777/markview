@@ -222,3 +222,23 @@ fn switching_or_closing_a_tab_ends_its_scroll_animation() {
 	tabs.close(0, now);
 	assert!(!tabs.session.scroll_animating());
 }
+
+#[test]
+fn empty_page_keeps_parked_sessions_available_to_background_updates() {
+	let mut tabs = Tabs::default();
+	let now = Instant::now();
+	tabs.new_page(now);
+	assert!(tabs.entries().is_empty());
+	tabs.open("a.md".into(), now);
+	tabs.new_page(now);
+	tabs.rename(0, "renamed.md".into());
+	tabs.queue_anchor(0, Some("heading".into()));
+	assert!(tabs.session.path.is_none());
+	assert!(
+		tabs.request(crate::test_support::options(), false)
+			.is_none()
+	);
+	assert!(tabs.select(0, now));
+	assert_eq!(tabs.session.path, Some("renamed.md".into()));
+	assert_eq!(tabs.session.pending_anchor.as_deref(), Some("heading"));
+}

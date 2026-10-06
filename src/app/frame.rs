@@ -63,6 +63,7 @@ pub(crate) struct Layout {
 	pub hover: Option<Caption>,
 	pub pressed: Option<Caption>,
 	pub tabs: Rect,
+	pub new_page: Option<Rect>,
 	pub toolbar_x: f32,
 	pub toolbar_button_size: f32,
 	pub drag: Rect,
@@ -131,9 +132,15 @@ impl Layout {
 			tabs: Rect {
 				x: left,
 				y: 4.0,
-				w: (drag.x - left - 4.0).max(0.0),
+				w: (drag.x - left - toolbar_button_size - 12.0).max(0.0),
 				h: TOP - 4.0,
 			},
+			new_page: Some(Rect {
+				x: drag.x - toolbar_button_size - 4.0,
+				y: (TOP - toolbar_button_size) / 2.0,
+				w: toolbar_button_size,
+				h: toolbar_button_size,
+			}),
 			toolbar_x,
 			toolbar_button_size,
 			drag,
@@ -186,7 +193,11 @@ impl Layout {
 	}
 	/// The unused tab-strip space belongs to the window caption.
 	pub fn with_tab_end(mut self, end: f32) -> Self {
-		let start = end.clamp(self.tabs.x, self.drag.x.max(self.tabs.x));
+		let mut start = end.clamp(self.tabs.x, self.tabs.x + self.tabs.w);
+		if let Some(button) = &mut self.new_page {
+			button.x = start + 8.0;
+			start = button.x + button.w + 4.0;
+		}
 		self.drag.x = start;
 		self.drag.w = (self.toolbar_x - start).max(0.0);
 		self
@@ -267,6 +278,9 @@ impl<P: super::SendEvent> App<P> {
 		);
 		let tab_end = self.tab_metrics.end(layout.tabs, self.tab_strip.scroll);
 		layout = layout.with_tab_end(tab_end);
+		if self.tab_strip.phone {
+			layout.new_page = None;
+		}
 		layout.focused = self.frame.focused;
 		layout.hover = self.frame.hover;
 		layout.pressed = self.frame.pressed;
@@ -474,6 +488,13 @@ mod tests {
 						.last()
 						.map_or(base.tabs.x, |rect| rect.x + rect.w);
 					let layout = base.with_tab_end(end);
+					let button = layout.new_page.unwrap();
+					assert_eq!(
+						button.x,
+						end.min(base.tabs.x + base.tabs.w) + 8.0
+					);
+					assert!(button.x + button.w < layout.toolbar_x);
+					assert!(!layout.draggable(button.x + button.w / 2.0, 20.0));
 					assert!(
 						layout.draggable(
 							layout.drag.x + layout.drag.w / 2.0,
@@ -484,6 +505,7 @@ mod tests {
 					assert!(!layout.draggable(layout.drag.x + 1.0, TOP + 1.0));
 					for rect in &tabs.rects {
 						if let Some(visible) = rect.intersect(tabs.viewport) {
+							assert!(button.intersect(visible).is_none());
 							assert!(
 								!layout.draggable(
 									visible.x + visible.w / 2.0,
@@ -493,7 +515,10 @@ mod tests {
 						}
 					}
 					if widths.len() <= 1 {
-						assert!(layout.draggable(end + 1.0, 20.0));
+						assert_eq!(button.x, end + 8.0);
+						assert!(
+							layout.draggable(button.x + button.w + 5.0, 20.0)
+						);
 					}
 					let full =
 						Layout::new(style, false, width, 300.0, true, false)

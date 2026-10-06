@@ -1677,6 +1677,8 @@ fn redesigned_chrome_frames() -> Result<()> {
 						let tab = layout.rects[1];
 						interaction.cursor = (tab.x + tab.w / 2.0, TOP / 2.0);
 					}
+					frame = frame
+						.with_tab_end(metrics.end(frame.tabs, strip.scroll));
 					let mut chrome = Chrome {
 						frame,
 						input_draws: Vec::new(),
@@ -1684,7 +1686,11 @@ fn redesigned_chrome_frames() -> Result<()> {
 						ui: &mut ui,
 						session,
 						tabs: &tabs,
-						active_tab: 0,
+						active_tab: if page == "empty" {
+							usize::MAX
+						} else {
+							0
+						},
 						tab_strip: &strip,
 						tab_widths: &metrics.widths,
 						settings: &settings,
@@ -1736,13 +1742,16 @@ fn redesigned_chrome_frames() -> Result<()> {
 					let expected =
 						controls::toolbar_controls(width, false, Lang::En)
 							.iter()
-							.filter(|button| button.icon.is_some())
+							.filter(|button| {
+								button.icon.is_some()
+									&& button.action != Command::NewPage
+							})
 							.count();
 					assert_eq!(
 						overlay
 							.iter()
 							.filter(|draw| matches!(draw,
-                        Draw::Icon { x, y, size, .. } if *y + *size / 2.0 == TOP / 2.0 && *x >= frame.toolbar_x && *x < frame.toolbar_x + frame.toolbar_button_size * 4.0 + 12.0))
+                        Draw::Icon { x, y, size, .. } if *y + *size / 2.0 == TOP / 2.0 && *x >= frame.toolbar_x && *x < frame.toolbar_x + expected as f32 * (frame.toolbar_button_size + super::super::frame::CONTROL_GAP)))
 							.count(),
 						expected,
 						"toolbar must stay visible on {page}"

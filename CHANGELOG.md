@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Add a + button after the file tabs, a drawer + button and Ctrl-N to show the empty reader without creating a tab, preserving open documents.
+
 - Animate the Tabs and Contents drawers with nonlinear sliding transitions, including desktop Contents and smooth reversals.
 - Add experimental `web URL` and clipboard HTTP(S) article loading with `dom_smoothie` Markdown extraction, native rendering, localized status and reuse of open pages.
 - Send browser-style web/image headers with configurable `user-agent` and `accept-language`, HTML acceptance for articles and a separate capitalized font UA.
@@ -31,6 +33,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Release retained reader resources when closing the last preserved tab from the empty page.
 - Close the open Tabs Drawer on a left swipe without also opening Contents.
 - Preserve semantic web LaTeX formulas and empty table headings through Markdown extraction, including formulas inside table cells.
 

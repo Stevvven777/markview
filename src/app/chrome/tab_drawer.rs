@@ -140,6 +140,18 @@ fn controls(panel: Rect, width: f32, lang: Lang) -> Vec<Button> {
 	);
 	close.icon = Some(icons::CLOSE);
 	close.kind = ButtonKind::Quiet;
+	let mut new_page = button(
+		lang.toolbar_new_page(),
+		Command::NewPage,
+		Rect {
+			x: panel.x + panel.w - 100.,
+			y: 6.,
+			w: 44.,
+			h: 44.,
+		},
+	);
+	new_page.icon = Some(icons::PLUS);
+	new_page.kind = ButtonKind::Quiet;
 	let mut open = button(
 		lang.toolbar_open(),
 		Command::Open,
@@ -162,7 +174,7 @@ fn controls(panel: Rect, width: f32, lang: Lang) -> Vec<Button> {
 			h: panel.h,
 		},
 	);
-	vec![close, open, scrim]
+	vec![close, new_page, open, scrim]
 }
 pub(super) fn buttons(
 	ui: &mut TextShaper,
@@ -272,7 +284,7 @@ pub(super) fn draw(
 	] {
 		out.push(components::line(r, Condition::Panel, C::BorderColor));
 	}
-	let title = ui.fit(lang.toolbar_tabs(), 16., (list.panel.w - 132.).max(0.));
+	let title = ui.fit(lang.toolbar_tabs(), 16., (list.panel.w - 180.).max(0.));
 	let title_width = ui.text_width(&title, 16.);
 	out.extend(ui.label(
 		&title,
@@ -350,6 +362,11 @@ mod tests {
 			let scrim = buttons.last().unwrap();
 			assert_eq!(scrim.rect.x, panel.x + panel.w);
 			assert_eq!(scrim.rect.x + scrim.rect.w, 400.);
+			assert!(
+				buttons
+					.iter()
+					.any(|b| b.action == Command::NewPage && b.icon.is_some())
+			);
 			let close = &buttons[0];
 			assert_eq!(close.rect.x, panel.x + panel.w - 52.);
 			assert!(panel.contains(close.rect.x + 22., close.rect.y + 22.));

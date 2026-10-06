@@ -58,8 +58,11 @@ fn platform_toolbars_keep_hover_targets_and_caption_groups_separate() {
 						.any(|draw| matches!(draw, Draw::Rect(_, _)))
 				);
 				if style != WindowLayout::Macos && !fullscreen {
-					let mut controls: Vec<_> =
-						buttons.iter().map(|b| b.rect).collect();
+					let mut controls: Vec<_> = buttons
+						.iter()
+						.filter(|b| b.action != Command::NewPage)
+						.map(|b| b.rect)
+						.collect();
 					controls.extend(frame.captions().map(|(_, rect)| rect));
 					for pair in controls.windows(2) {
 						assert_eq!(pair[0].w, first.rect.w);
@@ -197,6 +200,7 @@ fn controls_fit_minimum_window_and_panel_focus_has_no_document_actions() {
 		assert_eq!(
 			toolbar.iter().map(|b| b.action).collect::<Vec<_>>(),
 			vec![
+				Command::NewPage,
 				Command::Open,
 				Command::Export,
 				Command::Settings,

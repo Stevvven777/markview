@@ -85,6 +85,31 @@ impl<P: super::SendEvent> App<P> {
 			self.request(false);
 		}
 	}
+	pub(super) fn new_page(&mut self) {
+		self.restore_session();
+		self.clear_input_focus();
+		self.cancel_gestures();
+		self.abandon_dm();
+		self.tab_strip.cancel_drag();
+		self.tab_strip.reveal_active = false;
+		self.close_search();
+		self.readers.new_page(Instant::now());
+		self.interaction.viewer = None;
+		self.worker.cancel();
+		self.search_worker.release();
+		self.watch = None;
+		self.interaction.clear_selection();
+		self.interaction.outline_open = false;
+		self.interaction.show_panel(crate::state::PanelPage::Closed);
+		self.error = false;
+		self.status.clear();
+		self.status_until = None;
+		if let Some(window) = &self.window {
+			window.set_title("Markview");
+		}
+		self.refresh_hover();
+		self.redraw();
+	}
 	pub(super) fn select_tab(&mut self, index: usize) {
 		self.clear_input_focus();
 		self.cancel_gestures();
@@ -125,11 +150,11 @@ impl<P: super::SendEvent> App<P> {
 		let closed = self.readers.session.path.clone();
 		match self.readers.close(index, Instant::now()) {
 			tabs::Closed::Missing => return,
-			tabs::Closed::Inactive => {
+			tabs::Closed::Inactive if !self.readers.entries().is_empty() => {
 				self.redraw();
 				return;
 			}
-			tabs::Closed::Active => {}
+			tabs::Closed::Active | tabs::Closed::Inactive => {}
 		}
 		self.watch = None;
 		// A watched export belongs to the document that chose it.

@@ -45,7 +45,7 @@ impl Tabs {
 		&self.entries
 	}
 	pub(super) fn session_mut(&mut self, index: usize) -> &mut ReaderSession {
-		if index == self.active {
+		if index == self.active() {
 			&mut self.session
 		} else {
 			&mut self.entries[index].session
@@ -55,8 +55,21 @@ impl Tabs {
 		self.entries[index].path = path.clone();
 		self.session_mut(index).path = Some(path);
 	}
+	/// `usize::MAX` leaves every tab unselected on the empty page.
 	pub(super) fn active(&self) -> usize {
-		self.active
+		if self.session.path.is_some() {
+			self.active
+		} else {
+			usize::MAX
+		}
+	}
+	pub(super) fn new_page(&mut self, now: Instant) {
+		self.session.cancel_scroll_animation();
+		if self.session.path.is_some() {
+			self.entries[self.active].session =
+				std::mem::take(&mut self.session);
+			self.entries[self.active].last_active = now;
+		}
 	}
 	/// Reorder entries without replacing the active session or issuing requests.
 	pub(super) fn move_tab(&mut self, from: usize, to: usize) -> bool {
@@ -91,9 +104,9 @@ impl Tabs {
 			}
 			self.entries.push(ReaderTab::new(path.clone()));
 			self.active = self.entries.len() - 1;
-		} else if self.entries.is_empty() {
+		} else {
 			self.entries.push(ReaderTab::new(path.clone()));
-			self.active = 0;
+			self.active = self.entries.len() - 1;
 		}
 		self.session.path = Some(path);
 		self.session.content_version += 1;
@@ -129,7 +142,7 @@ impl Tabs {
 		index: usize,
 		anchor: Option<String>,
 	) {
-		let session = if index == self.active {
+		let session = if index == self.active() {
 			&mut self.session
 		} else if let Some(tab) = self.entries.get_mut(index) {
 			&mut tab.session
@@ -142,7 +155,7 @@ impl Tabs {
 		session.pending_anchor = anchor;
 	}
 	pub(super) fn select(&mut self, index: usize, now: Instant) -> bool {
-		if index >= self.entries.len() || index == self.active {
+		if index >= self.entries.len() || index == self.active() {
 			return false;
 		}
 		self.session.cancel_scroll_animation();
@@ -164,7 +177,7 @@ impl Tabs {
 		if index >= self.entries.len() {
 			return Closed::Missing;
 		}
-		if index != self.active {
+		if index != self.active() {
 			self.entries.remove(index);
 			if index < self.active {
 				self.active -= 1;
@@ -210,8 +223,9 @@ impl Tabs {
 		})
 	}
 	pub(super) fn release_inactive(&mut self, now: Instant) {
+		let active = self.active();
 		for (index, tab) in self.entries.iter_mut().enumerate() {
-			if index != self.active
+			if index != active
 				&& now.duration_since(tab.last_active) >= RELEASE_AFTER
 				&& tab.session.document.is_some()
 			{

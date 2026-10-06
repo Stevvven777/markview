@@ -34,6 +34,7 @@ pub(crate) enum Command {
 	FocusInput(TextField),
 	WindowLayout(crate::settings::WindowLayout),
 	TabStyle(crate::settings::TabStyle),
+	NewPage,
 	Open,
 	Smaller,
 	Larger,

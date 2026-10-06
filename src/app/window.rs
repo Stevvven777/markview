@@ -735,6 +735,7 @@ impl<P: super::SendEvent> App<P> {
 							"o" if !self.panel_has_focus() => {
 								self.action(Command::Open)
 							}
+							"n" => self.action(Command::NewPage),
 							"t" => self.action(Command::Styles),
 							"e" => self.action(Command::Export),
 							"-" => self.action(Command::Smaller),

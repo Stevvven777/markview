@@ -368,6 +368,7 @@ pub(super) fn toolbar_controls_at(
 	lang: Lang,
 ) -> Vec<Button> {
 	[
+		(icons::PLUS, lang.toolbar_new_page(), Command::NewPage),
 		#[cfg(target_os = "android")]
 		(
 			icons::SEARCH,
@@ -381,22 +382,26 @@ pub(super) fn toolbar_controls_at(
 	]
 	.into_iter()
 	.enumerate()
-	.map(|(i, (icon, label, action))| {
+	.filter_map(|(i, (icon, label, action))| {
 		let mut b = button(
 			label,
 			action,
 			Rect {
 				x: frame.toolbar_x
-					+ i as f32 * (frame.toolbar_button_size + CONTROL_GAP),
+					+ i.saturating_sub(1) as f32
+						* (frame.toolbar_button_size + CONTROL_GAP),
 				y: (super::TOP - frame.toolbar_button_size) / 2.0,
 				w: frame.toolbar_button_size,
 				h: frame.toolbar_button_size,
 			},
 		);
+		if action == Command::NewPage {
+			b.rect = frame.new_page?;
+		}
 		b.icon = Some(icon);
 		b.kind = ButtonKind::Quiet;
 		b.active = action == Command::Outline && outline_open;
-		b
+		Some(b)
 	})
 	.collect()
 }
