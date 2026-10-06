@@ -260,6 +260,7 @@ pub(super) fn run() -> Result<()> {
 	// Register while disabled too, so enabling the setting needs no restart.
 	let mut instance = None;
 	if args.mode == Mode::Window
+		&& args.web_url.is_none()
 		&& let Some(config) = crate::settings::config_path()
 	{
 		let (store, _) =

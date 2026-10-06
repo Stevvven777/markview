@@ -117,6 +117,9 @@ wgpu = { version = "29.0.4", default-features = false, features = ["std", "parki
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
 [dependencies]
+dom_smoothie = "0.18.2"
+dom_query = "0.28"
+comrak.workspace = true
 unicode-segmentation.workspace = true
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
 resvg = "0.45"

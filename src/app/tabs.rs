@@ -44,6 +44,17 @@ impl Tabs {
 	pub(super) fn entries(&self) -> &[ReaderTab] {
 		&self.entries
 	}
+	pub(super) fn session_mut(&mut self, index: usize) -> &mut ReaderSession {
+		if index == self.active {
+			&mut self.session
+		} else {
+			&mut self.entries[index].session
+		}
+	}
+	pub(super) fn rename(&mut self, index: usize, path: PathBuf) {
+		self.entries[index].path = path.clone();
+		self.session_mut(index).path = Some(path);
+	}
 	pub(super) fn active(&self) -> usize {
 		self.active
 	}
@@ -179,6 +190,9 @@ impl Tabs {
 		options: LayoutOptions,
 		follow: bool,
 	) -> Option<Request> {
+		if self.session.web_loading || self.session.load_error.is_some() {
+			return None;
+		}
 		let path = self.session.path.clone()?;
 		self.request_serial += 1;
 		self.session.version = self.request_serial;

@@ -642,3 +642,38 @@ fn restore_session_defaults_legacy_conflicts_reload_and_save() {
 		defaults.restore_session
 	);
 }
+
+#[test]
+fn http_overrides_survive_ui_saves_and_external_reload() {
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("settings.toml");
+	let config = "user-agent = 'Custom/1' # browser\naccept-language = 'de,en;q=0.8'\nlanguage = 'ja'\n";
+	fs::write(&path, config).unwrap();
+	let (mut store, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	let mut settings = store.settings();
+	assert_eq!(settings.user_agent.as_deref(), Some("Custom/1"));
+	assert_eq!(settings.accept_language.as_deref(), Some("de,en;q=0.8"));
+	settings.font_size = 24.0;
+	store.changed(&settings, Some(Setting::FontSize));
+	store.flush().unwrap();
+	let saved = fs::read_to_string(&path).unwrap();
+	assert!(saved.contains("# browser"));
+	let (loaded, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	assert_eq!(loaded.settings().user_agent, settings.user_agent);
+	assert_eq!(loaded.settings().accept_language, settings.accept_language);
+	fs::write(&path, "user-agent = 'Custom/2'\n").unwrap();
+	assert!(store.reload().unwrap());
+	assert_eq!(store.settings().user_agent.as_deref(), Some("Custom/2"));
+	assert!(store.settings().accept_language.is_none());
+	fs::write(&path, "user-agent = \"bad\\nheader\"\n").unwrap();
+	assert!(store.reload().is_err());
+	assert_eq!(store.settings().user_agent.as_deref(), Some("Custom/2"));
+	fs::write(&path, "user-agent = 'Custom/2'\n").unwrap();
+	store.changed(&ReaderSettings::default(), None);
+	store.flush().unwrap();
+	let saved = fs::read_to_string(&path).unwrap();
+	assert!(!saved.contains("user-agent ="));
+	assert!(!saved.contains("accept-language ="));
+}

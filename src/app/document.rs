@@ -29,15 +29,27 @@ impl<P: super::SendEvent> App<P> {
 		}
 	}
 	pub(super) fn observe_document(&mut self) {
-		self.watch = self.readers.session.path.clone().map(|path| {
-			let proxy = self.proxy.clone();
-			let observed = path.clone();
-			FileWatch::new(path, move || {
-				proxy.send(Event::Changed(observed.clone()));
-			})
-		});
+		self.watch = self
+			.readers
+			.session
+			.path
+			.clone()
+			.filter(|_| !self.readers.session.web_loading)
+			.map(|path| {
+				let proxy = self.proxy.clone();
+				let observed = path.clone();
+				FileWatch::new(path, move || {
+					proxy.send(Event::Changed(observed.clone()));
+				})
+			});
 	}
 	pub(super) fn open(&mut self, path: PathBuf) {
+		self.open_path(path, false);
+	}
+	pub(super) fn open_pending(&mut self, path: PathBuf) {
+		self.open_path(path, true);
+	}
+	fn open_path(&mut self, path: PathBuf, web_loading: bool) {
 		self.restore_session();
 		self.clear_input_focus();
 		self.cancel_gestures();
@@ -52,13 +64,26 @@ impl<P: super::SendEvent> App<P> {
 		let path = std::fs::canonicalize(&path).unwrap_or(path);
 		if let Some(index) = self.readers.find(&path) {
 			self.select_tab(index);
+			if self.readers.session.load_error.take().is_some() {
+				self.request(false);
+			}
 			return;
 		}
 		self.close_search();
+		self.worker.cancel();
 		self.readers.open(path, Instant::now());
+		self.readers.session.web_loading = web_loading;
+		self.readers.session.layout_pending = true;
+		self.error = false;
+		self.status.clear();
 		self.interaction.clear_selection();
-		self.observe_document();
-		self.request(false);
+		if web_loading {
+			self.watch = None;
+			self.redraw();
+		} else {
+			self.observe_document();
+			self.request(false);
+		}
 	}
 	pub(super) fn select_tab(&mut self, index: usize) {
 		self.clear_input_focus();

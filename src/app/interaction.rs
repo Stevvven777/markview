@@ -627,6 +627,9 @@ impl<P: super::SendEvent> App<P> {
 		self.redraw();
 	}
 	pub(super) fn setting_changed(&mut self, field: Option<Setting>) {
+		self.services
+			.handle
+			.configure_http(&self.preferences.values);
 		self.args
 			.overrides
 			.retain(|f| field.is_some_and(|changed| changed != *f));
@@ -814,18 +817,33 @@ impl<P: super::SendEvent> App<P> {
 				return;
 			}
 		};
-		if !crate::paste::looks_like_markdown(&text) {
+		if crate::web_page::validate_url(text.trim()).is_ok() {
+			self.open_web_page(text.trim().to_owned());
 			return;
 		}
-		let title =
-			crate::paste::title_for(&text, self.preferences.values.lang());
+		self.open_text(&text);
+	}
+
+	pub(super) fn temporary_path(&mut self, title: &str) -> std::path::PathBuf {
 		self.paste_serial = self.paste_serial.wrapping_add(1);
 		let filename = format!(
 			"{}-{}.md",
-			sanitize_filename(&title, self.preferences.values.lang()),
+			sanitize_filename(title, self.preferences.values.lang()),
 			self.paste_serial
 		);
-		let path = self.paste_dir.path().join(filename);
+		self.paste_dir.path().join(filename)
+	}
+
+	pub(super) fn open_text(
+		&mut self,
+		text: &str,
+	) -> Option<std::path::PathBuf> {
+		if !crate::paste::looks_like_markdown(text) {
+			return None;
+		}
+		let title =
+			crate::paste::title_for(text, self.preferences.values.lang());
+		let path = self.temporary_path(&title);
 		if let Err(error) = std::fs::write(&path, text) {
 			self.status = self
 				.preferences
@@ -835,9 +853,10 @@ impl<P: super::SendEvent> App<P> {
 			self.error = true;
 			self.status_until = Some(Instant::now() + Duration::from_secs(3));
 			self.redraw();
-			return;
+			return None;
 		}
 		self.open(path);
+		self.readers.session.path.clone()
 	}
 
 	pub(super) fn flush_settings(&mut self) {
@@ -858,6 +877,9 @@ impl<P: super::SendEvent> App<P> {
 		for field in &self.args.overrides {
 			self.preferences.values.copy_field(&previous, *field);
 		}
+		self.services
+			.handle
+			.configure_http(&self.preferences.values);
 		self.sync_session_settings();
 		self.reload_styles();
 		if self.options() != options

@@ -97,6 +97,146 @@ impl Harness {
 	}
 }
 
+struct StubLoop;
+impl crate::app::window::Loop for StubLoop {
+	fn exit(&self) {}
+}
+
+#[test]
+fn web_tabs_open_immediately_and_complete_without_stealing_focus() {
+	let mut h = Harness::new();
+	h.app.args.offline = false;
+	let permit = h
+		.app
+		.services
+		.handle
+		.transfers
+		.clone()
+		.try_acquire_many_owned(4)
+		.unwrap();
+	let url = "https://example.org/".to_string();
+	h.app.open_web_page(url.clone());
+	assert_eq!(h.app.readers.entries().len(), 1);
+	assert!(h.app.readers.session.web_loading);
+	assert!(h.app.readers.session.layout_pending);
+	assert!(h.app.readers.session.document.is_none());
+	let pending_path = h.app.readers.session.path.clone().unwrap();
+	h.app.open_web_page(url.clone());
+	assert_eq!(h.app.readers.entries().len(), 1);
+	h.open("README.md", 2);
+	let active_path = h.app.readers.session.path.clone();
+	let markdown = "# Web article\n\nNative article text.\n";
+	h.app
+		.web_page_loaded(url.clone(), pending_path, Ok(markdown.into()));
+	assert_eq!(h.app.readers.session.path, active_path);
+	assert_eq!(h.app.readers.active(), 1);
+	h.app.open_web_page(url);
+	assert_eq!(h.app.readers.active(), 0);
+	h.wait_images(0);
+	let loaded_path = h.app.readers.session.path.clone().unwrap();
+	assert!(loaded_path.starts_with(h.app.paste_dir.path()));
+	assert!(
+		loaded_path
+			.file_name()
+			.unwrap()
+			.to_string_lossy()
+			.contains("Web article")
+	);
+	assert_eq!(fs::read_to_string(loaded_path).unwrap(), markdown);
+	assert!(!h.app.readers.session.web_loading);
+	assert!(!h.app.readers.session.snapshot.blocks.is_empty());
+	drop(h);
+	drop(permit);
+}
+
+#[test]
+fn failed_tabs_keep_their_errors_and_closed_web_tabs_ignore_completions() {
+	let mut h = Harness::new();
+	h.app.preferences.values.lang = Some(crate::lang::Lang::ZhHans);
+	let url = "https://example.org/".to_string();
+	h.app.open_web_page(url.clone());
+	assert_eq!(h.app.readers.entries().len(), 1);
+	let first_path = h.app.readers.session.path.clone().unwrap();
+	let error = h.app.readers.session.load_error.clone().unwrap();
+	assert!(error.contains("离线"));
+	assert!(!h.app.readers.session.layout_pending);
+	let version = h.app.readers.session.version;
+	h.app.request(false);
+	assert_eq!(h.app.readers.session.version, version);
+	assert_eq!(h.app.readers.session.load_error.as_ref(), Some(&error));
+	h.open("README.md", 2);
+	h.app.select_tab(0);
+	assert_eq!(h.app.readers.session.load_error.as_ref(), Some(&error));
+	assert!(!h.app.readers.session.layout_pending);
+	h.app.close_tab(0);
+	h.app.web_page_loaded(
+		url.clone(),
+		first_path.clone(),
+		Ok("# Closed article".into()),
+	);
+	assert_eq!(h.app.readers.entries().len(), 1);
+	h.app.open_web_page(url.clone());
+	let second_path = h.app.readers.session.path.clone().unwrap();
+	assert_ne!(first_path, second_path);
+	h.app.web_page_loaded(
+		url.clone(),
+		first_path,
+		Ok("# Stale article".into()),
+	);
+	assert_eq!(h.app.readers.session.path.as_ref(), Some(&second_path));
+	assert!(h.app.readers.session.load_error.is_some());
+
+	h.app.args.offline = false;
+	let permit = h
+		.app
+		.services
+		.handle
+		.transfers
+		.clone()
+		.try_acquire_many_owned(4)
+		.unwrap();
+	h.app.open_web_page(url.clone());
+	assert_eq!(h.app.readers.entries().len(), 2);
+	assert!(h.app.readers.session.web_loading);
+	assert!(h.app.readers.session.load_error.is_none());
+	h.app.web_page_loaded(
+		url,
+		second_path,
+		Err(anyhow::anyhow!("download failed")),
+	);
+	assert!(
+		h.app
+			.readers
+			.session
+			.load_error
+			.as_deref()
+			.unwrap()
+			.contains("download failed")
+	);
+
+	h.app.open(h.dir.path().join("missing.md"));
+	assert_eq!(h.app.readers.entries().len(), 3);
+	assert!(h.app.readers.session.layout_pending);
+	let deadline = Instant::now() + Duration::from_secs(10);
+	while h.app.readers.session.load_error.is_none() {
+		let event = h
+			.events
+			.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+			.unwrap();
+		h.app.handle_user_event(&StubLoop, event);
+	}
+	let failed_path = h.app.readers.session.path.clone();
+	let error = h.app.readers.session.load_error.clone();
+	assert!(!h.app.readers.session.layout_pending);
+	h.app.select_tab(0);
+	h.app.select_tab(2);
+	assert_eq!(h.app.readers.session.path, failed_path);
+	assert_eq!(h.app.readers.session.load_error, error);
+	assert!(!h.app.readers.session.layout_pending);
+	drop(h);
+	drop(permit);
+}
+
 #[test]
 fn returning_to_cached_tabs_reloads_images_after_switching_or_closing() {
 	for close in [false, true] {

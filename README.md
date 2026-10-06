@@ -185,12 +185,38 @@ Markdown files open in new tabs, so a folder of documents behaves like one.
 Everything can be selected and copied, and any block too wide for the column
 scrolls on its own.
 
+Experimental web reading is available with `markview web https://example.org/article`
+(or paste an HTTP(S) URL with Ctrl+V). It downloads static UTF-8 HTML in the
+background, extracts the article with `dom_smoothie` in Markdown mode, and opens
+it in a temporary native reader tab created immediately with a loading message.
+Loading errors stay in the tab’s reading area; background completions update
+their original tabs without changing focus or reopening closed tabs.
+Links and images resolve against the final
+page URL. Reopening the same URL selects its existing tab; repeated requests
+while it is loading share the download. These tabs last for the current session. JavaScript pages, authenticated content and offline page loading are
+not supported. Web launches open their own window; other links still open in the
+system browser. Existing network address restrictions and download limits apply.
+
 Network images (`http:` and `https:`) are cached on disk between runs. A body
 the server marks cacheable is reused until it goes stale, then revalidated with
 a conditional request rather than downloaded again; `--offline` serves a cached
 body without touching the network. The cache lives beside `settings.toml` (on
 Linux, `~/.config/markview/cache/images`), holds at most 128 MiB with the least
 recently used entries dropped first, and is cleared by deleting that directory.
+
+Web pages and remote images use a browser-style `User-Agent` ending in
+`Markview/<version>.0` and an `Accept-Language` derived from the interface language.
+Web page requests also send `Accept: text/html`. Override the browser headers with
+optional top-level keys in `settings.toml` (no UI controls):
+
+```toml
+user-agent = "Mozilla/5.0 (...) MyReader/1.0"
+accept-language = "zh-CN,zh;q=0.9,en;q=0.8"
+```
+
+Omit these keys to follow the defaults. Settings reloads and interface language
+changes apply to subsequent requests. Font downloads always identify themselves
+as `Markview/<version>`.
 
 <p align="center">
   <img src="docs/screenshots/en-structure.png" alt="Tables, lists and code in the dark theme" width="820">
@@ -210,7 +236,7 @@ recently used entries dropped first, and is cleared by deleting that directory.
 | `Ctrl+,` | Open settings |
 | `Ctrl++` / `Ctrl+-` | Larger or smaller type |
 | `Ctrl+[` / `Ctrl+]` | Narrower or wider reading column |
-| `Ctrl+V` | Read Markdown from the clipboard in a new tab |
+| `Ctrl+V` | Read Markdown or an HTTP(S) web article from the clipboard in a new tab |
 | `Ctrl+W` | Close the tab |
 | `Ctrl+A` / `Ctrl+C` | Select the document, or copy the selection |
 | Wheel, arrows, `Page Up`/`Page Down`, `Space`, `Home`/`End` | Scroll |

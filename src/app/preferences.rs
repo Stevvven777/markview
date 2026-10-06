@@ -86,6 +86,8 @@ impl Preferences {
 				})
 			}),
 			lang: settings.lang,
+			user_agent: settings.user_agent.clone(),
+			accept_language: settings.accept_language.clone(),
 			stylesheet: args.options.stylesheet.clone(),
 			theme: args.theme.unwrap_or_default(),
 			font_size: args.options.font_size,

@@ -31,6 +31,7 @@ mod tabs;
 mod text_input;
 mod ui;
 mod viewport;
+mod web_page;
 mod window;
 use crate::cli::LaunchOptions;
 use crate::state::{Command, InteractionState};
@@ -77,6 +78,11 @@ enum Event {
 	#[cfg(target_os = "linux")]
 	SystemThemeChanged(Theme),
 	SettingsLoaded(Box<settings_load::Completion>),
+	WebLoaded {
+		url: String,
+		path: PathBuf,
+		result: anyhow::Result<String>,
+	},
 	#[cfg(windows)]
 	FrameFeedback,
 	Ready(Box<Update>),
@@ -247,6 +253,8 @@ struct App<P = EventLoopProxy<Event>> {
 	text_input: text_input::InputState,
 	paste_dir: tempfile::TempDir,
 	paste_serial: u32,
+	/// A temporary document path, or `None` while its URL is downloading.
+	web_pages: std::collections::HashMap<String, PathBuf>,
 	status: String,
 	status_until: Option<Instant>,
 	error: bool,
@@ -333,6 +341,7 @@ impl<P: SendEvent> App<P> {
 		});
 		let mut ui = TextShaper::with_fonts(fonts_config.clone());
 		let preferences = preferences::Preferences::new(&args, &mut ui);
+		services.handle.configure_http(&preferences.values);
 		let instance_path = preferences
 			.path()
 			.map(|config| config.with_file_name("instance.lock"));
@@ -396,6 +405,7 @@ impl<P: SendEvent> App<P> {
 			paste_dir: tempfile::tempdir()
 				.expect("create clipboard paste directory"),
 			paste_serial: 0,
+			web_pages: Default::default(),
 			status: String::new(),
 			status_until: None,
 			error: false,

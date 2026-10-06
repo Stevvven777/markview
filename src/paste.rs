@@ -62,9 +62,16 @@ fn is_heading(line: &str) -> bool {
 }
 
 fn strip_inline_markup(text: &str) -> String {
-	text.replace("**", "")
-		.replace("__", "")
-		.replace(['*', '_', '`'], "")
+	let arena = comrak::Arena::new();
+	let root =
+		comrak::parse_document(&arena, text, &comrak::Options::default());
+	root.descendants()
+		.filter_map(|node| match &node.data.borrow().value {
+			comrak::nodes::NodeValue::Text(text) => Some(text.to_string()),
+			comrak::nodes::NodeValue::Code(code) => Some(code.literal.clone()),
+			_ => None,
+		})
+		.collect()
 }
 
 #[cfg(test)]
@@ -104,6 +111,14 @@ mod tests {
 		assert_eq!(
 			title_for("問題ですか？続きがあります。", Lang::En),
 			"問題ですか？"
+		);
+	}
+
+	#[test]
+	fn titles_decode_entities_and_preserve_literal_punctuation() {
+		assert_eq!(
+			title_for("# Rust&#95;Blog &#91;2024&#93; &amp; `code`", Lang::En),
+			"Rust_Blog [2024] & code"
 		);
 	}
 

@@ -515,7 +515,7 @@ fn about_tab_keeps_navigation_and_scrolls_on_short_windows() {
 			None,
 			false,
 		);
-		assert_eq!(form.max_scroll > 0.0, height == 300.0);
+		assert_eq!(form.max_scroll > 0.0, height < 800.0);
 		assert!(form.buttons.iter().all(|b| matches!(
 			b.action,
 			Command::Settings

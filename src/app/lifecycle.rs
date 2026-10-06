@@ -123,6 +123,9 @@ impl<P: super::SendEvent> ApplicationHandler<Event> for App<P> {
 			{
 				self.request(false);
 			}
+			if let Some(url) = self.args.web_url.take() {
+				self.open_web_page(url);
+			}
 			self.redraw();
 			Ok(())
 		})();
@@ -205,6 +208,9 @@ impl<P: super::SendEvent> App<P> {
 				self.settings_loaded(*completion)
 			}
 			Event::SearchReady(result) => self.search_ready(result),
+			Event::WebLoaded { url, path, result } => {
+				self.web_page_loaded(url, path, result)
+			}
 			Event::Parsed {
 				path,
 				content_version,
@@ -268,6 +274,7 @@ impl<P: super::SendEvent> App<P> {
 				self.cancel_gestures();
 				self.abandon_dm();
 				self.readers.session.content_version += 1;
+				self.readers.session.load_error = None;
 				self.readers.session.parse_complete = false;
 				self.readers.session.search.retained = self
 					.readers
@@ -344,6 +351,7 @@ impl<P: super::SendEvent> App<P> {
 							self.interaction.selection = rebased;
 						}
 						self.error = false;
+						self.readers.session.load_error = None;
 						self.readers.session.displayed_version = update.version;
 						if complete && self.readers.session.select_all_pending {
 							self.interaction.selection =
@@ -390,8 +398,8 @@ impl<P: super::SendEvent> App<P> {
 						}
 					}
 					Some(Err(error)) => {
-						self.readers.session.layout_pending =
-							!self.readers.session.snapshot_complete;
+						self.readers.session.layout_pending = false;
+						self.readers.session.load_error = Some(error.clone());
 						self.readers.session.scrolling.target = None;
 						self.readers.session.pending_anchor = None;
 						self.readers.session.select_all_pending = false;

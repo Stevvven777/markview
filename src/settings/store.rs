@@ -85,6 +85,13 @@ struct Config {
 	/// stored, so a locale change reaches the next launch.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	language: Option<Lang>,
+	#[serde(rename = "user-agent", skip_serializing_if = "Option::is_none")]
+	user_agent: Option<String>,
+	#[serde(
+		rename = "accept-language",
+		skip_serializing_if = "Option::is_none"
+	)]
+	accept_language: Option<String>,
 	font_size: f32,
 	width: f32,
 	justify: bool,
@@ -118,6 +125,8 @@ impl Default for Config {
 			tab_style: settings.tab_style,
 			theme: None,
 			language: None,
+			user_agent: None,
+			accept_language: None,
 			style: None,
 			fontdef_overrides: Vec::new(),
 			font_size: settings.font_size,
@@ -175,6 +184,8 @@ impl Config {
 			paragraph_indent: self.paragraph_indent,
 			cjk_type: self.cjk_type.unwrap_or_else(default_cjk_type),
 			lang: self.language,
+			user_agent: self.user_agent.clone(),
+			accept_language: self.accept_language.clone(),
 			codeblock_theme_override: self.codeblock_theme_override.clone(),
 			codeblock_wrap: self.codeblock_wrap,
 			scroll_speed: self.scroll_speed,
@@ -459,6 +470,8 @@ impl SettingsStore {
 			paragraph_indent: self.saved.paragraph_indent,
 			cjk_type: Some(self.saved.cjk_type),
 			language: self.saved.lang,
+			user_agent: self.saved.user_agent.clone(),
+			accept_language: self.saved.accept_language.clone(),
 			codeblock_theme_override: self
 				.saved
 				.codeblock_theme_override
@@ -500,6 +513,11 @@ impl SettingsStore {
 		let mut comments = String::new();
 		for key in [
 			Some("theme"),
+			config.user_agent.is_none().then_some("user-agent"),
+			config
+				.accept_language
+				.is_none()
+				.then_some("accept-language"),
 			config.style.is_none().then_some("style"),
 			config.language.is_none().then_some("language"),
 			config

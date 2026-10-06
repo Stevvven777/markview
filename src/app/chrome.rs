@@ -542,7 +542,23 @@ impl Chrome<'_> {
 				self.settings.lang(),
 			));
 		}
-		if self.session.snapshot.blocks.is_empty() {
+		if self.session.snapshot.blocks.is_empty()
+			|| self.session.load_error.is_some()
+		{
+			if self.session.load_error.is_some() {
+				out.push(Draw::Rect(
+					Rect {
+						x: 0.0,
+						y: content_top(self.remote_notice.is_some()),
+						w: width,
+						h: (height
+							- content_top(self.remote_notice.is_some())
+							- BOTTOM)
+							.max(0.0),
+					},
+					Paint::Background,
+				));
+			}
 			let button = empty_button(width, height, self.settings.lang());
 			let y = button.rect.y - 64.0;
 			let t = self.settings.lang();
@@ -555,8 +571,8 @@ impl Chrome<'_> {
 						t.empty_open_detail()
 					},
 				)
-			} else if self.error {
-				(t.empty_unreadable_title(), t.empty_unreadable_detail())
+			} else if let Some(error) = self.session.load_error.as_deref() {
+				(t.empty_unreadable_title(), error)
 			} else if self.session.layout_pending
 				|| self.session.document.is_none()
 			{
@@ -574,15 +590,24 @@ impl Chrome<'_> {
 				Paint::Styled(Condition::Ui, C::Color),
 			));
 			self.ui.appearance = ui_appearance(self.ui);
-			let detail =
-				self.ui.fit(detail, 13.0, width - button.rect.x - 24.0);
-			out.extend(self.ui.label(
-				&detail,
-				13.0,
-				button.rect.x,
-				y + 32.0,
-				Paint::Styled(Condition::Ui, C::Muted),
-			));
+			let available = width - button.rect.x - 24.0;
+			let mut baseline = y + 32.0;
+			for paragraph in detail.lines() {
+				for line in controls::wrap(self.ui, paragraph, 13.0, available)
+				{
+					if baseline > height - BOTTOM - 12.0 {
+						break;
+					}
+					out.extend(self.ui.label(
+						&line,
+						13.0,
+						button.rect.x,
+						baseline,
+						Paint::Styled(Condition::Ui, C::Muted),
+					));
+					baseline += 20.0;
+				}
+			}
 			if self.session.path.is_none() {
 				out.extend(components::draw_button(
 					self.ui,

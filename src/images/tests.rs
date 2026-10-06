@@ -1200,6 +1200,7 @@ fn bracketed_ipv6_hosts_are_parsed_and_refused_before_connecting() {
 				&crate::net::Validators::default(),
 				super::source::MAX_BYTES as u64,
 				"Image",
+				&reqwest::header::HeaderMap::new(),
 			))
 			.err()
 			.unwrap()

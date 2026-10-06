@@ -20,7 +20,69 @@ const OVERFLOW_AGE: u64 = 1 << 31;
 
 /// The download client names itself: some mirrors refuse a request with no
 /// `User-Agent`, and others refuse a browser one as hotlinking.
-const USER_AGENT: &str = concat!("markview/", env!("CARGO_PKG_VERSION"));
+const FONT_USER_AGENT: &str = concat!("Markview/", env!("CARGO_PKG_VERSION"));
+
+pub(crate) fn ua_os_comment() -> &'static str {
+	if cfg!(target_os = "windows") {
+		"Windows NT 10.0; Win64; x64"
+	} else if cfg!(target_os = "macos") {
+		"Macintosh; Intel Mac OS X 10_15_7"
+	} else if cfg!(target_os = "android") {
+		"Linux; Android 10"
+	} else if cfg!(target_arch = "aarch64") {
+		"X11; Linux aarch64"
+	} else {
+		"X11; Linux x86_64"
+	}
+}
+
+/// Browser headers shared by article and image requests.
+pub(crate) fn browser_headers(
+	settings: &crate::settings::ReaderSettings,
+) -> Result<HeaderMap> {
+	use reqwest::header::{ACCEPT_LANGUAGE, HeaderValue, USER_AGENT};
+	let os = ua_os_comment();
+	let default_agent = format!(
+		"Mozilla/5.0 ({os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Markview/{}.0",
+		env!("CARGO_PKG_VERSION")
+	);
+	let language = match settings.lang() {
+		crate::lang::Lang::En => "en",
+		crate::lang::Lang::ZhHans => "zh-CN,zh;q=0.9,en;q=0.8",
+		crate::lang::Lang::ZhHant => "zh-TW,zh;q=0.9,en;q=0.8",
+		crate::lang::Lang::Ja => "ja,en;q=0.8",
+	};
+	let mut headers = HeaderMap::new();
+	headers.insert(
+		USER_AGENT,
+		HeaderValue::from_str(
+			settings.user_agent.as_deref().unwrap_or(&default_agent),
+		)
+		.context("Invalid user-agent setting")?,
+	);
+	headers.insert(
+		ACCEPT_LANGUAGE,
+		HeaderValue::from_str(
+			settings.accept_language.as_deref().unwrap_or(language),
+		)
+		.context("Invalid accept-language setting")?,
+	);
+	Ok(headers)
+}
+
+fn resource_headers(what: &str, browser: &HeaderMap) -> HeaderMap {
+	use reqwest::header::{ACCEPT, HeaderValue, USER_AGENT};
+	if what == "Font" {
+		let mut headers = HeaderMap::new();
+		headers.insert(USER_AGENT, HeaderValue::from_static(FONT_USER_AGENT));
+		return headers;
+	}
+	let mut headers = browser.clone();
+	if what == "Web page" {
+		headers.insert(ACCEPT, HeaderValue::from_static("text/html"));
+	}
+	headers
+}
 
 /// Conditional-request validators from a stored entry.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -284,6 +346,7 @@ async fn pinned_async_client(
 	read_timeout: Duration,
 	total_timeout: Option<Duration>,
 	what: &str,
+	browser: &HeaderMap,
 ) -> Result<reqwest::Client> {
 	check_scheme(url, what)?;
 	let (host, addrs) = resolved(url, what).await?;
@@ -292,10 +355,8 @@ async fn pinned_async_client(
 		.read_timeout(read_timeout)
 		.referer(false)
 		.redirect(reqwest::redirect::Policy::none())
-		.resolve_to_addrs(&host, &addrs);
-	if what == "Font" {
-		builder = builder.user_agent(USER_AGENT);
-	}
+		.resolve_to_addrs(&host, &addrs)
+		.default_headers(resource_headers(what, browser));
 	if let Some(total) = total_timeout {
 		builder = builder.timeout(total);
 	}
@@ -330,7 +391,7 @@ async fn fetch_into(
 			biased;
 			_ = cancel.cancelled() => bail!("Cancelled"),
 			response = async {
-				let client = pinned_async_client(&current, STALL_TIMEOUT, None, what).await?;
+				let client = pinned_async_client(&current, STALL_TIMEOUT, None, what, &HeaderMap::new()).await?;
 				Ok::<_, anyhow::Error>(client.get(current.clone()).send().await?)
 			} => response?,
 		};
@@ -417,6 +478,7 @@ async fn probe_once(url: &str, what: &str) -> Result<Duration> {
 			Duration::from_secs(5),
 			Some(Duration::from_secs(10)),
 			what,
+			&HeaderMap::new(),
 		)
 		.await?;
 		let response = client
@@ -448,6 +510,7 @@ pub(crate) async fn get(
 	validators: &Validators,
 	max: u64,
 	what: &str,
+	browser: &HeaderMap,
 ) -> Result<Fetched> {
 	let mut current =
 		url::Url::parse(url).with_context(|| format!("Invalid {what} URL"))?;
@@ -458,6 +521,7 @@ pub(crate) async fn get(
 			Duration::from_secs(15),
 			Some(Duration::from_secs(15)),
 			what,
+			browser,
 		)
 		.await?;
 		let mut request = client.get(current.clone());
@@ -664,6 +728,87 @@ pub(crate) fn bounded_to(
 mod tests {
 	use super::*;
 	use std::io::Write;
+
+	#[tokio::test]
+	async fn resource_headers_reach_the_wire_and_follow_preferences() {
+		use crate::{lang::Lang, settings::ReaderSettings};
+		let services = crate::services::Services::new(1);
+		for (lang, expected) in [
+			(Lang::En, "en"),
+			(Lang::ZhHans, "zh-CN,zh;q=0.9,en;q=0.8"),
+			(Lang::ZhHant, "zh-TW,zh;q=0.9,en;q=0.8"),
+			(Lang::Ja, "ja,en;q=0.8"),
+		] {
+			let settings = ReaderSettings {
+				lang: Some(lang),
+				..Default::default()
+			};
+			services.handle.configure_http(&settings);
+			let headers = services.handle.http_headers();
+			assert_eq!(headers[reqwest::header::ACCEPT_LANGUAGE], expected);
+			let ua = headers[reqwest::header::USER_AGENT].to_str().unwrap();
+			assert!(ua.starts_with("Mozilla/5.0 ("));
+			assert!(ua.contains("Chrome/153.0.0.0 Safari/537.36"));
+			assert!(ua.ends_with(concat!(
+				"Markview/",
+				env!("CARGO_PKG_VERSION"),
+				".0"
+			)));
+		}
+		let settings = ReaderSettings {
+			user_agent: Some("Custom browser/42".into()),
+			accept_language: Some("fr-CA,fr;q=0.9".into()),
+			..Default::default()
+		};
+		services.handle.configure_http(&settings);
+		for what in ["Web page", "Image", "Font"] {
+			let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+			let address = listener.local_addr().unwrap();
+			let server = std::thread::spawn(move || {
+				use std::io::BufRead;
+				let (mut socket, _) = listener.accept().unwrap();
+				socket
+					.set_read_timeout(Some(Duration::from_secs(5)))
+					.unwrap();
+				let lines: Vec<_> = std::io::BufReader::new(&socket)
+					.lines()
+					.map(Result::unwrap)
+					.take_while(|line| !line.is_empty())
+					.collect();
+				socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+				lines.join("\n").to_ascii_lowercase()
+			});
+			reqwest::Client::builder()
+				.no_proxy()
+				.default_headers(resource_headers(
+					what,
+					&services.handle.http_headers(),
+				))
+				.build()
+				.unwrap()
+				.get(format!("http://{address}"))
+				.send()
+				.await
+				.unwrap()
+				.error_for_status()
+				.unwrap();
+			let received = server.join().unwrap();
+			if what == "Font" {
+				assert!(received.contains(&format!(
+					"user-agent: {}",
+					FONT_USER_AGENT.to_ascii_lowercase()
+				)));
+				assert!(!received.contains("accept-language:"));
+			} else {
+				assert!(received.contains("user-agent: custom browser/42"));
+				assert!(received.contains("accept-language: fr-ca,fr;q=0.9"));
+			}
+			assert_eq!(
+				received.contains("accept: text/html"),
+				what == "Web page"
+			);
+		}
+	}
 
 	#[tokio::test]
 	async fn streamed_progress_carries_the_response_size_when_known() {
@@ -976,16 +1121,28 @@ mod tests {
 		// The transport is shared, so a font failure must not be reported
 		// as an image one.
 		let local = url::Url::parse("file:///fonts/a.ttf").unwrap();
-		let message = pinned_async_client(&local, STALL_TIMEOUT, None, "Font")
-			.await
-			.unwrap_err()
-			.to_string();
+		let message = pinned_async_client(
+			&local,
+			STALL_TIMEOUT,
+			None,
+			"Font",
+			&HeaderMap::new(),
+		)
+		.await
+		.unwrap_err()
+		.to_string();
 		assert!(message.contains("Font"), "{message}");
 		assert!(!message.contains("Image"), "{message}");
-		let message = get("notaurl", &Validators::default(), 1024, "Font")
-			.await
-			.expect_err("an unparsable URL is refused")
-			.to_string();
+		let message = get(
+			"notaurl",
+			&Validators::default(),
+			1024,
+			"Font",
+			&HeaderMap::new(),
+		)
+		.await
+		.expect_err("an unparsable URL is refused")
+		.to_string();
 		assert!(message.contains("Font"), "{message}");
 		assert!(!message.contains("Image"), "{message}");
 		// Fonts use the streaming downloader rather than `get`, so the

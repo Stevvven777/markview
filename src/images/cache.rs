@@ -517,10 +517,11 @@ pub(super) async fn fetch_http(
 		let url = url.to_owned();
 		async move {
 			let _permit = services.permit(&cancel).await?;
+			let headers = services.http_headers();
 			tokio::select! {
 				biased;
 				_ = cancel.cancelled() => bail!("Cancelled"),
-				result = crate::net::get(&url, &validators, super::source::MAX_BYTES as u64, "Image") => result,
+				result = crate::net::get(&url, &validators, super::source::MAX_BYTES as u64, "Image", &headers) => result,
 			}
 		}
 	};

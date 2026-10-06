@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh"><head><title>Cabo 胜率</title></head><body><article>
+<h1>Cabo 胜率</h1>
+<p>本问题考察 <span class="math inline">\(n=2\)</span> 的特殊情形：我方先行动，初始查看的两张牌为 <span class="math inline">\((k_1,k_2)\)</span>。问：若此时立即宣告 Cabo，本轮胜率是多少？普通说明（括号）与数学公式应保留不同的语义。</p>
+<p>对手不知道我方初始看牌，在信息集中选择最优行动。基线用于分离对手回合的影响，并验证模拟器的结果。模拟器基线与精确值的最大偏差在统计噪声内，误差为 <span class="math inline">\(|\Delta|_{\max}\approx0.003\)</span>。</p>
+<div class="math display">\[W(k_1,k_2)=\Pr\!\big(\Sigma_{\mathrm{us}}\le\Sigma_{\mathrm{th}}\big)\]</div>
+<p>以下给出代表性胜率表，空列用于分隔两组结果，表头、行数和数值都必须保留。正文的显示公式与表格中的行内公式均不需要执行 JavaScript。</p>
+<table><thead><tr>
+<th><span class="math inline">\((k_1,k_2)\)</span></th><th><span class="math inline">\(W\)</span></th><th></th><th><span class="math inline">\((k_1,k_2)\)</span></th><th><span class="math inline">\(W\)</span></th>
+</tr></thead><tbody>
+<tr><td><span class="math inline">\((0,0)\)</span></td><td>0.840</td><td></td><td><span class="math inline">\((6,6)\)</span></td><td>0.372</td></tr>
+<tr><td><span class="math inline">\((0,3)\)</span></td><td>0.744</td><td></td><td><span class="math inline">\((7,7)\)</span></td><td>0.295</td></tr>
+</tbody></table>
+<table><thead><tr><th></th><th> </th></tr></thead><tbody>
+<tr><td><span class="math inline">\(a|b\)</span></td><td><span class="math inline">\(\|x\|\)</span></td></tr>
+</tbody></table>
+<p>另一种静态 MathJax 标记：<script type="math/tex">x < y</script>。内联代码应保持原样：<code>\(not math\)</code>。</p>
+<script type="math/tex; mode=display">x^2 + y^2 = z^2</script>
+</article></body></html>

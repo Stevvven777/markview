@@ -71,6 +71,7 @@ pub(crate) struct LaunchOptions {
 	pub(crate) offline: bool,
 	pub(crate) mode: Mode,
 	pub(crate) path: Option<PathBuf>,
+	pub(crate) web_url: Option<String>,
 	pub(crate) output: Option<PathBuf>,
 	pub(crate) width: u32,
 	pub(crate) height: u32,
@@ -97,6 +98,7 @@ impl Default for LaunchOptions {
 			offline: false,
 			mode: Mode::Window,
 			path: None,
+			web_url: None,
 			output: None,
 			width: 1200,
 			height: 800,
@@ -202,6 +204,13 @@ struct Reading {
 	reason = "one parsed command, then dropped"
 )]
 enum Command {
+	/// Read a web article as Markdown (experimental).
+	Web {
+		/// The HTTP(S) page to load.
+		url: String,
+		#[command(flatten)]
+		reading: ScreenReading,
+	},
 	/// Render one document to a PNG image.
 	Render(RenderArgs),
 	/// Export one document to a PDF.
@@ -497,6 +506,11 @@ fn parse_arguments(
 
 fn apply_command(out: &mut LaunchOptions, command: Command) -> Result<()> {
 	match command {
+		Command::Web { url, reading } => {
+			out.path = None;
+			out.web_url = Some(url);
+			apply_screen_reading(out, &reading)
+		}
 		Command::Render(args) => {
 			out.mode = Mode::Render;
 			out.path = Some(args.file);
@@ -901,6 +915,28 @@ mod tests {
 		parse_arguments(args.iter().map(OsString::from))
 			.unwrap()
 			.expect("a command")
+	}
+
+	#[test]
+	fn web_command_defers_loading_errors_to_the_reader() {
+		let args = parse(&["web", "https://example.org/article", "--dark"]);
+		assert!(args.mode == Mode::Window);
+		assert_eq!(
+			args.web_url.as_deref(),
+			Some("https://example.org/article")
+		);
+		assert!(args.path.is_none());
+		assert_eq!(args.theme, Some(Theme::Dark));
+		for url in [
+			"file:///tmp/article.html",
+			"not-a-url",
+			"https://example.org",
+		] {
+			let args = parse(&["web", url, "--offline"]);
+			assert_eq!(args.web_url.as_deref(), Some(url));
+			assert!(args.offline);
+			assert!(args.mode == Mode::Window);
+		}
 	}
 
 	#[test]

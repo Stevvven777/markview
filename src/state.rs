@@ -460,6 +460,8 @@ pub(crate) struct ReaderSession {
 	pub(crate) horizontal: HashMap<(usize, usize), f32>,
 	pub(crate) follow_update: bool,
 	pub(crate) layout_pending: bool,
+	pub(crate) web_loading: bool,
+	pub(crate) load_error: Option<String>,
 	/// A heading anchor waiting for its heading to be laid out.
 	pub(crate) pending_anchor: Option<String>,
 	pub(crate) saved_reading: Option<crate::app::session::Reading>,

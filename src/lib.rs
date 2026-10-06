@@ -26,6 +26,7 @@ mod stylesheet;
 #[cfg(test)]
 mod test_support;
 mod watch;
+mod web_page;
 mod worker;
 
 use std::time::Instant;

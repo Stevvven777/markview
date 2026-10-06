@@ -20,6 +20,7 @@ pub(crate) fn fields(
 			lang.diagnostics_os(),
 			format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH),
 		),
+		(lang.diagnostics_ua_os(), crate::net::ua_os_comment().into()),
 		(
 			lang.diagnostics_backend(),
 			backend.map_or_else(
@@ -63,6 +64,18 @@ mod tests {
 	fn issue_report_contains_only_diagnostics_and_the_active_backend() {
 		let text = super::report(Some(wgpu::Backend::Vulkan));
 		assert!(text.contains("WGPU backend: Vulkan\n"));
+		let comment = crate::net::ua_os_comment();
+		assert!(text.contains(&format!("UA OS comment: {comment}\n")));
+		let headers = crate::net::browser_headers(
+			&crate::settings::ReaderSettings::default(),
+		)
+		.unwrap();
+		assert!(
+			headers[reqwest::header::USER_AGENT]
+				.to_str()
+				.unwrap()
+				.contains(&format!("({comment})"))
+		);
 		for (name, value) in
 			super::fields(Lang::En, Some(wgpu::Backend::Vulkan))
 		{

@@ -313,7 +313,12 @@ pub(super) fn button_width(
 /// Words break at the spaces between them; a word wider than a line is broken
 /// between its characters instead. Chinese prose has no spaces to break at, so
 /// without that second rule a whole description would run off the panel.
-fn wrap(ui: &mut TextShaper, text: &str, size: f32, width: f32) -> Vec<String> {
+pub(super) fn wrap(
+	ui: &mut TextShaper,
+	text: &str,
+	size: f32,
+	width: f32,
+) -> Vec<String> {
 	let mut lines = Vec::new();
 	let mut line = String::new();
 	for word in text.split(' ') {

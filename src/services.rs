@@ -19,6 +19,7 @@ pub(crate) struct Handle {
 	_available_wake: markview_core::background::Wake,
 	send: mpsc::UnboundedSender<Operation>,
 	pub jobs: usize,
+	http_headers: Arc<std::sync::Mutex<reqwest::header::HeaderMap>>,
 }
 pub(crate) struct Services {
 	pub handle: Handle,
@@ -78,6 +79,12 @@ impl Services {
 				_available_wake: available_wake,
 				send,
 				jobs: jobs.max(1),
+				http_headers: Arc::new(std::sync::Mutex::new(
+					crate::net::browser_headers(
+						&crate::settings::ReaderSettings::default(),
+					)
+					.expect("valid default HTTP headers"),
+				)),
 			},
 			cpu,
 			thread: Some(thread),
@@ -94,6 +101,15 @@ impl Drop for Services {
 	}
 }
 impl Handle {
+	pub fn configure_http(&self, settings: &crate::settings::ReaderSettings) {
+		*markview_core::sync::cache(&self.http_headers, "HTTP headers") =
+			crate::net::browser_headers(settings)
+				.expect("validated HTTP headers");
+	}
+	pub fn http_headers(&self) -> reqwest::header::HeaderMap {
+		markview_core::sync::cache(&self.http_headers, "HTTP headers").clone()
+	}
+
 	pub fn submit(
 		&self,
 		operation: impl Future<Output = ()> + Send + 'static,

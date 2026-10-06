@@ -1580,6 +1580,8 @@ fn redesigned_chrome_frames() -> Result<()> {
 					let empty = ReaderSession {
 						path: (page != "empty").then(|| "Missing.md".into()),
 						layout_pending: page == "loading",
+						load_error: (page == "error")
+							.then(|| "File not found".into()),
 						..Default::default()
 					};
 					let session =

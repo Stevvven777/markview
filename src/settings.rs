@@ -57,6 +57,10 @@ pub struct ReaderSettings {
 	/// The interface language; absent means "follow the system", so a locale
 	/// change reaches the next launch. Use [`ReaderSettings::lang`].
 	pub lang: Option<Lang>,
+	/// Optional `User-Agent` override for web pages and images.
+	pub user_agent: Option<String>,
+	/// Optional `Accept-Language` override; absent follows `lang()`.
+	pub accept_language: Option<String>,
 	pub fontdef_overrides: Vec<FontDefOverride>,
 	pub stylesheet: std::sync::Arc<markview_core::style::Stylesheet>,
 	pub font_size: f32,
@@ -86,6 +90,8 @@ impl Default for ReaderSettings {
 			theme: Theme::default(),
 			style: None,
 			lang: None,
+			user_agent: None,
+			accept_language: None,
 			fontdef_overrides: Vec::new(),
 			stylesheet: markview_core::style::Stylesheet::bundled(false),
 			font_size: 18.0,
@@ -294,6 +300,7 @@ impl ReaderSettings {
 		}
 	}
 	pub fn validate(&self) -> Result<()> {
+		crate::net::browser_headers(self)?;
 		if let Some(ids) = &self.style {
 			for id in ids {
 				crate::stylesheet::validate_id(id)?;
