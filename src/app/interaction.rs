@@ -68,6 +68,14 @@ impl<P: super::SendEvent> App<P> {
 			return;
 		}
 		match action {
+			Command::OpenUrl => {
+				let url = self.url_input.text().trim().to_owned();
+				if !url.is_empty() {
+					self.open_web_page(url);
+					self.url_input.set_text(&mut self.ui, "");
+				}
+				return;
+			}
 			#[cfg(target_os = "android")]
 			Command::SearchOpen => {
 				self.open_new_search();

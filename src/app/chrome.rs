@@ -1,6 +1,7 @@
 //! Reader chrome built from borrowed display state, with no window or worker access.
 pub(super) mod components;
 mod controls;
+mod empty;
 mod export;
 use super::font_panel::view as fonts;
 mod footer;
@@ -144,21 +145,6 @@ fn draw_banner(
 		out.extend(components::draw_button(shaper, interaction, &button, true));
 	}
 	out
-}
-
-fn empty_button(width: f32, height: f32, lang: Lang) -> Button {
-	let mut b = components::button(
-		lang.empty_open_file(),
-		Command::Open,
-		Rect {
-			x: ((width - 400.0) / 2.0).max(24.0),
-			y: (height * 0.4).max(110.0) + 64.0,
-			w: 128.0,
-			h: 32.0,
-		},
-	);
-	b.kind = components::ButtonKind::Primary;
-	b
 }
 
 /// The Styles page's controls: its fixed header and footer, and the list's
@@ -395,7 +381,12 @@ impl Chrome<'_> {
 				&& self.session.snapshot.blocks.is_empty()
 			{
 				// One `Open` command owns keyboard focus; both regions answer the pointer.
-				buttons.push(empty_button(width, height, self.settings.lang()));
+				buttons.extend(empty::buttons(
+					self.ui,
+					width,
+					height,
+					self.settings.lang(),
+				));
 			}
 
 			if self.remote_notice.is_some() {
@@ -542,7 +533,15 @@ impl Chrome<'_> {
 				self.settings.lang(),
 			));
 		}
-		if self.session.snapshot.blocks.is_empty()
+		if self.session.path.is_none() {
+			out.extend(empty::draw(
+				self.ui,
+				self.interaction,
+				width,
+				height,
+				self.settings.lang(),
+			));
+		} else if self.session.snapshot.blocks.is_empty()
 			|| self.session.load_error.is_some()
 		{
 			if self.session.load_error.is_some() {
@@ -559,38 +558,30 @@ impl Chrome<'_> {
 					Paint::Background,
 				));
 			}
-			let button = empty_button(width, height, self.settings.lang());
-			let y = button.rect.y - 64.0;
+			let x = ((width - 400.0) / 2.0).max(24.0);
+			let y = (height * 0.4).max(110.0);
 			let t = self.settings.lang();
-			let (title, detail) = if self.session.path.is_none() {
-				(
-					t.empty_open_title(),
-					if cfg!(target_os = "android") {
-						t.empty_open_detail_android()
-					} else {
-						t.empty_open_detail()
-					},
-				)
-			} else if let Some(error) = self.session.load_error.as_deref() {
-				(t.empty_unreadable_title(), error)
-			} else if self.session.layout_pending
-				|| self.session.document.is_none()
-			{
-				(t.empty_opening_title(), t.empty_opening_detail())
-			} else {
-				(t.empty_blank_title(), t.empty_blank_detail())
-			};
+			let (title, detail) =
+				if let Some(error) = self.session.load_error.as_deref() {
+					(t.empty_unreadable_title(), error)
+				} else if self.session.layout_pending
+					|| self.session.document.is_none()
+				{
+					(t.empty_opening_title(), t.empty_opening_detail())
+				} else {
+					(t.empty_blank_title(), t.empty_blank_detail())
+				};
 			self.ui.appearance = ui_appearance(self.ui);
 			self.ui.appearance.weight = 700;
 			out.extend(self.ui.label(
 				title,
 				26.0,
-				button.rect.x,
+				x,
 				y,
 				Paint::Styled(Condition::Ui, C::Color),
 			));
 			self.ui.appearance = ui_appearance(self.ui);
-			let available = width - button.rect.x - 24.0;
+			let available = width - x - 24.0;
 			let mut baseline = y + 32.0;
 			for paragraph in detail.lines() {
 				for line in controls::wrap(self.ui, paragraph, 13.0, available)
@@ -601,20 +592,12 @@ impl Chrome<'_> {
 					out.extend(self.ui.label(
 						&line,
 						13.0,
-						button.rect.x,
+						x,
 						baseline,
 						Paint::Styled(Condition::Ui, C::Muted),
 					));
 					baseline += 20.0;
 				}
-			}
-			if self.session.path.is_none() {
-				out.extend(components::draw_button(
-					self.ui,
-					self.interaction,
-					&button,
-					true,
-				));
 			}
 		}
 

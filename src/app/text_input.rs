@@ -119,7 +119,7 @@ fn key(
 			},
 			"z" => input.undo(ui, shift),
 			"y" if !mac => input.undo(ui, true),
-			"q" | "o" | "e" | "," | "t" => return Outcome::Application,
+			"q" | "o" | "e" | "," | "t" | "n" => return Outcome::Application,
 			_ => {}
 		}
 		return Outcome::Consumed;
@@ -179,6 +179,7 @@ fn key(
 impl<P: SendEvent> App<P> {
 	fn input(&mut self, id: TextField) -> (&mut TextInput, &mut TextShaper) {
 		match id {
+			TextField::Url => (&mut self.url_input, &mut self.ui),
 			TextField::Search => {
 				(&mut self.readers.session.search.input, &mut self.ui)
 			}
@@ -191,6 +192,31 @@ impl<P: SendEvent> App<P> {
 		&mut self,
 		id: TextField,
 	) -> Option<(Rect, Rect)> {
+		if id == TextField::Url {
+			if self.interaction.panel_open()
+				|| self.interaction.outline_open
+				|| self.interaction.modal.is_some()
+				|| self.interaction.viewer.is_some()
+			{
+				return None;
+			}
+			let rect = self
+				.chrome()
+				.buttons()
+				.into_iter()
+				.find(|b| b.action == Command::FocusInput(id))?
+				.rect;
+			let (w, h, _) = self.dimensions();
+			return Some((
+				rect,
+				Rect {
+					x: 0.0,
+					y: super::TOP,
+					w,
+					h: (h - super::TOP - self.bottom()).max(0.0),
+				},
+			));
+		}
 		if id == TextField::Search {
 			return self.readers.session.search.open.then(|| {
 				let (w, h, _) = self.dimensions();
@@ -225,6 +251,11 @@ impl<P: SendEvent> App<P> {
 			&& self.search_input_rect().contains(x, y)
 		{
 			return Some(TextField::Search);
+		}
+		if let Some((rect, _)) = self.input_geometry(TextField::Url)
+			&& rect.contains(x, y)
+		{
+			return Some(TextField::Url);
 		}
 		let form = self.panel_form()?;
 		let (x, y) = self.interaction.cursor;
@@ -488,6 +519,14 @@ impl<P: SendEvent> App<P> {
 		let before = (id == TextField::Search)
 			.then(|| self.readers.session.search.input.text().to_owned());
 		let outcome = match id {
+			TextField::Url => key(
+				&mut self.url_input,
+				&mut self.ui,
+				&mut self.clipboard,
+				logical,
+				text,
+				mods,
+			),
 			TextField::Search => key(
 				&mut self.readers.session.search.input,
 				&mut self.ui,
@@ -505,6 +544,10 @@ impl<P: SendEvent> App<P> {
 				mods,
 			),
 		};
+		if id == TextField::Url && outcome == Outcome::Submit {
+			self.action(Command::OpenUrl);
+			return Outcome::Consumed;
+		}
 		if id == TextField::Search {
 			if before.as_deref()
 				!= Some(self.readers.session.search.input.text())
@@ -552,6 +595,20 @@ impl<P: SendEvent> App<P> {
 
 	pub(super) fn draw_inputs(&mut self) -> Vec<Draw> {
 		self.sync_input();
+		if let Some((rect, viewport)) = self.input_geometry(TextField::Url) {
+			let placeholder =
+				self.preferences.values.lang().empty_url_placeholder();
+			return vec![Draw::Clipped {
+				rect: viewport,
+				draws: self.url_input.draw(
+					&mut self.ui,
+					rect,
+					self.text_input.focused == Some(TextField::Url),
+					self.text_input.caret,
+					placeholder,
+				),
+			}];
+		}
 		let Some(form) = self.panel_form() else {
 			return vec![];
 		};

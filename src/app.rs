@@ -251,6 +251,7 @@ struct App<P = EventLoopProxy<Event>> {
 	services: Arc<crate::services::Services>,
 	clipboard: crate::platform::Clipboard,
 	text_input: text_input::InputState,
+	url_input: markview_core::text_input::TextInput,
 	paste_dir: tempfile::TempDir,
 	paste_serial: u32,
 	/// A temporary document path, or `None` while its URL is downloading.
@@ -402,6 +403,7 @@ impl<P: SendEvent> App<P> {
 			services,
 			clipboard: Default::default(),
 			text_input: Default::default(),
+			url_input: Default::default(),
 			paste_dir: tempfile::tempdir()
 				.expect("create clipboard paste directory"),
 			paste_serial: 0,

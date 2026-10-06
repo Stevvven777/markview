@@ -423,3 +423,58 @@ fn search_ime_defers_queries_enter_and_escape_until_composition_ends() {
 	assert!(!app.readers.session.search.open);
 	assert_eq!(app.readers.session.search.input.text(), "你");
 }
+
+#[test]
+fn empty_page_url_input_accepts_text_and_submits_with_enter() {
+	let mut app = app();
+	app.interaction.show_panel(PanelPage::Closed);
+	app.args.offline = true;
+	let id = TextField::Url;
+	let rect = app.input_geometry(id).unwrap().0;
+	app.interaction.cursor = (rect.x + 8.0, rect.y + 16.0);
+	assert_eq!(app.input_at_cursor(), Some(id));
+	app.action(Command::FocusInput(id));
+	assert_eq!(app.text_input.focused, Some(id));
+	assert_eq!(
+		app.input_key(
+			&Key::Character("h".into()),
+			Some(" https://example.com/article ")
+		),
+		Outcome::Consumed
+	);
+	assert_eq!(
+		app.input_key(&Key::Named(NamedKey::Enter), None),
+		Outcome::Consumed
+	);
+	assert!(app.web_pages.contains_key("https://example.com/article"));
+	assert!(app.readers.session.load_error.is_some());
+	assert!(app.url_input.text().is_empty());
+	assert!(app.input_geometry(id).is_none());
+	assert!(app.text_input.focused.is_none());
+}
+
+#[test]
+fn empty_page_link_button_and_focus_follow_page_visibility() {
+	let mut app = app();
+	app.interaction.show_panel(PanelPage::Closed);
+	app.args.offline = true;
+	assert!(
+		app.focus_buttons()
+			.iter()
+			.any(|b| b.action == Command::FocusInput(TextField::Url))
+	);
+	app.action(Command::OpenUrl);
+	assert!(app.readers.session.path.is_none());
+	app.interaction.show_panel(PanelPage::Tabs);
+	assert!(app.input_geometry(TextField::Url).is_none());
+	app.interaction.show_panel(PanelPage::Closed);
+	app.url_input
+		.set_text(&mut app.ui, "https://example.com/button");
+	app.action(Command::OpenUrl);
+	assert!(app.web_pages.contains_key("https://example.com/button"));
+	assert!(
+		!app.buttons()
+			.iter()
+			.any(|b| b.action == Command::FocusInput(TextField::Url))
+	);
+}

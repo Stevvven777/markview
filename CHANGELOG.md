@@ -23,6 +23,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Add localized clipboard guidance and a link input with Enter and an Open link button to the empty reader.
+
 - Add a + button after the file tabs, a drawer + button and Ctrl-N to show the empty reader without creating a tab, preserving open documents.
 
 - Animate the Tabs and Contents drawers with nonlinear sliding transitions, including desktop Contents and smooth reversals.

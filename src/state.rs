@@ -34,6 +34,7 @@ pub(crate) enum Command {
 	FocusInput(TextField),
 	WindowLayout(crate::settings::WindowLayout),
 	TabStyle(crate::settings::TabStyle),
+	OpenUrl,
 	NewPage,
 	Open,
 	Smaller,
@@ -124,6 +125,7 @@ pub(crate) enum Command {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TextField {
+	Url,
 	Search,
 	ExportTitle,
 }
