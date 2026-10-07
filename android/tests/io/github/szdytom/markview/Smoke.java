@@ -223,10 +223,21 @@ public class Smoke extends Instrumentation {
             waitFor(s -> s.optBoolean("search_open"));
             sendStringSync("needle");
             waitFor(s -> s.optInt("matches") > 0);
+            waitFor(s -> keyboardVisible());
+            double searchHeight = stableLayout().getJSONArray("dimensions").getDouble(1);
+            for (String action : new String[]{"SearchNext", "SearchNext", "SearchPrevious"}) {
+                tap(action);
+                long deadline = SystemClock.uptimeMillis() + 750;
+                do {
+                    require(keyboardVisible(), "Search navigation keeps the keyboard visible: " + action);
+                    require(Math.abs(state().getJSONArray("dimensions").getDouble(1) - searchHeight) < 0.1, "Search navigation keeps the viewport height: " + action);
+                    SystemClock.sleep(30);
+                } while (SystemClock.uptimeMillis() < deadline);
+            }
             screenshot("search");
             tap("SearchClose");
-            waitFor(s -> !s.optBoolean("search_open"));
-            pass("Touch search and Android text input");
+            waitFor(s -> !s.optBoolean("search_open") && !keyboardVisible());
+            pass("Touch search, Android text input and stable keyboard during result navigation");
 
             getUiAutomation().setRotation(phone ? 1 : 1 - portraitRotation);
             if (phone) {
@@ -644,6 +655,23 @@ public class Smoke extends Instrumentation {
         if (Intent.ACTION_SEND.equals(action)) intent.setType("text/markdown").putExtra(Intent.EXTRA_STREAM, uri);
         else intent.setDataAndType(uri, "text/markdown");
         return intent;
+    }
+    private boolean keyboardVisible() {
+        final boolean[] visible = {false};
+        runOnMainSync(() -> {
+            android.view.View decor = activity.getWindow().getDecorView();
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                visible[0] = decor.getRootWindowInsets().isVisible(android.view.WindowInsets.Type.ime());
+            } else {
+                Rect frame = new Rect();
+                decor.getWindowVisibleDisplayFrame(frame);
+                android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+                activity.getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
+                // System bars alone occupy less than `100 dp` below the visible frame.
+                visible[0] = metrics.heightPixels - frame.bottom > 100 * metrics.density;
+            }
+        });
+        return visible[0];
     }
     private JSONObject stableLayout() throws Exception {
         long deadline = SystemClock.uptimeMillis() + 10000, stable = SystemClock.uptimeMillis();

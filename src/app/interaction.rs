@@ -54,9 +54,12 @@ impl<P: super::SendEvent> App<P> {
 		) {
 			self.close_search();
 		}
-		self.blur_input();
-		if matches!(self.interaction.focus, Some(Command::FocusInput(_))) {
-			self.interaction.focus = None;
+		// Search navigation keeps the IME open while moving between results.
+		if !matches!(action, Command::SearchNext | Command::SearchPrevious) {
+			self.blur_input();
+			if matches!(self.interaction.focus, Some(Command::FocusInput(_))) {
+				self.interaction.focus = None;
+			}
 		}
 
 		self.cancel_gestures();

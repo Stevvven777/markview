@@ -478,3 +478,18 @@ fn empty_page_link_button_and_focus_follow_page_visibility() {
 			.any(|b| b.action == Command::FocusInput(TextField::Url))
 	);
 }
+
+#[test]
+fn search_navigation_preserves_the_input_method_session() {
+	let mut app = app();
+	app.readers.session.path = Some("search.md".into());
+	app.open_search();
+	event(&mut app, WindowEvent::Ime(Ime::Enabled));
+	for action in [Command::SearchNext, Command::SearchPrevious] {
+		app.action(action);
+		assert_eq!(app.text_input.focused, Some(TextField::Search));
+		assert!(app.text_input.ime_enabled);
+	}
+	app.action(Command::SearchClose);
+	assert!(!app.text_input.ime_enabled);
+}

@@ -77,7 +77,15 @@ def main():
         (artifacts / "session.txt").write_text("\n".join(reports))
         print("\n".join(reports))
         return
-    result = subprocess.run([str(sdk / "platform-tools/adb"), "-s", args.serial, "shell", "am", "instrument", "-w", "-e", "layout", args.layout, "-e", "layout-only", str(args.layout_only).lower(), "-e", "lifecycle-only", str(args.lifecycle_only).lower(), "-e", "mermaid-only", str(args.mermaid_only).lower(), "io.github.szdytom.markview.test/io.github.szdytom.markview.Smoke"], capture_output=True, text=True, timeout=args.timeout)
+    keyboard_setting = subprocess.check_output([str(sdk / "platform-tools/adb"), "-s", args.serial, "shell", "settings", "get", "secure", "show_ime_with_hard_keyboard"], text=True).strip()
+    adb("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1")
+    try:
+        result = subprocess.run([str(sdk / "platform-tools/adb"), "-s", args.serial, "shell", "am", "instrument", "-w", "-e", "layout", args.layout, "-e", "layout-only", str(args.layout_only).lower(), "-e", "lifecycle-only", str(args.lifecycle_only).lower(), "-e", "mermaid-only", str(args.mermaid_only).lower(), "io.github.szdytom.markview.test/io.github.szdytom.markview.Smoke"], capture_output=True, text=True, timeout=args.timeout)
+    finally:
+        if keyboard_setting == "null":
+            adb("shell", "settings", "delete", "secure", "show_ime_with_hard_keyboard")
+        else:
+            adb("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", keyboard_setting)
     report = result.stdout + result.stderr
     (artifacts / "integration.txt").write_text(report)
     print(report)
