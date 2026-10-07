@@ -28,11 +28,12 @@ public class Smoke extends Instrumentation {
     private boolean lifecycleOnly;
     private String sessionPhase;
     private boolean mermaidOnly;
+    private boolean linksOnly;
     private boolean phone;
     private int portraitRotation;
     private final StringBuilder results = new StringBuilder();
     private interface Check { boolean matches(JSONObject state) throws Exception; }
-    @Override public void onCreate(Bundle args) { super.onCreate(args); sessionPhase = args.getString("session-phase"); expectedLayout = args.getString("layout", "phone"); layoutOnly = args.getBoolean("layout-only", false) || "true".equals(args.getString("layout-only")); lifecycleOnly = "true".equals(args.getString("lifecycle-only")); mermaidOnly = "true".equals(args.getString("mermaid-only")); start(); }
+    @Override public void onCreate(Bundle args) { super.onCreate(args); sessionPhase = args.getString("session-phase"); expectedLayout = args.getString("layout", "phone"); layoutOnly = args.getBoolean("layout-only", false) || "true".equals(args.getString("layout-only")); lifecycleOnly = "true".equals(args.getString("lifecycle-only")); mermaidOnly = "true".equals(args.getString("mermaid-only")); linksOnly = "true".equals(args.getString("links-only")); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
@@ -48,6 +49,13 @@ public class Smoke extends Instrumentation {
             require("Markview".contentEquals(getTargetContext().getApplicationInfo().loadLabel(getTargetContext().getPackageManager())), "Application display name");
             pass("Markview application display name");
             checkExternalIntents();
+            if (linksOnly) {
+                new File(getTargetContext().getFilesDir(), "markview/session.json").delete();
+                checkWebLinks(true);
+                result.putString("stream", results.toString() + "MARKVIEW_ANDROID_INTEGRATION_OK\n");
+                finish(Activity.RESULT_OK, result);
+                return;
+            }
             new File(getTargetContext().getFilesDir(), "markview/session.json").delete();
             File config = new File(getTargetContext().getFilesDir(), "markview/settings.toml");
             config.getParentFile().mkdirs();
@@ -447,12 +455,18 @@ public class Smoke extends Instrumentation {
             }
         }
         for (Intent unrelated : new Intent[]{
-            new Intent(Intent.ACTION_VIEW).setData(Uri.parse("https://example.com/README.md")),
+            new Intent(Intent.ACTION_VIEW).setData(Uri.parse("ftp://example.com/README.md")),
             intent("reader.md", Intent.ACTION_VIEW).setDataAndType(Uri.parse("content://io.github.szdytom.markview.test.fixtures/reader.md"), "application/pdf"),
             intent("reader.md", Intent.ACTION_SEND).setType("image/png")
         }) {
             unrelated.setPackage(getTargetContext().getPackageName());
             require(packages.queryIntentActivities(unrelated, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY).isEmpty(), "Unrelated intents do not offer the reader");
+        }
+        for (String scheme : new String[]{"http", "https"}) {
+            Intent link = new Intent(Intent.ACTION_VIEW, Uri.parse(scheme + "://example.com/article?q=1#section"))
+                .addCategory(Intent.CATEGORY_BROWSABLE).setPackage(getTargetContext().getPackageName());
+            java.util.List<android.content.pm.ResolveInfo> matches = packages.queryIntentActivities(link, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+            require(matches.size() == 1 && matches.get(0).activityInfo.name.endsWith(".ReadInMarkview"), "Web link read entry: " + scheme);
         }
         Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(getTargetContext().getPackageName());
         java.util.List<android.content.pm.ResolveInfo> launchers = packages.queryIntentActivities(launcher, 0);
@@ -464,7 +478,7 @@ public class Smoke extends Instrumentation {
         Intent clipped = intent("second.md", Intent.ACTION_SEND).setType("application/octet-stream");
         clipped.removeExtra(Intent.EXTRA_STREAM);
         clipped.setClipData(android.content.ClipData.newRawUri("Markdown", Uri.parse("content://io.github.szdytom.markview.test.fixtures/second.md")));
-        clipped.putExtra(Intent.EXTRA_TEXT, "Attachment description");
+        clipped.putExtra(Intent.EXTRA_TEXT, "https://example.com/article");
         getTargetContext().startActivity(clipped);
         JSONObject shared = waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("/second.md"));
         require(shared.getJSONArray("tabs").length() == tabs, "Sharing an existing file reuses its tab");
@@ -477,6 +491,71 @@ public class Smoke extends Instrumentation {
         require(markdown.equals(new String(Files.readAllBytes(new File(shared.getString("path")).toPath()), StandardCharsets.UTF_8)), "Shared text imports its Markdown source");
         require(!activity.isDestroyed(), "External shares retain the Activity");
         pass("ClipData file sharing and CharSequence Markdown text sharing");
+        checkWebLinks(false);
+    }
+    private void checkWebLinks(boolean cold) throws Exception {
+        try (java.net.ServerSocket server = new java.net.ServerSocket(0, 8, java.net.InetAddress.getByName("198.18.0.1"))) {
+            Thread responder = new Thread(() -> {
+                try {
+                    while (!server.isClosed()) try (java.net.Socket client = server.accept()) {
+                        java.io.BufferedReader request = new java.io.BufferedReader(new java.io.InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
+                        String first = request.readLine();
+                        while (!request.readLine().isEmpty()) {}
+                        String title = first.contains("/second") ? "Second web article" : "First web article";
+                        StringBuilder html = new StringBuilder("<html><head><title>" + title + "</title></head><body><article><h1>" + title + "</h1>");
+                        for (int i = 0; i < 12; i++) html.append("<p>Native reading preserves clear typography and readable paragraphs. This local article fixture exercises Android link delivery, article extraction and document layout without requiring public network access.</p>");
+                        byte[] body = html.append("</article></body></html>").toString().getBytes(StandardCharsets.UTF_8);
+                        client.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: " + body.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                        client.getOutputStream().write(body);
+                    }
+                } catch (Exception error) {
+                    if (!server.isClosed()) throw new RuntimeException(error);
+                }
+            }, "web-link-fixture");
+            responder.setDaemon(true);
+            responder.start();
+            String url = "http://198.18.0.1:" + server.getLocalPort() + "/first?filter[tag]=rust";
+            Intent view = new Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(getTargetContext().getPackageName())
+                .addCategory(Intent.CATEGORY_BROWSABLE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (cold) activity = startActivitySync(view);
+            else getTargetContext().startActivity(view);
+            JSONObject page = waitFor(s -> s.optBoolean("ready") && s.optString("path").contains("First web article"));
+            String path = page.getString("path");
+            require(new String(Files.readAllBytes(new File(path).toPath()), StandardCharsets.UTF_8).contains(url), "Web article imports its source URL");
+            int tabs = page.getJSONArray("tabs").length();
+            Intent share = new Intent(Intent.ACTION_SEND).setType("text/plain").setPackage(getTargetContext().getPackageName())
+                .putExtra(Intent.EXTRA_TEXT, new android.text.SpannableString("  " + url.replace("/first", "/second") + "  ")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getTargetContext().startActivity(share);
+            page = waitFor(s -> s.optBoolean("ready") && s.optString("path").contains("Second web article"));
+            require(page.getJSONArray("tabs").length() == tabs + 1, "URL share opens another web tab");
+            share.putExtra(Intent.EXTRA_TEXT, "Article title\n" + url);
+            getTargetContext().startActivity(share);
+            waitFor(s -> s.optBoolean("ready") && s.optString("path").equals(path));
+            require(state().getJSONArray("tabs").length() == tabs + 1, "Title and URL sharing reuses the existing tab");
+            getTargetContext().startActivity(view.setData(Uri.parse(url.replace("/first", "/second"))));
+            waitFor(s -> s.optBoolean("ready") && s.optString("path").contains("Second web article"));
+            view.setData(Uri.parse(url));
+            getTargetContext().startActivity(view);
+            waitFor(s -> s.optBoolean("ready") && s.optString("path").equals(path));
+            require(state().getJSONArray("tabs").length() == tabs + 1 && !activity.isDestroyed(), "Opening an existing URL retains tabs and Activity");
+            for (String valid : new String[]{"https://example.com/article?filter[tag]=rust", "https://[2001:db8::1]/article", "https://example.com/article%20name"}) {
+                require(valid.equals(MarkviewActivity.nativeSharedUrl("  " + valid + "  ")), "Native shared URL parsing: " + valid);
+                require(valid.equals(MarkviewActivity.nativeSharedUrl("Article title\r\n" + valid)), "Title and URL parsing: " + valid);
+            }
+            String markdown = "- Read this article\n" + url;
+            for (String document : new String[]{markdown, "# Heading\n" + url, "**Article title**\n" + url, "> Article title\n" + url, "1. Read this article\n" + url, "# Shared Markdown\n\nKeep this paragraph.\n\n" + url + "\n\nAnd this paragraph too.", "Article title\n\n" + url, url + "\nhttps://example.com/", "https://[broken]/"})
+                require(MarkviewActivity.nativeSharedUrl(document) == null, "Shared document stays Markdown: " + document);
+            for (String source : new String[]{markdown, "     " + url + " ", "\t" + url, "Article title\n    " + url, url + " is worth reading", "Article title\n" + url + " is worth reading"}) {
+                require(MarkviewActivity.nativeSharedUrl(source) == null, "Markdown source survives shared URL classification");
+                share.putExtra(Intent.EXTRA_TEXT, new android.text.SpannableString(source));
+                getTargetContext().startActivity(share);
+                waitFor(s -> s.optBoolean("ready") && s.optString("path").endsWith("/Shared.md")
+                    && source.equals(new String(Files.readAllBytes(new File(s.getString("path")).toPath()), StandardCharsets.UTF_8)));
+            }
+            pass("Shared list items, indented URL code blocks and URL prose retain their complete Markdown source");
+            pass("Shared Markdown preservation and native URL parsing for bracketed queries and IPv6 hosts");
+            pass("HTTP article extraction, shared URLs, title and URL shares, and link tab reuse" + (cold ? " at cold startup" : ""));
+        }
     }
     private void checkSession() throws Exception {
         File directory = new File(getTargetContext().getFilesDir(), "markview");

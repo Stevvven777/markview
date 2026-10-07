@@ -162,6 +162,10 @@ Use `--session-only` to verify background saves and tab/reading-position restora
 after a process restart, including external-open deduplication.
 Use `--mermaid-only` to verify all three diagram labels have visible pixels in
 light and dark styles, including Android's variable Roboto Flex font.
+Use `--links-only` to verify cold-start web opening, URL sharing and tab reuse
+against a local HTTP article fixture, without public Internet access. Web-link
+tests use `adb root` on the emulator to route a benchmarking address to loopback,
+keeping the reader's private-address restrictions enabled.
 Reports and screenshots are written to `artifacts/android/phone/` and
 `artifacts/android/tablet/` (or the corresponding `*-boundary/` directories).
 

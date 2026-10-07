@@ -37,6 +37,7 @@ public class MarkviewActivity extends NativeActivity {
     private String outputName;
     private File assetDirectory;
     private static native void nativeResult(int kind, String path);
+    static native String nativeSharedUrl(String text);
     static native String nativeSnapshot();
     static native boolean nativeBridgeReferencesReleased();
     public void systemBars(String mode) {
@@ -96,6 +97,11 @@ public class MarkviewActivity extends NativeActivity {
                 CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
                 if (shared == null) return;
                 String text = shared.toString();
+                String link = nativeSharedUrl(text);
+                if (link != null) {
+                    deliver(5, link);
+                    return;
+                }
                 io.execute(() -> {
                     try {
                         File file = new File(getFilesDir(), "shared/Shared.md");
@@ -107,7 +113,13 @@ public class MarkviewActivity extends NativeActivity {
                 return;
             }
         }
-        if (uri != null && "content".equals(uri.getScheme())) importDocument(uri);
+        if (uri != null) {
+            if (webLink(uri)) deliver(5, uri.toString());
+            else if ("content".equals(uri.getScheme())) importDocument(uri);
+        }
+    }
+    private static boolean webLink(Uri uri) {
+        return "http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme());
     }
     public void pickDocument(String ignored) {
         runOnUiThread(() -> new AlertDialog.Builder(this).setTitle("Markview")

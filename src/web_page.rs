@@ -11,6 +11,49 @@ pub(crate) fn validate_url(value: &str) -> Result<url::Url> {
 	Ok(url)
 }
 
+#[cfg(any(target_os = "android", test))]
+pub(crate) fn shared_url(text: &str) -> Option<String> {
+	let mut lines = text.trim_matches(['\r', '\n']).lines();
+	let first = lines.next()?;
+	let candidate = match (lines.next(), lines.next()) {
+		(None, None) => first,
+		(Some(url), None)
+			if plain_share_title(first)
+				&& validate_url(first.trim()).is_err() =>
+		{
+			url
+		}
+		_ => return None,
+	};
+	if candidate.starts_with("    ")
+		|| candidate.trim_start_matches(' ').starts_with('\t')
+	{
+		return None;
+	}
+	let candidate = candidate.trim();
+	if candidate.chars().any(char::is_whitespace) {
+		return None;
+	}
+	validate_url(candidate).ok().map(|url| url.to_string())
+}
+
+#[cfg(any(target_os = "android", test))]
+fn plain_share_title(title: &str) -> bool {
+	use crate::document::{BlockKind, InlineKind, parse, plain_text};
+	let document = parse(title.to_owned());
+	let [block] = document.blocks.as_slice() else {
+		return false;
+	};
+	let BlockKind::Paragraph(text) = &block.kind else {
+		return false;
+	};
+	plain_text(text) == title.trim()
+		&& text.iter().all(|inline| {
+			matches!(inline.kind, InlineKind::Text(_))
+				&& inline.style.conditions().next().is_none()
+		})
+}
+
 pub(crate) async fn load(
 	url: &str,
 	offline: bool,
@@ -206,6 +249,85 @@ fn literal_delimiters(markdown: &str) -> String {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn shared_links_preserve_url_prose() {
+		let url = "https://example.com/article";
+		for whitespace in [" ", "\t", "\u{a0}", "\u{2003}"] {
+			let prose = format!("  {url}{whitespace}is worth reading ");
+			assert_eq!(shared_url(&prose), None, "{prose:?}");
+			assert_eq!(shared_url(&format!("Article title\n{prose}")), None);
+		}
+		for encoded in ["%20", "%09"] {
+			let link = format!("{url}{encoded}name");
+			assert_eq!(shared_url(&format!("  {link} \t")), Some(link.clone()));
+			assert_eq!(
+				shared_url(&format!("Article title\n{link}")),
+				Some(link)
+			);
+		}
+	}
+
+	#[test]
+	fn shared_links_preserve_indented_url_code_blocks() {
+		let url = "https://example.com/article";
+		for indentation in ["    ", "     ", "\t", " \t", "   \t"] {
+			let code = format!("{indentation}{url} ");
+			assert_eq!(shared_url(&code), None, "{code:?}");
+			assert_eq!(shared_url(&format!("Article title\n{code}")), None);
+			assert_eq!(shared_url(&format!("\r\n{code}\r\n")), None);
+		}
+		for padding in ["", " ", "  ", "   "] {
+			let link = format!("{padding}{url} \t");
+			assert_eq!(shared_url(&link), Some(url.into()), "{link:?}");
+			assert_eq!(
+				shared_url(&format!("Article title\n{link}")),
+				Some(url.into())
+			);
+		}
+	}
+
+	#[test]
+	fn shared_links_preserve_markdown_titles() {
+		let url = "https://example.com/article?filter[tag]=rust";
+		for title in [
+			"- Read this article",
+			"+ Read this article",
+			"* Read this article",
+			"1. Read this article",
+			"1) Read this article",
+			"- [ ] Read this article",
+			"> Read this article",
+			"# Read this article",
+			"    Read this article",
+			"\tRead this article",
+			"**Read this article**",
+			"_Read this article_",
+			"~~Read this article~~",
+			"`Read this article`",
+			"$x^2$",
+			"```rust",
+			"[Read this article](https://example.com/)",
+			"---",
+		] {
+			assert_eq!(shared_url(&format!("{title}\n{url}")), None, "{title}");
+		}
+		for title in [
+			"Read this article",
+			"Rust: notes (2026)",
+			"#hashtag",
+			"-word",
+		] {
+			assert_eq!(
+				shared_url(&format!("{title}\n{url}")),
+				Some(url.into()),
+				"{title}"
+			);
+		}
+		assert_eq!(shared_url(&format!("  {url}  ")), Some(url.into()));
+		let ipv6 = "https://[2001:db8::1]/article";
+		assert_eq!(shared_url(ipv6), Some(ipv6.into()));
+	}
 
 	#[test]
 	fn web_math_and_empty_table_headers_reach_native_layout() {

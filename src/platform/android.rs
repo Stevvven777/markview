@@ -140,6 +140,20 @@ pub(crate) fn choose_output(
 	async move { receive.await.ok().flatten() }
 }
 
+// SAFETY: Java passes a non-null `String`; the environment and references
+// remain valid throughout this native call.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_szdytom_markview_MarkviewActivity_nativeSharedUrl(
+	mut env: JNIEnv,
+	_: JClass,
+	text: JString,
+) -> jni::sys::jstring {
+	let text = String::from(env.get_string(&text).unwrap());
+	crate::web_page::shared_url(&text).map_or(std::ptr::null_mut(), |url| {
+		env.new_string(url).unwrap().into_raw()
+	})
+}
+
 // SAFETY: The VM resolves this symbol for the declared Java native method;
 // `JNIEnv` and the local references are valid for this invocation.
 #[unsafe(no_mangle)]
@@ -150,10 +164,7 @@ pub extern "system" fn Java_io_github_szdytom_markview_MarkviewActivity_nativeRe
 	path: JString,
 ) {
 	let path = (!path.is_null())
-		.then(|| {
-			env.get_string(&path)
-				.map(|s| PathBuf::from(String::from(s)))
-		})
+		.then(|| env.get_string(&path).map(String::from))
 		.transpose();
 	let path = match path {
 		Ok(path) => path,
@@ -165,19 +176,24 @@ pub extern "system" fn Java_io_github_szdytom_markview_MarkviewActivity_nativeRe
 	match kind {
 		0 => {
 			if let Some(done) = PICKED.lock().unwrap().take() {
-				done(path);
+				done(path.map(PathBuf::from));
 			} else if let Some(path) = path {
-				crate::app::android::open(path);
+				crate::app::android::open(PathBuf::from(path));
 			}
 		}
 		1 => {
 			if let Some(send) = OUTPUT.lock().unwrap().take() {
-				let _ = send.send(path);
+				let _ = send.send(path.map(PathBuf::from));
 			}
 		}
 		2 => crate::app::android::assets_changed(),
 		3 => crate::app::android::back(),
 		4 => crate::app::android::configuration_changed(),
+		5 => {
+			if let Some(url) = path {
+				crate::app::android::open_url(url);
+			}
+		}
 		_ => unreachable!(),
 	}
 }

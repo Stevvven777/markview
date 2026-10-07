@@ -7,14 +7,22 @@ use winit::{
 	platform::android::{EventLoopBuilderExtAndroid, activity::AndroidApp},
 };
 
-static PROXY: Mutex<(Option<EventLoopProxy<Event>>, Vec<PathBuf>)> =
+static PROXY: Mutex<(Option<EventLoopProxy<Event>>, Vec<Event>)> =
 	Mutex::new((None, Vec::new()));
 pub(crate) fn open(path: PathBuf) {
+	open_event(Event::Open(Some(path)));
+}
+
+pub(crate) fn open_url(url: String) {
+	open_event(Event::AndroidOpenUrl(url));
+}
+
+fn open_event(event: Event) {
 	let mut bridge = PROXY.lock().unwrap();
 	if let Some(proxy) = &bridge.0 {
-		let _ = proxy.send_event(Event::Open(Some(path)));
+		let _ = proxy.send_event(event);
 	} else {
-		bridge.1.push(path);
+		bridge.1.push(event);
 	}
 }
 
@@ -77,8 +85,8 @@ fn run(android: AndroidApp) -> anyhow::Result<()> {
 	{
 		let mut bridge = PROXY.lock().unwrap();
 		bridge.0 = Some(proxy.clone());
-		for path in bridge.1.drain(..) {
-			let _ = proxy.send_event(Event::Open(Some(path)));
+		for event in bridge.1.drain(..) {
+			let _ = proxy.send_event(event);
 		}
 	}
 	let result = event_loop.run_app(&mut app);

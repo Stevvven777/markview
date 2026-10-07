@@ -268,6 +268,8 @@ impl<P: super::SendEvent> App<P> {
 					self.open(path);
 				}
 			}
+			#[cfg(target_os = "android")]
+			Event::AndroidOpenUrl(url) => self.open_web_page(url),
 			Event::Changed(path)
 				if self.readers.session.path.as_ref() == Some(&path) =>
 			{

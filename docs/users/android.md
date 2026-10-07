@@ -16,7 +16,12 @@ without first saving it or finding it in the picker. Markdown MIME types, plain
 text and generic `application/octet-stream` attachments are supported, including
 providers whose content URIs do not contain a filename. Generic attachments can
 also list Markview for non-Markdown files because Android cannot filter shares
-by their display filename. Shared text opens as a Markdown document.
+by their display filename. Shared HTTP(S) URLs open in the native web reader;
+a plain title followed immediately by a URL as the only two lines is also supported. Other shared text
+opens as a Markdown document, and file attachments take precedence over text.
+HTTP(S) **Open with** links use the same web reader. Android 12 and newer
+usually send unverified web links to the default browser; use the browser's
+**Share** menu and select **Read in Markview** to read them here.
 Tabs, touch scrolling, outline, search,
 settings and styles use the same controllers as the desktop reader. Phones open
 the tab drawer with the top-left menu button or a right swipe across the reader.

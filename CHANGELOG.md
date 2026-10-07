@@ -31,6 +31,7 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Receive shared HTTP(S) links and Android Open with links in the native web reader, reusing existing page tabs.
 - Add localized clipboard guidance and a link input with Enter and an Open link button to the empty reader.
 
 - Add a + button after the file tabs, a drawer + button and Ctrl-N to show the empty reader without creating a tab, preserving open documents.
@@ -43,6 +44,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Preserve shared Markdown containing bare links, formatted titles, indented URL code blocks or prose after URLs; use native URL parsing without accepting internal whitespace.
 - Keep the Android keyboard and search bar stable when navigating between search results.
 - Keep search keyboard visibility checks compatible with Android 9 and 10.
 - Fix the Android drawer swipe regression test and include the web article parser's MPL-2.0 dependencies and source links in package notices.

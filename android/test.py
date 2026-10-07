@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--session-only", action="store_true", help="Check background persistence and restoration after a process restart")
     parser.add_argument("--lifecycle-only", action="store_true", help="Check repeated Activity destruction and recreation in one process")
     parser.add_argument("--mermaid-only", action="store_true", help="Check Mermaid label pixels in light and dark styles")
+    parser.add_argument("--links-only", action="store_true", help="Check cold and warm web link intents with a local article server")
     parser.add_argument("--layout-only", action="store_true", help="Check resource selection, orientation and controls at a screen-size boundary")
     parser.add_argument("--layout", choices=["phone", "tablet"], default="phone", help="Expected sw600dp layout on the test device")
     parser.add_argument("--online", action="store_true", help="Fetch the image from GitHub instead of using a deterministic warm-cache fixture")
@@ -28,7 +29,7 @@ def main():
     tools = sdk / "build-tools/35.0.0"
     android = sdk / "platforms/android-35/android.jar"
     build = ROOT / "target/android"
-    artifacts = ROOT / "artifacts/android" / (args.layout + ("-mermaid" if args.mermaid_only else "-lifecycle" if args.lifecycle_only else "-boundary" if args.layout_only else ""))
+    artifacts = ROOT / "artifacts/android" / (args.layout + ("-links" if args.links_only else "-mermaid" if args.mermaid_only else "-lifecycle" if args.lifecycle_only else "-boundary" if args.layout_only else ""))
     artifacts.mkdir(parents=True, exist_ok=True)
     adb = partial(run, sdk / "platform-tools/adb", "-s", args.serial)
     classes = build / "test-classes"
@@ -50,6 +51,8 @@ def main():
     run(tools / "apksigner", "sign", "--ks", build / "debug.keystore", "--ks-pass", "pass:android", apk)
     adb("install", "--no-incremental", "-r", build / "markview-android-debug.apk")
     adb("install", "--no-incremental", "-r", apk)
+    if args.links_only:
+        adb("shell", "am", "force-stop", "io.github.szdytom.markview")
     adb("shell", "run-as", "io.github.szdytom.markview", "rm", "-rf", "files/test-artifacts")
     # Seed a real disk entry so cache tests do not depend on public connectivity.
     adb("shell", "run-as", "io.github.szdytom.markview", "rm", "-rf", "files/markview/cache/images")
@@ -78,10 +81,18 @@ def main():
         print("\n".join(reports))
         return
     keyboard_setting = subprocess.check_output([str(sdk / "platform-tools/adb"), "-s", args.serial, "shell", "settings", "get", "secure", "show_ime_with_hard_keyboard"], text=True).strip()
+    web_fixture = not (args.layout_only or args.lifecycle_only or args.mermaid_only)
+    if web_fixture:
+        # Route the benchmarking address locally while keeping production network checks enabled.
+        adb("root")
+        adb("wait-for-device")
+        adb("shell", "ip", "addr", "replace", "198.18.0.1/32", "dev", "lo")
     adb("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1")
     try:
-        result = subprocess.run([str(sdk / "platform-tools/adb"), "-s", args.serial, "shell", "am", "instrument", "-w", "-e", "layout", args.layout, "-e", "layout-only", str(args.layout_only).lower(), "-e", "lifecycle-only", str(args.lifecycle_only).lower(), "-e", "mermaid-only", str(args.mermaid_only).lower(), "io.github.szdytom.markview.test/io.github.szdytom.markview.Smoke"], capture_output=True, text=True, timeout=args.timeout)
+        result = subprocess.run([str(sdk / "platform-tools/adb"), "-s", args.serial, "shell", "am", "instrument", "-w", "-e", "layout", args.layout, "-e", "layout-only", str(args.layout_only).lower(), "-e", "lifecycle-only", str(args.lifecycle_only).lower(), "-e", "mermaid-only", str(args.mermaid_only).lower(), "-e", "links-only", str(args.links_only).lower(), "io.github.szdytom.markview.test/io.github.szdytom.markview.Smoke"], capture_output=True, text=True, timeout=args.timeout)
     finally:
+        if web_fixture:
+            adb("shell", "ip", "addr", "del", "198.18.0.1/32", "dev", "lo")
         if keyboard_setting == "null":
             adb("shell", "settings", "delete", "secure", "show_ime_with_hard_keyboard")
         else:
@@ -95,7 +106,7 @@ def main():
         screenshots = ["mermaid-light", "mermaid-dark"]
     if args.layout_only:
         screenshots = ["reader", "settings", "layout"] + (["landscape-settings"] if args.layout == "tablet" else [])
-    if args.lifecycle_only:
+    if args.lifecycle_only or args.links_only:
         screenshots = []
     if not success:
         screenshots.extend(["system-bars", "failure"])

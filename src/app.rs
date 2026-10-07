@@ -102,6 +102,8 @@ enum Event {
 	AndroidBack,
 	#[cfg(target_os = "android")]
 	AndroidConfiguration,
+	#[cfg(target_os = "android")]
+	AndroidOpenUrl(String),
 	#[cfg(all(target_os = "android", debug_assertions))]
 	AndroidInspect(std::sync::mpsc::Sender<String>),
 	Exported(Box<ExportOutcome>),
