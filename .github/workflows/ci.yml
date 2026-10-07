@@ -42,6 +42,8 @@ jobs:
         run: |
           dist generate --check
           dist plan
+      - name: Documentation links and audience indexes
+        run: python3 scripts/test_documentation.py
       - name: Release notes use the installable packages
         run: python3 -m unittest discover -s scripts -p 'test_render_release_notes.py'
       - name: Android build orchestration

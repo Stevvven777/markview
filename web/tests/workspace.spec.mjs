@@ -351,7 +351,10 @@ test("the component guide loads from repository Markdown and retains its own dra
 	const download = await pending;
 	expect(download.suggestedFilename()).toBe("mvaac.md");
 	expect(await readFile(await download.path(), "utf8")).toBe(
-		await readFile(new URL("../../docs/mvaac.md", import.meta.url), "utf8"),
+		await readFile(
+			new URL("../../docs/library/mvaac.md", import.meta.url),
+			"utf8",
+		),
 	);
 	await page.getByRole("link", { name: "Edit", exact: true }).click();
 	await replaceSource(page, "# Guide draft\n\nLocal changes.");

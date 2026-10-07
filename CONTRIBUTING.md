@@ -4,8 +4,9 @@ Thanks for wanting to help. Patches of every size are welcome.
 
 Development is a Rust workspace: build, test and check commands, the layer each
 change belongs in, and the workflow for a new document node are in the
-[development guide](docs/development.md). The boundaries a change should
-preserve are in the [architecture](docs/architecture.md). The local conventions
+[developer documentation](docs/developers/README.md) and
+[development guide](docs/developers/development.md). The boundaries a change should
+preserve are in the [architecture](docs/developers/architecture.md). The local conventions
 are in [AGENTS.md](AGENTS.md) — they apply to human contributors too. Add a
 one-line [changelog](CHANGELOG.md) entry as you go.
 

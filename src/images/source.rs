@@ -41,7 +41,7 @@ pub(super) fn source(src: &str, document: &Path) -> Result<Source> {
 	let path = Path::new(decoded.as_ref());
 	// Only paths relative to the document are reachable. `..` is allowed: it
 	// names another relative location, and the reader cannot exfiltrate what
-	// it reads. See `docs/security.md` for the accepted residual.
+	// it reads. See `docs/developers/security.md` for the accepted residual.
 	if rooted(path) {
 		bail!("Absolute image paths are not allowed");
 	}

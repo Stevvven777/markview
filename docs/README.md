@@ -1,34 +1,17 @@
-# Documentation map
+# Documentation
 
-Markview's documentation is deliberately split by reader intent. Each page has one job.
+Choose the documentation for what you want to do:
 
-## Start with the product
+| Reader | Start here |
+| --- | --- |
+| End users | [Use Markview](users/README.md): install the native reader, read documents, customize and export |
+| Library users | [Integrate Web components](library/README.md): use the Web/TypeScript viewer and editor in your application |
+| Markview developers | [Develop Markview](developers/README.md): understand, build, test and release the implementation |
 
-The root [README](../README.md) is the user-facing entry point: screenshots, a
-summary of the measured performance, installation, reading controls, supported
-content, limitations, and a short customization example. The `docs/screenshots`
-images it embeds are reproduced by `scripts/capture_screenshots.sh`.
+The root [README](../README.md) ([简体中文](../README.zh-cn.md)) introduces the
+product and downloads. Each guide owns its detailed instructions; other pages
+link to it rather than repeating them. Historical design contracts live under
+`developers/history/` and do not define the current library API.
 
-- [Comparison](comparison.md) records how the README's typography figure is produced, and what it does and does not claim.
-
-## Understand the implementation
-
-- [Architecture](architecture.md) explains ownership, snapshots, versions, layout, interaction, and resource boundaries. It focuses on what the system guarantees and why.
-- [Performance model](performance.md) explains the measured terms, current baselines, and the limits of those numbers.
-- [Latency and memory analysis](performance-analysis.md) is the diagnostic page: first-frame, edit-latency and memory measurements against explicit targets, with the responsible code and ranked optimization points.
-- [Security and threat model](security.md) defines security policy, attacker capabilities, trust boundaries, and accepted risks.
-- [Security reference](security-reference.md) records the threat catalog, implementation controls, limits, and historical findings.
-
-## Change the implementation
-
-- [Security verification](security-verification.md) tracks security evidence, outstanding work, and proposed verification harnesses.
-- [Development guide](development.md) is the how-to page for building, testing, changing behavior, and adding a new document node.
-- [Stylesheet guide](stylesheets.md) is the how-to/reference page for authoring and installing MVSS themes.
-- [MV4A Android app](../android/README.md) covers shared desktop application features, Android document access, APK building and emulator verification.
-- [MVaaC components](mvaac.md) covers reusable viewer/editor packages, automatic source following, resource injection, deployment and migration. [Source navigation/TOC](mvaac-source-api.md) defines coordinates and versions; [the initial demo contract](mvaac-web-demo.md) is historical. [Font codec measurements](mvaac-font-measurements.md) record format coverage and size/startup cost.
-
-## Ship the implementation
-
-- [Packaging and releases](packaging.md) is the maintainer page for release assets, the cargo-dist configuration, and per-platform runtime requirements.
-
-When a fact belongs to more than one page, keep the detailed explanation in the page that owns the concept and link to it elsewhere. In particular, keep commands and procedures out of architecture documentation.
+Examples remain under `examples/`; screenshots and their source documents remain
+under `docs/screenshots/`; test fixtures stay beside the tests that use them.

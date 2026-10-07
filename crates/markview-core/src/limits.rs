@@ -2,7 +2,7 @@
 //!
 //! The defaults are chosen so ordinary documents never reach them: a limit is
 //! a guard against pathological input, not a policy about how much a user may
-//! read. See `docs/security.md` for the threat model.
+//! read. See `docs/developers/security.md` for the threat model.
 
 /// Depth, iteration, and byte budgets for parsing and layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

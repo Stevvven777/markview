@@ -25,7 +25,7 @@ const MARKDOWN: &[&str] = &["md", "markdown", "mdown"];
 /// Types a system viewer consumes as data. None of them is a script or an
 /// installer, and each is handled by a renderer rather than a shell. `.svg` is
 /// scriptable XML and `.txt` is text; both are accepted knowingly, see
-/// `docs/security.md`.
+/// `docs/developers/security.md`.
 const INERT: &[&str] = &[
 	// Plain text
 	"txt", // Images

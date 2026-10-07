@@ -83,4 +83,4 @@ Simple HTML shares Markdown semantics: <strong>bold</strong>, <em>italic</em>, <
 Wide content can be scrolled locally with Shift+wheel: 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789
 ```
 
-回到[结构化阅读](#structured-reading)，或查看[架构中的三层流水线](../docs/architecture.md#the-three-layer-pipeline)。标题锚点使用 GitHub 的 slug 规则，因此这些链接在 Markview 与其他 Markdown 阅读器中指向同一个标题。
+回到[结构化阅读](#structured-reading)，或查看[架构中的三层流水线](../docs/developers/architecture.md#the-three-layer-pipeline)。标题锚点使用 GitHub 的 slug 规则，因此这些链接在 Markview 与其他 Markdown 阅读器中指向同一个标题。

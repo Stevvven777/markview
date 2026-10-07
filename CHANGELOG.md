@@ -21,6 +21,14 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Changed
+
+- Refresh README imagery and source credits for the Cyberspace Independence Declaration, Open Access Manifesto and revised Rust excerpts.
+- Add localized four-panel README previews from the Open Access Manifesto, the Rust Book, OpenStax's Stokes' theorem and Wikipedia web extraction, with source and license credits.
+- Refine README typography comparison styling and load its replaceable sample from a plain-text file.
+- Redesign both READMEs with desktop/Android installation, device imagery, refreshed typography comparisons, a Light/Dark split and gallery, PDF export, security evidence and performance charts.
+- Add the Markview QQ group to the Chinese README navigation and community section.
+
 ### Added
 
 - Add localized clipboard guidance and a link input with Enter and an Open link button to the empty reader.
@@ -80,6 +88,8 @@ at the same level, without `[brackets]`.
 - Render multi-block grouping HTML tags such as `<div>` and `<section>` as transparent containers, laying out their already-parsed Markdown body in place instead of showing the raw source.
 
 ### Changed
+
+- Reorganize documentation into end-user, Web library-user and Markview developer guides, with focused product READMEs.
 
 - Remove tracked development artifacts and redundant release checksum files, source tarball and dist manifest; show GitHub SHA-256 values in the download table.
 

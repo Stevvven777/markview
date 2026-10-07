@@ -3,7 +3,7 @@
 //! Browser-independent state also builds as a native `rlib`, so the workspace
 //! tests font registration and publication without any browser code in it.
 //!
-//! The JavaScript component contract is documented in `docs/mvaac.md`.
+//! The JavaScript component contract is documented in `docs/library/mvaac.md`.
 
 // The pointer and the publication bookkeeping are pure state: they name no
 // browser type, so native tests cover them directly and `api.rs` stays the

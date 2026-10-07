@@ -21,7 +21,8 @@ helper performs no work until explicitly passed to a viewer. Hosts may supply
 
 ## Quick start from built packages
 
-Build the packages as described below before importing workspace entries. Give
+For a source checkout, [build the packages](../developers/web.md#build-and-test)
+before importing workspace entries. Give
 the mount container a height; text fonts are explicit host assets, never bundled
 in the viewer. The official WASM accepts OTF/TTF/TTC and WOFF/WOFF2
 files, and only KaTeX fonts are embedded.
@@ -212,7 +213,7 @@ Official `pnpm --dir web build:wasm` enables Rust's optional `woff` feature. A c
 --no-default-features` excludes the decoder; WOFF inputs then reject with a
 feature-specific message while OTF/TTF/TTC remain valid. A JavaScript option
 cannot shrink an already built WASM. Decode and invalid-font failures identify
-the input index. [Codec measurements and coverage](mvaac-font-measurements.md)
+the input index. [Codec measurements and coverage](../developers/mvaac-font-measurements.md)
 record the tested formats, dependency licenses and measured overhead.
 
 ## Stylesheet registration and selection
@@ -268,8 +269,8 @@ accepts Blob/ArrayBuffer/Uint8Array; `loadImageUrl(request, options)` combines
 fetching with request delivery. All respect the request's cancellation signal
 and preserve byte-view bounds. To replace transport entirely, provide
 `resources.onResources(events)` and call each request's `resolve(pixels)` or
-`reject(error)`; priority events allow host scheduling. See the historical
-[resource protocol](mvaac-web-demo.md#asynchronous-image-resources) for the
+`reject(error)`; priority events allow host scheduling. See the
+[resource protocol](mvaac-resources.md) for the
 low-level contract.
 
 Layout completion means source geometry is published, not that all images have
@@ -360,90 +361,6 @@ This persistence belongs to the demo; `FontLoader` itself caches
 only in memory. Tiny pinned subsets stay under `tests/fixtures` for deterministic
 regression tests. No text fonts ship in the demo or libraries.
 
-## Build and test
-
-### First build
-
-Install Node.js 22 or newer, pnpm, Python 3.11 or newer and
-[Rust via rustup](https://rustup.rs). Add them to `PATH` and reopen your terminal
-after installation. On Windows, follow rustup's prompt to install the Visual
-Studio C++ build tools; they compile the bindings tool. You do not need the
-native Markview application's windowing or PDF dependencies to build MVaaC.
-
-Run these commands from the repository root in PowerShell, cmd, or a Unix shell:
-
-```sh
-pnpm --dir web install
-pnpm --dir web run setup
-pnpm --dir web build
-pnpm --dir web serve
-```
-
-Open `http://127.0.0.1:4173/index.html`. `setup` installs the browser compilation
-target and a matching `wasm-bindgen` tool under the ignored `.tools/` directory.
-It reuses an existing matching tool. The version comes from the Rust package's
-`Cargo.toml`; you do not need to maintain a second version pin. Initial setup
-and compilation need network access and can take several minutes.
-
-### Everyday TypeScript work
-
-After the first build, changes in `web/` only need:
-
-```sh
-pnpm --dir web build:ts
-pnpm --dir web serve
-```
-
-Reload the browser after rebuilding. If you change the Rust engine, run
-`pnpm --dir web build` again; Cargo reuses unchanged code. `build:ts` also works
-with existing generated bindings when Rust is unavailable on the machine.
-
-| Command | What it does |
-| --- | --- |
-| `setup` | Prepare the Rust browser target and matching bindings tool |
-| `build:wasm` | Compile the engine and generate JavaScript/TypeScript bindings |
-| `build:ts` | Bundle all packages, emit declarations and build the demo |
-| `build` | Run `build:wasm`, then `build:ts` |
-| `serve` | Serve the built demo over HTTP |
-
-Think of WASM as the engine asset that the TypeScript viewer loads, like an
-image or font asset. The build has three outputs:
-
-1. `web/packages/markview/wasm/`: generated engine bindings and binary.
-2. `web/packages/*/dist/`: public ESM packages, declarations and the viewer's
-   sibling WASM binary.
-3. `web/dist/`: the static demo site, ready to serve or deploy.
-
-`scripts/build-web.py` owns Rust compilation and binding generation;
-`web/scripts/wasm.mjs` finds Python on Windows, macOS and Linux. Both locate the
-repository from their own file paths, so spaces, Unicode and a different
-working directory are supported. The build reads Cargo's actual output
-directory, including `CARGO_TARGET_DIR` and `.cargo/config.toml` settings.
-Advanced users can set `WASM_BINDGEN` to an executable path; its version must
-match the crate. Running `python3 scripts/build-web.py` directly builds only
-WASM (`py -3 scripts/build-web.py` on Windows).
-
-### Validation
-
-Build first, then run:
-
-```sh
-pnpm --dir web typecheck
-pnpm --dir web exec playwright install chromium
-pnpm --dir web test
-pnpm --dir web test:packages
-```
-
-Linux may also need `pnpm --dir web exec playwright install-deps chromium`.
-Build-script regression tests need no Rust compilation or browser:
-`python3 scripts/test_build_web.py` (`py -3 scripts/test_build_web.py` on Windows).
-
-`web/build.mjs` builds the
-viewer, helpers, compatibility entry and editor in dependency order, emits type
-declarations, copies WASM, then bundles examples using built entries. Tests
-also install actual tarballs into an isolated consumer, typecheck with `skipLibCheck: false`, bundle without source aliases and initialize/mount/destroy in Chromium. The normal suite starts with DOM-free Node tests of the scroll core, then runs the original reader regressions, built viewer/source navigation, real
-CodeMirror scrolling/editing, Chinese composition, resize, TOC and lifecycle.
-
 ## Migration
 
 Use `@markview/viewer` for `init`, `Markview`, `LayoutUpdate`, `CanvasReader`,
@@ -456,4 +373,4 @@ per-reader `fonts` for independent instances.
 `packages/markview` is now the viewer's source directory; `packages/web` is the
 compatibility directory. The old demo contract is historical and its exclusions
 of editing/outlines do not constrain this iteration. Public source/navigation
-API lives in this guide and `mvaac-source-api.md`.
+API lives in this guide and [source navigation and TOC](mvaac-source-api.md).

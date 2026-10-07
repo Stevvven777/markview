@@ -1,28 +1,19 @@
 <p align="center">
-  <img src="assets/markview-icon-color.svg" alt="Markview" width="104" height="104">
+  <img src="assets/markview-icon-color.svg" alt="Markview" width="88" height="88">
 </p>
 
 <h1 align="center">Markview</h1>
 
 <p align="center">
-  <strong>A fast, native Markdown reader with publication-quality typography.</strong><br>
-  Markdown, mathematics, code, tables and images, typeset straight to the screen —
-  with no browser, no WebView, no JavaScript and no TeX process.
+  <strong>Open quickly. Settle into reading.</strong><br>
+  A lightweight, native Markdown reader for desktop and Android.<br>
+  Clear text, mathematics and code, with publication-quality typography.
 </p>
 
 <p align="center">
-  <a href="https://github.com/szdytom/markview/actions/workflows/ci.yml"><img src="https://github.com/szdytom/markview/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/szdytom/markview/releases"><img src="https://img.shields.io/github/v/release/szdytom/markview?sort=semver" alt="Latest release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
-</p>
-
-<p align="center">
-  <a href="#install">Install</a> ·
-  <a href="#how-it-compares">How it compares</a> ·
-  <a href="#reading">Reading</a> ·
-  <a href="#export">Export</a> ·
-  <a href="#stylesheets">Stylesheets</a> ·
-  <a href="#documentation">Documentation</a>
+  <strong><a href="https://github.com/szdytom/markview/releases/latest">Download Markview</a></strong> ·
+  <a href="#make-it-your-page">Explore themes</a> ·
+  <a href="docs/users/README.md">User guide</a>
 </p>
 
 <p align="center">
@@ -30,404 +21,170 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/en-typography.png" alt="Markview typesetting an English Markdown document" width="820">
+  <img src="docs/screenshots/readme/en-hero.png" alt="Real Markview interfaces in a desktop monitor, Android phone and tablet composition" width="900">
 </p>
 
-## Install
+## Install Now
 
-Download the latest build from [Releases](https://github.com/szdytom/markview/releases):
+Choose your platform from the [latest release](https://github.com/szdytom/markview/releases/latest):
 
-| Platform | Packages |
-|:--|:--|
-| Linux | `.deb`, AppImage, `.tar.gz` |
-| Windows | `.msi`, `.zip` |
-| macOS | zipped `.app` bundle |
+| Platform | Download | Getting started |
+| --- | --- | --- |
+| Windows | `.msi` installer or portable `.zip` | Windows 10+; the installer adds Markdown file associations |
+| macOS | Zipped `.app` | Apple Silicon, macOS 11+; see the unsigned-app setup below |
+| Linux | `.deb`, AppImage or `.tar.gz` | See the [runtime requirements](docs/users/installation.md#runtime-requirements) |
+| Android | `.apk` | Android 9+; ARM64 phones and tablets |
 
-Once the [WinGet community submission](https://github.com/microsoft/winget-pkgs/pull/445697) is accepted, Windows users can install and update it with:
+Or install the `markview` command with a script:
 
-```powershell
-winget install --id szdytom.Markview --exact --source winget
-winget upgrade --id szdytom.Markview --exact --source winget
-```
-
-On Linux and macOS the install script does the same thing:
+**Linux / macOS — Shell**
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/szdytom/markview/releases/latest/download/markview-installer.sh | sh
 ```
 
-Linux builds need glibc 2.35 or newer, `libfontconfig1`, a working Vulkan
-driver, and a desktop portal for file dialogs. The macOS bundle is unsigned, so
-clear the quarantine flag once after downloading it:
+**Windows — PowerShell**
+
+```powershell
+irm https://github.com/szdytom/markview/releases/latest/download/markview-installer.ps1 | iex
+```
+
+**Arch Linux — [AUR](https://aur.archlinux.org/packages/markview-bin)**
+
+```sh
+yay -S markview-bin
+```
+
+The AUR also offers a [source build](https://aur.archlinux.org/packages/markview).
+
+**Desktop:** open a Markdown file, or choose Markview from **Open with**.
+**Android:** open or share a document to **Read in Markview**. Import its folder
+when you want to read linked chapters and local images together.
+
+The macOS app is unsigned. After moving it to Applications, run:
 
 ```sh
 xattr -d com.apple.quarantine /Applications/Markview.app
 ```
 
-The Windows MSI adds Markview to the **Open with** list for `.md`, `.markdown`
-and `.mdown` and lists it under **Default apps**. Windows 10 and 11 still ask the
-user to confirm the handoff, so the first one of those files is a choice, not
-something an installer can make on the user's behalf.
+[Full installation guide](docs/users/installation.md) · [Android guide](docs/users/android.md)
 
-The macOS bundle answers the desktop the same way: a Markdown file
-double-clicked in Finder, or chosen under **Open with**, opens in the reader,
-and so does one dropped on the app's icon.
+## Typography that keeps the page in balance
 
-Per-platform details and the exact artifact list are in the
-[packaging guide](docs/packaging.md).
-
-The Android subproject **MV4A** ships as **Markview** and shares the desktop
-reader, settings, tabs, font manager and image cache. See its
-[build and emulator guide](android/README.md).
-
-## Why Markview
-
-- **Fast at any size.** About 100 ms from launch to the first readable frame,
-  whether the file is a 10 KiB note or a 1 MiB book. Layout runs on a worker
-  thread and the page is published as it is built, so the window never waits for
-  the whole document.
-- **Print-grade typography.** Whole-paragraph Knuth–Plass line breaking, English
-  hyphenation, and justification bounded by Typst's limits instead of stretched
-  until the line comes apart. CJK text gets the same care, down to which
-  punctuation may open or close a line.
-- **Real mathematics.** Inline and display LaTeX, parsed in Rust and set with the
-  KaTeX fonts that travel inside the binary. Nothing to install, nothing to shell
-  out to, no network.
-- **Small and native.** A download under 20 MB that unpacks to one self-contained
-  binary — no runtime, no Electron, no Node. A typical document reads in about
-  50 MiB of resident memory.
-- **A reader, not an editor.** Read-only by design. It watches the file, keeps
-  your place, opens linked documents in tabs, and stays out of the way.
-
-## Performance
-
-The first readable frame does not wait for the whole document: Markview lays the
-page out on a worker thread and publishes each complete prefix as it is ready.
+An even right edge, without distracting gaps between words. Markview breaks
+lines across the whole paragraph and hyphenates English words to balance the
+text. Below, the same passage uses the same font, size and column width in a
+browser's default left-aligned layout and Markview's justified layout.
 
 <p align="center">
-  <img src="docs/screenshots/en-performance.png" alt="Time to the first readable frame and resident memory by document size" width="880">
+  <img src="docs/screenshots/en-comparison.png" alt="The same English passage: browser default left alignment on the left, Markview's paragraph layout with an even right edge on the right" width="900">
 </p>
 
-Every document, from a 10 KiB note to a 1 MiB book, reaches its first readable
-frame in 95–106 ms, process start and initialization included. Each first-frame
-bar is the median of thirty native runs and the thin line is their range; the
-ranges overlap completely, which is the point. Resident memory stays in the tens
-of megabytes: about 50 MiB for a note, 58 MiB for 100 KiB of CJK with
-mathematics, and 91 MiB for a megabyte of CJK.
+[How this comparison is rendered](docs/developers/comparison.md#the-figure)
+· Text: [A Declaration of the Independence of Cyberspace](https://www.eff.org/cyberspace-independence), John Perry Barlow.
 
-These are one ordinary laptop's numbers, not a specification: an Intel Core
-Ultra 5 125H with integrated Intel Arc through Vulkan, on the `performance`
-power profile. The CPU, the GPU, the driver, the fonts, the display scale, the
-system load and the power profile all move them — the project's own notes record
-the same host at around 150 ms under `power-saver`. The
-[performance model](docs/performance.md) has the method, the full baselines, and
-what each number does and does not cover.
+Careful CJK punctuation and native LaTeX keep text and mathematics readable,
+with no separate TeX installation. Tables, highlighted code, footnotes, GitHub alerts, images and Mermaid diagrams
+belong on the same page. Markdown is rendered directly to the screen, without a
+browser or WebView. The native app is read-only: your source stays yours.
 
-## How it compares
+## Read across different kinds of documents
+
+Long-form articles, technical manuals, mathematics—and web articles brought
+into the native reader. These previews come from real documents.
+
+| Long-form reading · Paragraphs and rhythm | Technical documents · Code, links and tables |
+| --- | --- |
+| ![Paragraph typography in Aaron Swartz’s Guerilla Open Access Manifesto](docs/screenshots/readme/en-showcase-prose.png) | ![Data Types from the Rust Book with code, links and an integer-type table](docs/screenshots/readme/en-showcase-technical.png) |
+| [Guerilla Open Access Manifesto](https://archive.org/details/GuerillaOpenAccessManifesto) · Aaron Swartz, July 2008 | [The Rust Programming Language](https://doc.rust-lang.org/book/ch03-02-data-types.html) · Data Types |
+
+| Mathematics · Theorems and formulas | Web articles · Focus on the text |
+| --- | --- |
+| ![Stokes’ Theorem from OpenStax Calculus Volume 3, with inline and display mathematics](docs/screenshots/readme/en-showcase-math.png) | ![Actual extracted prose and links from Wikipedia’s Webb’s First Deep Field article](docs/screenshots/readme/en-showcase-web.png) |
+| [OpenStax Calculus Volume 3](https://openstax.org/books/calculus-volume-3/pages/6-7-stokes-theorem) · §6.7 Stokes’ Theorem | [Wikipedia: Webb’s First Deep Field](https://en.wikipedia.org/wiki/Webb%27s_First_Deep_Field) |
+
+[Excerpts, translations and image credits](docs/screenshots/source/showcase/README.md).
+Web reading is experimental.
+
+## Make it your page
+
+Choose a quiet light theme, a dark reading surface, or a little more character.
+Light and Dark share the same page layout, joined along a single diagonal below.
 
 <p align="center">
-  <img src="docs/screenshots/en-comparison.png" alt="The same text at the same measure: a typical WebView with a ragged right edge, and Markview justified" width="820">
+  <img src="docs/screenshots/readme/en-themes.png" alt="The same page split diagonally between Light on the left and Dark on the right" width="900">
 </p>
 
-Opening a file, median of three runs in seconds, window included:
+Adjust fonts and text size, or customize line spacing and more with an MVSS theme.
+Themes and font settings are available on desktop and Android.
+[Explore the theme gallery](docs/users/themes.md) · [Reading settings](docs/users/settings.md) · [Theme guide](docs/users/stylesheets.md)
 
-| Document | Markview | MarkText |
-|:--|--:|--:|
-| 10 KiB of prose | 0.10 | 0.96 |
-| 100 KiB of prose | 0.10 | 1.00 |
-| 10 KiB, 108 display formulas | 0.10 | 1.20 |
-| 100 KiB, 1092 display formulas | 0.12 | 2.86 |
+## Keep your place
 
-Resident memory once the document is on screen, in MiB, every process of each
-reader counted:
+- **Find what matters.** Search within a document or jump through its contents.
+- **Read across chapters.** Follow Markdown links in tabs and return to saved reading positions.
+- **Take something with you.** Copy text, code or formulas; export to PDF or PNG.
+- **Read on your phone or tablet.** Android shares the native typesetting and themes, with touch scrolling, a phone tab drawer and tablet tabs.
+- **Stay up to date.** Desktop file watching refreshes an open document after changes; on Android, reopen a file or folder to import changes.
 
-| Document | Markview | MarkText |
-|:--|--:|--:|
-| 10 KiB of prose | 51 | 693 |
-| 100 KiB of prose | 53 | 703 |
-| 10 KiB, 108 display formulas | 54 | 750 |
-| 100 KiB, 1092 display formulas | 54 | 1148 |
+Experimental web reading can also open static articles in native reader tabs.
+See the [reading guide](docs/users/reading.md) for controls and supported content.
 
-One document to one PDF, median of three runs in seconds:
+## Publication-quality PDF export
 
-| Engine | 10 KiB | 100 KiB |
-|:--|--:|--:|
-| `markview pdf` | 0.04 | 0.07 |
-| `pandoc --pdf-engine=typst` | 0.49 | 0.68 |
-| `pandoc` → headless Chromium | 0.61 | 0.76 |
-| `pandoc --pdf-engine=xelatex` | 1.84 | 2.14 |
+Take the typography with you. Native PDF export preserves carefully set
+paragraphs, mathematics and highlighted code, with thoughtful page breaks.
+Choose paper size, margins and a print theme; add headers, footers and page
+numbers. Text stays selectable, and links remain clickable.
 
-One machine's numbers. Method and caveats: [comparison page](docs/comparison.md).
+Press **Ctrl+E** on desktop, or run `markview pdf document.md -o document.pdf`.
+[PDF and image export guide](docs/users/export.md)
 
-## Mathematics
+## Security taken seriously
 
-Inline and display LaTeX is parsed in Rust and measured with the paragraph it
-lives in: a formula shares the text baseline, justifies with the words around
-it, and scrolls sideways when the column is narrow. Matrices, cases, alignment,
-accents, operators and the whole Greek alphabet work in either position.
+Opening a document should be a routine act. Markview treats document content as
+untrusted and publishes the boundaries behind its protections.
+
+- **An explicit threat model.** Documents cannot execute scripts. Resource budgets limit expensive processing, and potentially executable local link targets require confirmation. The [threat model](docs/developers/security.md) explains filesystem, network and OS-handler policies, along with their limits.
+- **Fuzzing beyond crashes.** Fifteen libFuzzer targets exercise parsing, incremental updates, layout, mathematics, fonts and PDF export, with structured mutations, differential checks and per-input time and allocation budgets. The [fuzzing framework](fuzz/README.md) documents coverage and reproducible campaigns; [verification status](docs/developers/security-verification.md) records remaining gaps.
+- **Fixes that reach upstream.** Markview's fuzzing has helped find and fix multiple defects in Comrak, its Markdown parser. Merged fixes include [multiline inline source positions](https://github.com/kivikakk/comrak/pull/855), [front-matter carriage returns](https://github.com/kivikakk/comrak/pull/861) and [paragraph ranges before CRLF tables](https://github.com/kivikakk/comrak/pull/864).
+
+To report a vulnerability privately, use [GitHub Security Advisories](https://github.com/szdytom/markview/security/advisories/new).
+
+## Lightweight, with measurements to match
+
+| Measure | Recorded result |
+| --- | --- |
+| First readable GPU frame | About **100 ms**, from a 10 KiB note to a 1 MiB document |
+| Resident memory | About **50 MiB** for an ordinary note |
+| Release downloads | **Under 20 MB**, including the Android APK, in v0.2.0 |
 
 <p align="center">
-  <img src="docs/screenshots/en-mathematics.png" alt="Inline and display mathematics in Markview" width="820">
+  <a href="docs/developers/comparison.md"><img src="docs/screenshots/readme/en-performance-comparison.png" alt="Four measured documents: Markview opens in 0.101–0.115 seconds and uses 50.7–53.8 MiB RSS; MarkText 0.19.1 opens in 0.957–2.863 seconds and uses 693.2–1147.6 MiB" width="900"></a>
 </p>
 
-## More than prose
+The comparison shows cold starts and total reader-process RSS for four fixtures,
+using medians of three runs on the same Linux laptop on September 22–23, 2026.
+MarkText is an editor with a preview; this comparison measures document reading.
 
-Tables keep their alignment, fenced code is highlighted, footnotes are numbered
-and clickable, GitHub alerts keep their meaning, and images — PNG, JPEG, GIF,
-WebP, BMP, ICO or SVG, with an animated image showing its first frame — sit
-inline or centred. `---` fenced YAML front matter is kept as metadata: it starts
-collapsed under a `Frontmatter` label, and opening it shows the source as a
-highlighted `yaml` block. A `mermaid` fenced block becomes a diagram: flowcharts,
-sequence diagrams and the other supported types are laid out and rasterized in
-Rust, so they need no browser, network or external process. Links to other
-Markdown files open in new tabs, so a folder of documents behaves like one.
-Everything can be selected and copied, and any block too wide for the column
-scrolls on its own.
+Latency and memory are recorded Linux desktop measurements from an Intel Core
+Ultra 5 125H laptop with integrated Intel Arc, Vulkan and the `performance`
+power profile. First-frame timing includes process startup and initialization,
+but excludes compositor presentation. Results vary with hardware, fonts and
+power settings; these figures are not Android benchmarks.
 
-Experimental web reading is available with `markview web https://example.org/article`
-(or paste an HTTP(S) URL with Ctrl+V). It downloads static UTF-8 HTML in the
-background, extracts the article with `dom_smoothie` in Markdown mode, and opens
-it in a temporary native reader tab created immediately with a loading message.
-Loading errors stay in the tab’s reading area; background completions update
-their original tabs without changing focus or reopening closed tabs.
-Links and images resolve against the final
-page URL. Reopening the same URL selects its existing tab; repeated requests
-while it is loading share the download. These tabs last for the current session. JavaScript pages, authenticated content and offline page loading are
-not supported. Web launches open their own window; other links still open in the
-system browser. Existing network address restrictions and download limits apply.
+[Measurement method and baselines](docs/developers/performance.md#native-baseline-on-the-performance-profile) ·
+[Reader and PDF comparisons](docs/developers/comparison.md) ·
+[v0.2.0 downloads](https://github.com/szdytom/markview/releases/tag/v0.2.0)
 
-Network images (`http:` and `https:`) are cached on disk between runs. A body
-the server marks cacheable is reused until it goes stale, then revalidated with
-a conditional request rather than downloaded again; `--offline` serves a cached
-body without touching the network. The cache lives beside `settings.toml` (on
-Linux, `~/.config/markview/cache/images`), holds at most 128 MiB with the least
-recently used entries dropped first, and is cleared by deleting that directory.
+## Documentation and contributing
 
-Web pages and remote images use a browser-style `User-Agent` ending in
-`Markview/<version>.0` and an `Accept-Language` derived from the interface language.
-Web page requests also send `Accept: text/html`. Override the browser headers with
-optional top-level keys in `settings.toml` (no UI controls):
+[User guides](docs/users/README.md) · [Android](docs/users/android.md) ·
+[Build and contribute](CONTRIBUTING.md) · [Developer guides](docs/developers/README.md)
 
-```toml
-user-agent = "Mozilla/5.0 (...) MyReader/1.0"
-accept-language = "zh-CN,zh;q=0.9,en;q=0.8"
-```
+For embedding in a web application, the separate [Web/TypeScript components](docs/library/README.md)
+provide a WASM viewer and CodeMirror split editor.
 
-Omit these keys to follow the defaults. Settings reloads and interface language
-changes apply to subsequent requests. Font downloads always identify themselves
-as `Markview/<version>`.
-
-<p align="center">
-  <img src="docs/screenshots/en-structure.png" alt="Tables, lists and code in the dark theme" width="820">
-</p>
-
-## Reading
-
-| Keys | Action |
-|:--|:--|
-| `Ctrl+O` | Open a file |
-| `/` | Start an empty document search |
-| `Ctrl+F` | Find the selection or reopen the previous query |
-| `Enter` / `Shift+Enter`, `F3` / `Shift+F3` | Next or previous search result |
-| `Ctrl+B` | Open the table of contents |
-| `Ctrl+T` | Choose a stylesheet |
-| `Ctrl+E` | Export the document |
-| `Ctrl+,` | Open settings |
-| `Ctrl++` / `Ctrl+-` | Larger or smaller type |
-| `Ctrl+[` / `Ctrl+]` | Narrower or wider reading column |
-| `Ctrl+V` | Read Markdown or an HTTP(S) web article from the clipboard in a new tab |
-| `Ctrl+W` | Close the tab |
-| `Ctrl+A` / `Ctrl+C` | Select the document, or copy the selection |
-| Wheel, arrows, `Page Up`/`Page Down`, `Space`, `Home`/`End` | Scroll |
-
-macOS uses Command in place of Ctrl. The reading column defaults to 760 logical
-pixels and the type to 18.
-
-- **Opening is flexible.** Launch with no file for an empty window, drop a
-  Markdown file onto it, or paste Markdown from the clipboard; the file is read
-  as UTF-8, a BOM included.
-- **Tabs behave.** Drag a tab to reorder it, close one with its × button or the
-  middle mouse button, and scroll an overflowing strip with the wheel.
-  General settings offer Underline (default) and Connected tab styles, applied
-  immediately. `tab-style` in `settings.toml` accepts `"underline"` or `"connected"`.
-- **Window layout follows your preference.** General settings offer a dropdown
-  with System, macOS, Windows and Linux layouts, applied next launch.
-  The `window-layout` setting in `settings.toml` accepts `"system"`, `"macos"`,
-  `"windows"` or `"linux"`. System uses native
-  traffic lights on macOS, square window controls on Windows and chevrons on Linux.
-  Right-side window controls share the toolbar's button size and spacing. A reserved strip beside
-  the toolbar drags the window; controls keep the host system's behavior.
-  Escape exits fullscreen after closing any open panel or confirmation.
-- **Links open where they should.** Web, mail and local files go to the
-  operating system's default handler; links to other `.md` files open in a new
-  tab, and middle-click opens them in the background. A `#heading` fragment
-  moves to that heading, in this document or in the file it names.
-- **The file is watched.** Edit it in your own editor and Markview repaints in
-  place, keeping your position unless you were already at the end.
-- **Justification has limits.** A word space may shrink to two thirds or grow to
-  one and a half of its own width, and letterfit may move by a hundredth of an
-  em. Change them under `[justification]` in `settings.toml`, or set both
-  tracking bounds to `0.0` to turn character-level justification off. Hyphenation
-  is on by default.
-- **Paragraph indent is off by default.** Choose it under **Settings**, or set
-  `paragraph_indent` in `settings.toml`: prose indents its opening line while
-  lists indent as a whole, and table cells and footnotes stay flush.
-- **CJK is first-class.** The `cjk-type` setting (`SC`, `TC`, `JP` or `none`)
-  picks the face and the punctuation convention together: a comma-like mark
-  gives back its blank half at a line end on the mainland and in Japan, and is
-  centred in Taiwan.
-- **Scrolling is eased.** Page Up/Down, `Space`, `Home`/`End`, the arrow steps,
-  the wheel, a click on the scrollbar track and a `#heading` jump ease over
-  120–400 ms; a wheel turned against the motion still in flight takes over from
-  where the page is rather than finishing it first. A thumb drag and every other
-  scroll stay immediate.
-- **Scroll speed follows the desktop as far as it can.** Windows reports the
-  system's lines and characters per notch, each applied to its own axis, and
-  macOS scales its own deltas, so both are honored; a Linux detent carries no
-  value and counts as three lines, and **Scroll speed** in **Settings**
-  (`scroll-speed` in `settings.toml`, 0.5× to 2×) multiplies every wheel notch
-  and arrow step.
-- **Single instance is optional.** Enable **Single instance** in **Settings**, or set
-  `single-instance = true` in `settings.toml`, to open files from subsequent
-  launches in tabs of the existing window. It is off by default; files already
-  open select their existing tab. Existing windows stay open when you enable it.
-- **The interface follows the system language.** Every label is compiled in from
-  `assets/locales`, so nothing is read from disk at startup; **Interface
-  language** in **Settings** pins it to English, Simplified or Traditional Chinese, or Japanese instead.
-- **A hard break stays hard.** Two trailing spaces leave the line at its natural
-  width; an explicit `<br>` asks for the line it ends to be set flush.
-
-Markview is deliberately read-only: it does not edit or save Markdown, and it has
-no table of contents, search, or multi-document workspace beyond the tabs opened
-from Markdown links. Printing means the export panel or `markview pdf`, not a system
-print dialog. Links
-address headings by their GitHub slug; raw HTML `id` attributes are not
-interpreted, so an explicit anchor is not a link target.
-
-## Export
-
-Markview exports without a browser or a print dialog. In the reader, `Ctrl+E` or
-the toolbar's export button opens an export panel: it writes the document to
-PDF, or to one PNG of the whole document, and opens the result with the
-operating system. **Export and Watch…**, beside it, keeps rewriting the same
-file whenever the document is saved. The panel carries its own text size
-(12 pt by default), first-line
-indent, paper, orientation, margins, PNG scale and stylesheet sequence — the
-bundled `print` sheet is layered with whatever the panel selects — all kept
-under `[export]` in `settings.toml`. Changing them never reflows the reading
-view.
-
-The same exports are on the command line, for scripts and batch runs:
-
-```sh
-markview pdf document.md --output document.pdf
-markview pdf document.md -o paper.pdf --paper letter --margin 20,25
-markview pdf document.md -o paper.pdf --footer "{title} — {page}/{pages}"
-markview pdf document.md -o document.pdf --watch
-```
-
-The bundled `print` stylesheet supplies the paper: A4 with 20 mm side margins,
-black on white, and a centred page number. Body text is 12 pt unless
-`--font-size` says otherwise. `--paper` takes `a3`, `a4`, `a5`, `a6`, `b5`,
-`letter`, `legal`, `tabloid`, or `WIDTHxHEIGHT` in millimetres; `--margin` takes
-one, two, or four millimetres; `--landscape` swaps the sides.
-The six header and footer slots are set with `--header`, `--footer` and the
-`-left`/`-right` variants, and their templates may use `{page}`, `{pages}`,
-`{title}` and `{path}`. PDF commands use `--paper` and `--margin` for page geometry
-and `--style` for colors; window dimensions, reading column and reader theme
-flags do not apply. Put command options after the subcommand; only `--offline`
-is global. The `render` command alone accepts `--scroll`, in logical pixels.
-
-`--watch` keeps the command running after the first export and rebuilds the PDF
-whenever the document, or a local image it references, changes; Ctrl+C ends the
-session. Every rebuild reuses the unchanged parse, block layout and decoded
-images, so an unchanged save is skipped and a small edit pays only for the part
-that changed.
-
-A paragraph keeps two lines on each side of a page break, a heading travels with
-the block it introduces, code blocks wrap, and a table too wide for the page is
-scaled down with a warning on stderr. Web and mail links become clickable
-annotations, and a `#heading` link becomes an internal jump.
-
-The PDF information dictionary takes `--title`, `--author` (repeat it for
-several authors), `--subject`, `--keywords`, `--language` and `--creator`.
-Nothing else is invented, and no creation or modification date is ever written,
-which is what keeps two exports of one document byte for byte identical.
-
-## Stylesheets
-
-Use the built-in light and dark styles, or install a `.mvss.toml` stylesheet of
-your own:
-
-```sh
-markview ss validate paper.mvss.toml
-markview ss install paper.mvss.toml
-markview document.md --style paper
-```
-
-The [stylesheet guide](docs/stylesheets.md) explains the format and the
-conditions a rule may test.
-
-## Fonts
-
-Markview reads with the fonts the machine already has. A stylesheet may also
-declare downloadable families under `[[font-family]]`, and the builtin sheet
-recommends Noto Serif, Noto Sans, Noto Sans Mono and their Simplified Chinese
-counterparts. The reader's **Fonts** page (`Ctrl+,`, then the Fonts tab) lists
-what the stylesheets offer, what each family is, and whether it is missing,
-downloaded or already in the system, and downloads one family or every family
-not yet on disk; the same is on the command line:
-
-```sh
-markview fonts list              # what still needs downloading
-markview fonts download          # everything missing
-markview fonts verify            # check the download directory
-```
-
-Nothing is fetched while reading a document, installing a stylesheet or running
-`ss validate`. Downloaded fonts are a personal resource: the reader and its
-exports use them by default, so an export matches what the reader shows, while
-`--ignore-system-fonts` and the measurement modes keep their pinned set.
-
-Downloading a family and choosing one are separate steps, and the Fonts page
-(`Ctrl+,`, then the Fonts tab) carries both: its filter row ends in a
-**Set fonts** step, beside the catalogue's All, Missing, Downloaded and In
-system steps, and that step holds one chooser row per role — serif, sans-serif,
-monospace, and the same three for Han text — listing the families the machine
-has, with **Default** first: the default is the stylesheet's own candidate
-chain. Picking a family
-reflows the document at once and is remembered, and picking **Default** hands
-the role back to the stylesheet. The three Han rows appear only while the
-`cjk-type` setting names a variant, and their choosers offer only the families
-whose character map covers Han text, so a Latin-only face cannot be picked for
-one.
-
-## Documentation
-
-| Page | What is in it |
-|:--|:--|
-| [Documentation map](docs/README.md) | Where every page lives, and why |
-| [Stylesheet guide](docs/stylesheets.md) | Writing and installing MVSS themes |
-| [Packaging guide](docs/packaging.md) | Release assets and per-platform requirements |
-| [Performance model](docs/performance.md) | How the numbers above are measured |
-| [Comparison](docs/comparison.md) | How the typography figure above is made |
-| [Architecture](docs/architecture.md) | The boundaries the implementation preserves |
-| [Security and threat model](docs/security.md) | What an untrusted document can reach |
-| [Development guide](docs/development.md) | Building, testing and changing behavior |
-
-The separate [Web components](docs/mvaac.md) provide a framework-independent WASM viewer and CodeMirror split editor. Web editing belongs to that package; the native application remains read-only.
-
-## Development
-
-The project is a Rust workspace. Start with the
-[development guide](docs/development.md); the
-[architecture](docs/architecture.md) explains the boundaries that changes should
-preserve.
-
-```sh
-cargo run --release -- examples/welcome.md
-```
-
-Markview is MIT-licensed. Third-party notices are in
-[THIRD_PARTY.md](THIRD_PARTY.md).
+Markview is open source under the [MIT license](LICENSE).
+[Third-party notices](THIRD_PARTY.md) · [All documentation](docs/README.md)

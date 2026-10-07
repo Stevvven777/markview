@@ -1,5 +1,5 @@
 // Playwright acceptance harness for the MVaaC web canvas demo.
-// The checks follow the frozen contract: `docs/mvaac-web-demo.md`,
+// The checks follow the frozen contract: `docs/developers/history/mvaac-web-demo.md`,
 // section "Playwright acceptance".
 
 import { expect, test } from "@playwright/test";

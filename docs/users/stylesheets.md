@@ -92,7 +92,7 @@ markview pdf examples/themes.md --style monochrome --output monochrome.pdf
 markview pdf examples/themes.md --style vangogh --output vangogh.pdf
 ```
 
-Their source files live in [`crates/markview-core/styles/`](../crates/markview-core/styles/). Copy a visible theme to a **new filename** to start a standalone palette, or write a small override and layer it above an existing theme.
+Their source files live in [`crates/markview-core/styles/`](../../crates/markview-core/styles). Copy a visible theme to a **new filename** to start a standalone palette, or write a small override and layer it above an existing theme.
 
 `builtin.mvss.toml` supplies shared fonts, base typography, geometry, and safe fallback colors. It is always the last, lowest-priority layer, never appears in the UI, and cannot be selected, installed, or replaced. An empty reader style list uses only this fallback. The normal default chooses `light` or `dark`; neither is an implicit parent of another theme. PDF exports put `print` above `builtin` before applying the requested styles.
 
@@ -515,39 +515,8 @@ The stored name is the file's own name at its origin — a URL's last segment, o
 
 Nothing replaces an installed file until the whole source has been downloaded and verified, so a mirror that fails half way leaves the copies it would have replaced exactly where they were.
 
-Files land in a `fonts/` directory beside `settings.toml`:
-
-| Platform | Directory |
-| --- | --- |
-| Linux | `$XDG_CONFIG_HOME/markview/fonts/` or `~/.config/markview/fonts/` |
-| macOS | `~/Library/Application Support/markview/fonts/` |
-| Windows | `%APPDATA%/markview/fonts/` |
-
-The reader's **Fonts** page (**Ctrl+,**, then the Fonts tab) lists every family the builtin recommendations and the catalogued stylesheets declare: its name, description, license, size, the stylesheets that declare it, and whether it is in the system, downloaded, or missing. The filter row narrows the list to **All**, **Missing**, **Downloaded** or **In System**; a family downloads, redownloads or downloads a copy on its own, **Download Missing** fetches every shown family that is missing, **Download All** also fetches a stored copy of families the system already provides, and a running family can be cancelled by itself. **Open fonts folder** opens the directory.
-
-That page puts a family on disk; it does not choose which family a document is set in. Choosing is the same page's own job, one step beside: the filter row ends in **Set fonts**, which sets the catalogue aside and shows one chooser row per role — `serif`, `sans-serif`, `monospace` and the same three for Han text — listing the families the machine has with a **Default** entry first, where the default is the stylesheet's own candidate chain. A pick is stored as a `[[fontdef-override]]` for that role and reflows the document at once, and the default entry takes it back out. The three Han rows appear only while a CJK variant is in force, since without one the sheet resolves no `[cjk]` definition for a pick to shape.
-
-`markview fonts` does the same from a shell:
-
-```sh
-markview fonts list                 # what still needs downloading
-markview fonts list --all           # every declared family
-markview fonts download             # everything missing
-markview fonts download noto-sans-cjk-sc
-markview fonts download --style paper --dry-run
-markview fonts path                 # print the download directory
-markview fonts verify               # check the directory against the declarations
-```
-
-`list`, `download` and `verify` take `--style ID` to work from one installed stylesheet, or `--file SHEET.mvss.toml` to work from a draft without installing it; either narrows the catalogue to the families that sheet itself declares, while naming nothing includes the builtin recommendations. `download` fetches only what nothing provides yet, `--force` re-downloads what is already there, `--dry-run` reports without fetching, and `--jobs N` (4 by default) bounds the transfers. `--offline` refuses the transfer while leaving `list`, `verify` and `--dry-run` working.
-
-Reading a document, installing a stylesheet and `ss validate` never fetch anything; only the Fonts page and `markview fonts download` do. A downloaded font is a personal resource like the fonts installed on the machine: the reader and every export that draws from it — its own Export panel and the `pdf`, `render` and `smoke-test` subcommands — use it by default, so an export matches what the reader shows. A run that asks for reproducible output never sees it: `--ignore-system-fonts` excludes it in the window and in the subcommands alike, and the `bench` and `latency` subcommands never load it. `--offline` refuses the download and says so.
-
-### Recommended Noto families
-
-The bundled `builtin` stylesheet already declares Noto Serif, Noto Sans, Noto Sans Mono, Noto Serif CJK SC, Noto Sans CJK SC and LXGW WenKai, so they need no stylesheet of your own: open the Fonts page, or run `markview fonts download`. The Noto families ask for each static weight their mirrors publish—the nine Latin weights from Thin to Black, with the italics a family has, and the seven weights each Chinese subset carries—so a rule that names 300 or 600 finds a real face instead of the nearest one. Each Latin file is about 0.5 MiB and each Simplified Chinese subset OTF 8 to 12 MiB; the CTAN mirror serves the full CJK collection, about 16 to 25 MiB per face. The GitHub source is the official release archive, from which only the wanted members are extracted; jsDelivr serves the same faces as single files.
-
-A full Noto CJK collection, rather than the subset faces, is **tens of MiB per file**; choose it only when the subset does not cover the text. Noto is licensed under the SIL Open Font License 1.1; the license ships with the upstream repository and is not bundled here. The reader never bundles font binaries, and the user trusts the URLs a stylesheet names.
+For download locations, the Fonts panel, command-line options and recommended
+families, see the [font guide](fonts.md).
 
 ## Heavier CJK UI labels
 
@@ -555,7 +524,7 @@ MVSS accepts a per-candidate `weight` from 1 to 1000. It is an **absolute** weig
 
 A cluster no candidate covers is not lost to the platform's own fallback table, which knows no family for the script most symbol blocks belong to. The shaper instead scans the character maps of every family the machine offers — installed, `--fonts`, or downloaded — and draws the cluster from the face closest in style and weight, remembered per cluster so the scan costs once per document. Only when nothing installed covers the cluster does the glyph stay missing, and the log records it: `no face covers [U+27FA]: the configured stack and the whole collection were scanned.` A font covering the code points, installed or named in the stack, silences it.
 
-A candidate may instead declare `min_weight` (1–1000), which requests the larger of that minimum and the inherited weight. `weight` and `min_weight` are mutually exclusive. Bundled reader and PDF themes use `min_weight = 500` for CJK: ordinary text prefers Medium, while strong text inherits 700. Families without Medium use their closest available weight in that candidate. [UI CJK Medium](../examples/ui-cjk-medium.mvss.toml) also provides this behavior as a focused overlay for custom themes. Latin retains its normal UI weight and Emoji stays at 400. Install it and place it before the reader theme:
+A candidate may instead declare `min_weight` (1–1000), which requests the larger of that minimum and the inherited weight. `weight` and `min_weight` are mutually exclusive. Bundled reader and PDF themes use `min_weight = 500` for CJK: ordinary text prefers Medium, while strong text inherits 700. Families without Medium use their closest available weight in that candidate. [UI CJK Medium](../../examples/ui-cjk-medium.mvss.toml) also provides this behavior as a focused overlay for custom themes. Latin retains its normal UI weight and Emoji stays at 400. Install it and place it before the reader theme:
 
 ```sh
 markview ss install examples/ui-cjk-medium.mvss.toml
@@ -564,13 +533,8 @@ markview examples/themes.md --style ui-cjk-medium --style light
 
 The overlay affects UI labels, not document typography. A fixed 500 candidate also replaces an inherited 700 for CJK when Medium exists; use it deliberately if a theme relies on bold UI hierarchy. It is not a general “add 100” setting.
 
-The GPU comparison uses the host's installed fonts and draws requested weights 400, 450 and 500 at 12/14/16 logical pixels on light/dark panels and at 1×, 1.25× and 2× scale:
-
-```sh
-cargo test -p markview cjk_ui_weight_comparison -- --ignored --nocapture
-```
-
-Images are written to `artifacts/cjk-weight/`. With static Noto Sans CJK SC Regular and Medium faces, both 450 and 500 select Medium. Other families and operating systems need their own check; the screenshot's Traditional/Japanese sample still uses the SC font convention for this controlled comparison.
+For repository visual checks of CJK weights, see
+[theme verification](../developers/development.md#bundled-themes-and-visual-verification).
 
 ## Images and captions
 
@@ -603,15 +567,16 @@ Keep a style focused on visual decisions, name the conditions a run really has r
 1. Declare `targets` for the intended destinations, then choose the reading use case and a small palette: paper, ink, raised surface, muted ink, accent, and border. Coordinate document colors with `ui`, panels, toolbar/statusbar and button states. Keep small labels readable; aim for at least 4.5:1 text contrast.
 2. Change only the properties your theme owns. Shared font definitions and geometry already come from `builtin`; do not copy them wholesale. For a full dark palette, cover code, labels, markers, task boxes, tables, image placeholders, selection and scrollbar as well as body and UI colors. Choose a compatible syntax-highlighting `theme` on `code_block`.
 3. Set typography intentionally: heading scale, spacing, line height and one distinguishing device such as quote treatment or bullet shapes. If changing body font roles, review `em` too: the fallback explicitly uses italic serif candidates. Font arrays replace the complete fallback array; retain CJK and regular-weight Emoji candidates.
-4. Validate and install under a new ID, then open the fixture below. Installed files hot-reload when saved. Increment `version` when distributing an update; `--force` also permits reinstalling an equal or older revision.
+4. Validate and install under a new ID, then open the [theme fixture](../../examples/themes.md) shown below. Installed files hot-reload when saved. Increment `version` when distributing an update; `--force` also permits reinstalling an equal or older revision.
 
 ```sh
-cargo run -- ss validate path/to/my-theme.mvss.toml
-cargo run -- ss install path/to/my-theme.mvss.toml
-cargo run -- examples/themes.md --style my-theme
-cargo run -- render examples/themes.md --style my-theme --output /tmp/my-theme.png
+markview ss validate path/to/my-theme.mvss.toml
+markview ss install path/to/my-theme.mvss.toml
+markview examples/themes.md --style my-theme
+markview render examples/themes.md --style my-theme --output /tmp/my-theme.png
 ```
 
 Review the same content in every theme at narrow and wide reading measures, including Latin/CJK, italic/bold, code, math, nested lists, tables, captions and unavailable images. In the window also check hover, selection, keyboard focus, settings/export panels and scrolling. A static document render does not exercise those interactive states.
 
-For a repository-bundled theme, add the file to `Stylesheet::named_rules` and its ID to `Stylesheet::READER_THEMES` or `Stylesheet::PDF_THEMES` according to its destination in `crates/markview-core/src/style.rs`; discovery and reserved-ID checks use that registry. Run `cargo fmt --all` and `cargo test --workspace`, then render the fixture. A new theme usually needs no parser or renderer changes. Extend MVSS only for a concrete visual requirement that existing fields cannot express, with parser and rendering tests plus documentation.
+To contribute a bundled theme or extend MVSS, see
+[the developer guide](../developers/development.md#bundled-themes-and-visual-verification).

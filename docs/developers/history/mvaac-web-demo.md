@@ -1,8 +1,8 @@
 # MVaaC — Markview as a Component: Contract
 
 This is the **historical initial demo contract**. The current reusable viewer/editor
-API, package organization and migration are documented in [MVaaC components](mvaac.md)
-and [source navigation/TOC](mvaac-source-api.md). The exclusions and frozen API below
+API, package organization and migration are documented in [MVaaC components](../../library/mvaac.md)
+and [source navigation/TOC](../../library/mvaac-source-api.md). The exclusions and frozen API below
 record the initial demo and do not limit the subsequent iteration.
 
 ## What the work delivers
@@ -344,7 +344,7 @@ it earlier would clear positions whose blocks have not been laid out yet.
 ## Build (frozen)
 
 This is the original pipeline. For current cross-platform setup and daily
-TypeScript development, use [the build guide](mvaac.md#build-and-test).
+TypeScript development, use [the build guide](../web.md#build-and-test).
 
 ```sh
 python3 scripts/build-web.py # cargo build --target wasm32 + wasm-bindgen -> web/packages/markview/wasm/
@@ -674,6 +674,6 @@ custom storage or authentication. Browser decoding determines supported image
 formats; no Rust decoder or worker thread is added.
 
 `InitOptions.fonts` remains a deprecated compatibility default. New components
-use independent reusable `FontSet` values; see [the current guide](mvaac.md).
+use independent reusable `FontSet` values; see [the current guide](../../library/mvaac.md).
 Mermaid is an internal rendering computation, not an external image request;
 its existing desktop renderer will be integrated with MVaaC separately.

@@ -1,28 +1,20 @@
 <p align="center">
-  <img src="assets/markview-icon-color.svg" alt="Markview" width="104" height="104">
+  <img src="assets/markview-icon-color.svg" alt="Markview" width="88" height="88">
 </p>
 
 <h1 align="center">Markview</h1>
 
 <p align="center">
-  <strong>快速、原生的 Markdown 阅读器，排版质量达到出版级。</strong><br>
-  Markdown、数学公式、代码、表格与图片直接排版到屏幕——<br>
-  不依赖浏览器、WebView、JavaScript 或 TeX 进程。
+  <strong>轻快打开，安心阅读。</strong><br>
+  适用于桌面与 Android 的轻巧原生 Markdown 阅读器。<br>
+  正文、公式与代码清晰呈现，排版质量达到出版级。
 </p>
 
 <p align="center">
-  <a href="https://github.com/szdytom/markview/actions/workflows/ci.yml"><img src="https://github.com/szdytom/markview/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/szdytom/markview/releases"><img src="https://img.shields.io/github/v/release/szdytom/markview?sort=semver" alt="最新版本"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT 许可证"></a>
-</p>
-
-<p align="center">
-  <a href="#安装">安装</a> ·
-  <a href="#对比">对比</a> ·
-  <a href="#阅读操作">阅读操作</a> ·
-  <a href="#导出">导出</a> ·
-  <a href="#样式表">样式表</a> ·
-  <a href="#文档导航">文档导航</a>
+  <strong><a href="https://github.com/szdytom/markview/releases/latest">下载 Markview</a></strong> ·
+  <a href="#读出自己的风格">浏览主题</a> ·
+  <a href="docs/users/guide.zh-cn.md">使用指南</a> ·
+  <a href="https://qm.qq.com/q/hMYoLidy0w">加入 QQ 群</a>
 </p>
 
 <p align="center">
@@ -30,221 +22,166 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/zh-typography.png" alt="Markview 排版一篇中文 Markdown 文档" width="820">
+  <img src="docs/screenshots/readme/zh-hero.png" alt="桌面显示器、Android 手机与平板的真实 Markview 界面合成图" width="900">
 </p>
 
-## 安装
+## 立即安装
 
-从 [Releases](https://github.com/szdytom/markview/releases) 下载最新版本：
+从[最新版本](https://github.com/szdytom/markview/releases/latest)选择适合你的安装包：
 
-| 平台 | 安装包 |
-|:--|:--|
-| Linux | `.deb`、AppImage、`.tar.gz` |
-| Windows | `.msi`、`.zip` |
-| macOS | 打包好的 `.app`（zip） |
+| 平台 | 下载格式 | 安装说明 |
+| --- | --- | --- |
+| Windows | `.msi` 安装包或便携 `.zip` | Windows 10+；安装包添加 Markdown 文件关联 |
+| macOS | 打包为 zip 的 `.app` | Apple Silicon、macOS 11+；未签名应用的设置见下方 |
+| Linux | `.deb`、AppImage 或 `.tar.gz` | 请查看[运行要求](docs/users/installation.md#runtime-requirements) |
+| Android | `.apk` | Android 9+；ARM64 手机与平板 |
 
-[WinGet 社区收录 PR](https://github.com/microsoft/winget-pkgs/pull/445697) 合并后，Windows 用户可以用以下命令安装和更新：
+也可以通过脚本安装 `markview` 命令：
 
-```powershell
-winget install --id szdytom.Markview --exact --source winget
-winget upgrade --id szdytom.Markview --exact --source winget
-```
-
-Linux 与 macOS 也可以用安装脚本：
+**Linux / macOS — Shell**
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/szdytom/markview/releases/latest/download/markview-installer.sh | sh
 ```
 
-Linux 版本需要 glibc 2.35 或更新、`libfontconfig1`、可用的 Vulkan 驱动，以及用于文件对话框的桌面 portal。macOS 的 `.app` 未签名，下载后需要清除一次隔离标记：
+**Windows — PowerShell**
+
+```powershell
+irm https://github.com/szdytom/markview/releases/latest/download/markview-installer.ps1 | iex
+```
+
+**Arch Linux — [AUR](https://aur.archlinux.org/packages/markview-bin)**
+
+```sh
+yay -S markview-bin
+```
+
+AUR 也提供[源码构建包](https://aur.archlinux.org/packages/markview)。
+
+**桌面版：**打开 Markdown 文件，或在**打开方式**中选择 Markview。
+**Android：**打开或分享文档时选择**在 Markview 中阅读**。如果文档包含本地图片或相邻章节，请导入所在文件夹。
+
+macOS 应用未签名。将它移入“应用程序”后，运行：
 
 ```sh
 xattr -d com.apple.quarantine /Applications/Markview.app
 ```
 
-Windows 的 MSI 会把 Markview 加入 `.md`、`.markdown`、`.mdown` 的**打开方式**列表，并列入**默认应用**。Windows 10 和 11 仍会让用户确认一次，因此这些文件第一次由谁打开是用户的选择，安装程序无法代为决定。
+[完整安装指南](docs/users/installation.md) · [Android 使用指南](docs/users/android.md)
 
-macOS 的 `.app` 同样响应桌面：在访达中双击 Markdown 文件、在**打开方式**中选择 Markview，或把文件拖到应用图标上，都会在阅读器中打开它。
+## 齐整的右边缘，均衡的段落
 
-各平台的具体要求与完整产物列表见[打包说明](docs/packaging.md)。
-
-Android 子项目 **MV4A** 的应用名称仍为 **Markview**，复用桌面阅读器、设置页面、Tab 管理、字体管理和图片缓存。
-构建与模拟器验证见 [MV4A 说明](android/README.md)。
-
-## 为什么选择 Markview
-
-- **多大都很快。** 从启动到第一帧可读画面约 100 毫秒，10 KiB 的笔记和 1 MiB 的长文一样。排版在工作线程上进行，页面边排边发布，窗口从不必等整篇文档。
-- **出版级的排版。** 以整段为单位求解断行（Knuth–Plass），支持英文断字；两端对齐的伸缩有明确上限，而不是把一行硬拽开。中文同样被认真对待，细到哪个标点可以出现在行首或行尾。
-- **真正的数学公式。** 行内与行间 LaTeX 由 Rust 解析，用随二进制分发的 KaTeX 字体排版。不必安装任何东西，不调用外部进程，也不访问网络。
-- **小巧且原生。** 下载包小于 20 MB，解开就是一个自包含的可执行文件：没有运行时、没有 Electron、没有 Node。阅读一篇普通文档约占 50 MiB 常驻内存。
-- **只读，因此专注。** Markview 不编辑、不保存。它监视文件、记住你的位置、把链接指向的文档开成新标签页，其余时候保持安静。
-
-## 性能
-
-第一帧可读画面不必等待整篇文档：Markview 在工作线程上排版，页面准备好一段就发布一段。
+让正文的右边缘齐整，也让词间距保持自然。
+Markview 从整个段落安排换行，结合英文断字，平衡每一行的文字。
+下图用相同的文字、字体、字号和栏宽，对比浏览器默认的左对齐与 Markview 的两端对齐。
 
 <p align="center">
-  <img src="docs/screenshots/zh-performance.png" alt="不同文档大小下的首个可读画面耗时与常驻内存" width="880">
+  <img src="docs/screenshots/zh-comparison.png" alt="同一段英文：左侧为浏览器默认左对齐，右侧为 Markview 段落排版，呈现齐整的右边缘" width="900">
 </p>
 
-从 10 KiB 的笔记到 1 MiB 的长文，第一帧可读画面都在 95–106 毫秒之间，其中已经包含进程启动与初始化。第一帧的每根柱子是三十次原生运行的中位数，细线是实测范围——范围完全重叠，这正是重点。常驻内存保持在几十兆字节：普通笔记约 50 MiB，100 KiB 中文加公式约 58 MiB，1 MiB 中文约 91 MiB。
+[对比图的渲染方法](docs/developers/comparison.md#the-figure)
+· 选文：[《网络空间独立宣言》](https://www.eff.org/cyberspace-independence)，John Perry Barlow。
 
-这些数字来自一台普通笔记本，而不是规格承诺：Intel Core Ultra 5 125H、核显 Intel Arc、走 Vulkan、电源模式为 `performance`。CPU、显卡、驱动、字体、显示缩放、系统负载与电源模式都会改变结果——项目记录里同一台机器在 `power-saver` 模式下第一帧耗时约 150 毫秒。[性能模型](docs/performance.md)记录了测量方法、完整基线，以及每个数字覆盖与不覆盖的范围。
+细致的中文标点处理与原生 LaTeX，让正文和公式自然融为一体，无须另行安装 TeX。
+表格、语法高亮代码、脚注、GitHub 提示块、图片与 Mermaid 图表，都在同一页上清晰呈现。
+Markdown 直接渲染到屏幕，不依赖浏览器或 WebView。原生应用只读，源文件始终由你掌握。
 
-## 对比
+## 阅读不同的内容
+
+从长篇文章、技术手册到数学教材，也可以把网页转写成适合阅读的正文。
+以下展示选自真实文档，中文版使用中文原文、已有译本或注明来源的节选译文。
+
+| 普通长文 · 段落与阅读节奏 | 技术文档 · 代码、链接与表格 |
+| --- | --- |
+| ![Aaron Swartz《游击队开放访问宣言》中文译文的长文排版](docs/screenshots/readme/zh-showcase-prose.png) | ![Rust 中文译本的加粗文字、链接、代码块和整型表格](docs/screenshots/readme/zh-showcase-technical.png) |
+| [《游击队开放访问宣言》](https://archive.org/details/GuerillaOpenAccessManifesto) · Aaron Swartz · 2008 年 7 月 | [《Rust 程序设计语言》](https://kaisery.github.io/trpl-zh-cn/ch03-02-data-types.html) · 数据类型 |
+
+| 数学文档 · 定理与公式 | 网页转写 · 专注文章本身 |
+| --- | --- |
+| ![OpenStax 斯托克斯定理小节的中文译文、行内公式和积分公式](docs/screenshots/readme/zh-showcase-math.png) | ![中文维基百科《韦伯的首次深空》的实际转写节选，保留正文和链接](docs/screenshots/readme/zh-showcase-web.png) |
+| [OpenStax《微积分》第三卷](https://openstax.org/books/calculus-volume-3/pages/6-7-stokes-theorem) · 6.7 斯托克斯定理节选译文 | [维基百科《韦伯的首次深空》](https://zh.wikipedia.org/wiki/%E9%9F%8B%E4%BC%AF%E7%9A%84%E9%A6%96%E6%AC%A1%E6%B7%B1%E7%A9%BA) · 简体页面 |
+
+[选段、翻译与图片来源](docs/screenshots/source/showcase/README.md)。
+网页阅读目前为实验性功能。
+
+## 读出自己的风格
+
+明亮或沉静，由你选择。下图沿一条斜线拼接 Light 与 Dark，两种主题保留相同的页面布局。
 
 <p align="center">
-  <img src="docs/screenshots/en-comparison.png" alt="同一段文字在同一栏宽下：典型 WebView 的右边缘参差，Markview 两端对齐" width="820">
+  <img src="docs/screenshots/readme/zh-themes.png" alt="同一页面沿斜线分为左侧 Light 浅色主题与右侧 Dark 暗色主题" width="900">
 </p>
 
-按各自方式打开同一个文件，三次运行中位数，单位秒，含窗口创建：
+调整字体与字号，也可以用 MVSS 定制行距、创建自己的主题。
+桌面与 Android 均支持主题和字体设置。
+[浏览完整主题展示](docs/users/themes.md) · [阅读设置](docs/users/settings.md) · [主题指南](docs/users/stylesheets.md)
 
-| 文档 | Markview | MarkText |
-|:--|--:|--:|
-| 10 KiB 正文 | 0.10 | 0.96 |
-| 100 KiB 正文 | 0.10 | 1.00 |
-| 10 KiB，108 个行间公式 | 0.10 | 1.20 |
-| 100 KiB，1092 个行间公式 | 0.12 | 2.86 |
+## 顺着自己的节奏读
 
-文档上屏后常驻内存，单位 MiB，含每个阅读器的全部进程：
+- **找到重点。**搜索文档内容，或通过目录直达章节。
+- **连着读下去。**在标签页中打开 Markdown 链接，回到保存的阅读位置。
+- **带走需要的内容。**复制正文、代码与公式，或导出 PDF、PNG。
+- **在手机与平板上阅读。**Android 共享原生排版与主题，支持触摸滚动、手机标签抽屉和平板标签栏。
+- **跟上文件变化。**桌面版监视并刷新已打开的文件；Android 重新打开文件或文件夹即可导入更新。
 
-| 文档 | Markview | MarkText |
-|:--|--:|--:|
-| 10 KiB 正文 | 51 | 693 |
-| 100 KiB 正文 | 53 | 703 |
-| 10 KiB，108 个行间公式 | 54 | 750 |
-| 100 KiB，1092 个行间公式 | 54 | 1148 |
+实验性网页阅读也可以将静态文章打开为原生阅读标签页。
+操作方式与支持的内容见[中文使用指南](docs/users/guide.zh-cn.md)。
 
-同一份文档导出一个 PDF，三次运行中位数，单位秒：
+## 高质量 PDF 导出
 
-| 引擎 | 10 KiB | 100 KiB |
-|:--|--:|--:|
-| `markview pdf` | 0.04 | 0.07 |
-| `pandoc --pdf-engine=typst` | 0.49 | 0.68 |
-| `pandoc` → 无头 Chromium | 0.61 | 0.76 |
-| `pandoc --pdf-engine=xelatex` | 1.84 | 2.14 |
+把精心排版的页面带走。原生 PDF 导出保留正文、公式与代码高亮，妥善处理分页。
+可以选择纸张大小、页边距与打印主题，添加页眉、页脚和页码。
+导出后文字仍可选取，链接仍可点击。
 
-一台机器测得的结果。方法与注意事项见[对比页面](docs/comparison.md)。
+桌面版按 **Ctrl+E**，或运行 `markview pdf document.md -o document.pdf`。
+[PDF 与图片导出指南](docs/users/export.md)
 
-## 数学公式
+## 认真对待每一份文档的安全
 
-行内与行间 LaTeX 由 Rust 解析，并与所在段落一起量度：公式与正文共享基线，和文字一起两端对齐，栏宽不足时一起横向滚动。矩阵、分段函数、对齐、重音、算符与全部希腊字母在两种位置都能使用。
+打开文档应该是一件平常的事。Markview 将文档内容视为不可信输入，并公开防护措施背后的边界。
+
+- **明确的威胁模型。**文档无法执行脚本；资源预算限制昂贵的处理工作，可能执行程序的本地链接目标需要确认。[威胁模型](docs/developers/security.md)说明文件系统、网络与系统处理程序的策略，以及防护的适用范围。
+- **不止检查崩溃的模糊测试。**15 个 libFuzzer 目标覆盖解析、增量更新、排版、公式、字体与 PDF 导出，结合结构化变异、差分检查，以及每次输入的时间和内存分配预算。[fuzz 框架](fuzz/README.md)记录覆盖范围与可复现的测试流程，[验证状态](docs/developers/security-verification.md)公开尚待补齐的部分。
+- **推动上游一起修复。**Markview 的模糊测试帮助发现并修复了 Markdown 解析库 Comrak 的多项缺陷。已合并的修复包括[多行行内元素的源位置](https://github.com/kivikakk/comrak/pull/855)、[front matter 中的回车换行处理](https://github.com/kivikakk/comrak/pull/861)和 [CRLF 表格前的段落范围](https://github.com/kivikakk/comrak/pull/864)。
+
+发现安全漏洞时，请通过 [GitHub Security Advisories](https://github.com/szdytom/markview/security/advisories/new) 私下报告。
+
+## 轻巧，也有实测依据
+
+| 项目 | 已记录的结果 |
+| --- | --- |
+| 首个可读 GPU 帧 | 约 **100 ms**，从 10 KiB 笔记到 1 MiB 文档 |
+| 常驻内存 | 普通笔记约 **50 MiB** |
+| 发布包下载体积 | v0.2.0 **小于 20 MB**，包括 Android APK |
 
 <p align="center">
-  <img src="docs/screenshots/zh-mathematics.png" alt="Markview 中的行内与行间公式" width="820">
+  <a href="docs/developers/comparison.md"><img src="docs/screenshots/readme/zh-performance-comparison.png" alt="四份实测文档：Markview 打开耗时 0.101–0.115 秒、常驻内存 50.7–53.8 MiB；MarkText 0.19.1 打开耗时 0.957–2.863 秒、常驻内存 693.2–1147.6 MiB" width="900"></a>
 </p>
 
-## 不止正文
+对比图展示四份测试文档的冷启动耗时与阅读器进程总常驻内存，取三次测量的中位数，
+于 2026 年 9 月 22–23 日在同一台 Linux 笔记本上测量。
+MarkText 是带预览的编辑器；这里对比的是打开并阅读文档的表现。
 
-表格保留对齐方式，代码块带语法高亮，脚注有编号且可以点击跳转，GitHub 提示块保留原有语义；图片（PNG、JPEG、GIF、WebP、BMP、ICO、SVG，动图只显示第一帧）可以行内排布或居中。信息串为 `mermaid` 的围栏代码块会渲染成图表：流程图、时序图等类型都由 Rust 在本地排版与光栅化，不需要浏览器、网络或外部进程。指向其他 Markdown 文件的链接会在新标签页中打开，一个目录的文档因此像一份文档。所有内容都能选中和复制，过宽的块可以单独横向滚动。
+延迟与内存数据来自 Linux 桌面实测：Intel Core Ultra 5 125H 笔记本、Intel Arc 核显、Vulkan、`performance` 电源模式。
+首帧计时包含进程启动与初始化，不含桌面合成器呈现时间。
+硬件、字体与电源设置会影响结果；上述性能数字不代表 Android 测试结果。
 
-网络图片（`http:`、`https:`）会缓存在磁盘上。服务器标记为可缓存的内容在过期前直接复用，过期后用条件请求重新验证而不是重新下载；`--offline` 直接使用缓存，不访问网络。缓存位于 `settings.toml` 旁边（Linux 上为 `~/.config/markview/cache/images`），上限 128 MiB，超出后先删除最近最少使用的条目；手动删除该目录即可清空缓存。
+[测量方法与完整基线](docs/developers/performance.md#native-baseline-on-the-performance-profile) ·
+[阅读器与 PDF 导出对比](docs/developers/comparison.md) ·
+[v0.2.0 发布包](https://github.com/szdytom/markview/releases/tag/v0.2.0)
 
-<p align="center">
-  <img src="docs/screenshots/zh-structure.png" alt="暗色主题下的表格、列表与代码" width="820">
-</p>
+## 文档与贡献
 
-## 阅读操作
+[中文使用指南](docs/users/guide.zh-cn.md) · [Android](docs/users/android.md) ·
+[构建与贡献](CONTRIBUTING.md) · [开发者文档](docs/developers/README.md)
 
-| 按键 | 操作 |
-|:--|:--|
-| `Ctrl+O` | 打开文件 |
-| `Ctrl+B` | 打开目录 |
-| `Ctrl+T` | 选择样式表 |
-| `Ctrl+E` | 导出文档 |
-| `Ctrl+,` | 打开设置 |
-| `Ctrl++` / `Ctrl+-` | 放大 / 缩小字号 |
-| `Ctrl+[` / `Ctrl+]` | 收窄 / 加宽阅读栏 |
-| `Ctrl+V` | 把剪贴板里的 Markdown 读进新标签页 |
-| `Ctrl+W` | 关闭标签页 |
-| `Ctrl+A` / `Ctrl+C` | 全选 / 复制选中内容 |
-| 滚轮、方向键、`Page Up`/`Page Down`、`Space`、`Home`/`End` | 滚动 |
+如果你希望嵌入网页，独立的 [Web/TypeScript 组件](docs/library/README.md)提供 WASM 阅读器与 CodeMirror 分屏编辑器。
 
-macOS 使用 Command 代替 Ctrl。默认阅读栏宽度为 760 逻辑像素，默认字号为 18。
+Markview 以 [MIT 许可证](LICENSE)开源。
+[第三方声明](THIRD_PARTY.md) · [完整文档导航](docs/README.md)
 
-- **打开方式很灵活。** 不指定文件会打开空窗口，也可以把 Markdown 文件拖进窗口，或直接粘贴剪贴板里的 Markdown；文件按 UTF-8 读取，包含 BOM 的文件同样可以。
-- **标签页有应有的行为。** 拖动标签页可以重新排序，用×按钮或鼠标中键关闭；标签页过多时用滚轮横向滚动。
-- **标签页风格由你选择。** 在**设置 → 通用 → 界面**中选择“下划线”（默认）或“连页”，即时生效；也可在 `settings.toml` 中设置 `tab-style = "underline"` 或 `"connected"`。
-- **链接会在该去的地方打开。** `http`、`https`、`mailto` 与本地文件交给系统默认程序；指向其他 `.md` 文件的链接在新标签页中打开，中键则在后台打开。链接中的 `#标题锚点` 会定位到对应标题，无论它在当前文档还是刚打开的 `.md` 文件中。
-- **文件会被监视。** 在自己的编辑器里修改即可，Markview 原地重绘；除非你已经滚到底部，否则阅读位置保持不变。
-- **两端对齐有上限。** 词间空隙最少收缩到自身宽度的三分之二，最多伸展到一倍半；字距的调整不超过百分之一 em。可在 `settings.toml` 的 `[justification]` 中修改，把两个 tracking 边界都设为 `0.0` 即可关闭字级对齐。断字默认开启。
-- **段落缩进默认关闭。** 可在**设置**中选择，或设置 `settings.toml` 中的 `paragraph_indent`：正文段落缩进首行，列表整体缩进，表格单元格和脚注不缩进。
-- **中文排版是一等公民。** `cjk-type`（`SC`、`TC`、`JP` 或 `none`）同时决定字体与标点惯例：逗号一类的符号在中国大陆和日本会让出半个字宽，在台湾则居中排布。
-- **滚动是平滑的。** `Page Up`/`Page Down`、`Space`、`Home`/`End`、方向键、滚轮、点击滚动条轨道以及 `#标题锚点` 跳转都会在 120–400 ms 内缓动；滚轮反向转动时从当前位置接管，而不是先走完尚未完成的滚动。拖动滑块以及其他滚动保持即时。
-- **滚动速度在可能范围内跟随系统。** Windows 会分别报告纵向“每格行数”和横向“每格字符数”，各作用于自己的轴；macOS 的增量已由系统缩放。Linux 的一格不带任何系统数值，按三行计算。也可用**设置**中的“Scroll speed”（`settings.toml` 的 `scroll-speed`，0.5×–2×）缩放每一格滚轮和方向键步长。
-- **界面跟随系统语言。** 全部界面文字在编译期从 `assets/locales` 打进二进制，启动时不读磁盘；也可在**设置 → 界面**里把“界面语言”固定为 English 或简体中文。
-- **硬换行就是硬换行。** 行尾两个空格让该行保持自然宽度；显式写 `<br>` 则要求这一行
-  同样两端对齐。
+## 交流与反馈
 
-Markview 有意保持只读：不能编辑或保存 Markdown，也没有目录、搜索，或超出 Markdown 链接所开标签页之外的多文档工作区；打印指的是导出面板或 `--pdf`，而不是系统打印对话框。标题锚点使用 GitHub 的 slug 规则；原始 HTML 的 `id` 属性不会被解析，因此不能作为链接目标。
-
-## 导出
-
-Markview 不需要浏览器或打印对话框就能导出文档。在阅读器里按 `Ctrl+E` 或点工具栏的导出按钮会打开导出面板：可写出 PDF 或整篇文档的一张 PNG，写好后交给系统打开；旁边的“Export and Watch…” 则会在文档每次保存时重新导出到同一个文件。面板有自己的字号（默认 12pt）、首行缩进、纸张、方向、页边距、PNG 倍率与样式表序列——以内置 `print` 为底，再叠加面板里选中的样式表——全部保存在 `settings.toml` 的 `[export]` 段里，改动它们不会让阅读视图重排。
-
-同样的导出也有命令行形式，适合脚本与批处理：
-
-```sh
-markview pdf document.md --output document.pdf
-markview pdf document.md -o paper.pdf --paper letter --margin 20,25
-markview pdf document.md -o paper.pdf --footer "{title} — {page}/{pages}"
-markview pdf document.md -o document.pdf --watch
-```
-
-内置的 `print` 样式表决定纸张：A4、左右 20mm 页边距、白底黑字、页脚居中页码。正文默认 12pt，除非用 `--font-size` 另行指定。`--paper` 接受 `a3`、`a4`、`a5`、`a6`、`b5`、`letter`、`legal`、`tabloid` 或毫米制的`宽x高`；`--margin` 接受 1、2 或 4 个毫米值；`--landscape` 交换长短边。页眉页脚共六个槽位，用 `--header`、`--footer` 及 `-left`/`-right` 变体设置，模板中可用 `{page}`、`{pages}`、`{title}`、`{path}`。
-
-`--watch` 让命令在首次导出后继续运行：文档或其引用的本地图片一有变化就重建 PDF，按 Ctrl+C 结束。每次重建都复用未变的解析、块排版与已解码图片，因此内容没变的保存会被跳过，小改动只需为改动部分付出代价。
-
-跨页时每段两边各留两行，标题与随后的内容一起移动，代码块自动换行，过宽的表格会缩小并在 stderr 给出警告。网页和邮件链接变成可点击注释，`#标题` 链接变成文档内跳转。
-
-PDF 信息字典可用 `--title`、`--author`（可重复以写多位作者）、`--subject`、`--keywords`、`--language`、`--creator` 指定。除此之外不会凭空写入任何字段，也从不写入创建或修改时间，因此同一文档每次导出的字节完全一致。
-
-## 样式表
-
-使用内置的亮色与暗色样式，或安装自己的 `.mvss.toml` 样式表：
-
-```sh
-markview ss validate paper.mvss.toml
-markview ss install paper.mvss.toml
-markview document.md --style paper
-```
-
-格式与规则可用的语义条件见[样式表指南](docs/stylesheets.md)。
-
-## 字体
-
-Markview 使用机器上已有的字体阅读。样式表还可以在 `[[font-family]]` 中声明可下载的字体族，内置样式表推荐思源宋体、思源黑体、思源等宽体及其简体中文对应字体。阅读器的**字体**页（`Ctrl+,`，然后切到字体标签）列出样式表提供了哪些字体族、每个字体族是什么，以及它缺失、已下载还是系统已有，并可以下载单个字体族或所有尚未就位的字体族；命令行同样可以：
-
-```sh
-markview fonts list              # 还有哪些没有下载
-markview fonts download          # 下载全部缺失的字体
-markview fonts verify            # 检查下载目录
-```
-
-下载字体族与选择字体是两件事，**字体**页（`Ctrl+,`，切到字体标签）两者都管：筛选行的最后一步**设定**与目录的“全部/缺失/已下载/系统中已有”并列，这一步里每个角色各占一行——衬线、无衬线、等宽，以及同样三个用于中文的角色——每行的选择器列出机器上现有的字体族，第一项是**默认**，也就是样式表自己的候选链。选中某个字体会立即重排文档并被记住；选回**默认**则把该角色交还样式表。三个中文行只在 `cjk-type` 设置了变体时出现，它们的选择器只列出字符映射覆盖中文的字体族，因此纯西文字体不会被选进中文角色。
-
-## 文档导航
-
-| 页面 | 内容 |
-|:--|:--|
-| [文档地图](docs/README.md) | 每个页面放在哪里，以及为什么 |
-| [样式表指南](docs/stylesheets.md) | 编写与安装 MVSS 主题 |
-| [打包说明](docs/packaging.md) | 发布产物与各平台运行要求 |
-| [性能模型](docs/performance.md) | 上文数字是如何测出来的 |
-| [对比](docs/comparison.md) | 上文那张排版对比图是如何生成的 |
-| [架构说明](docs/architecture.md) | 修改代码时应保持的边界 |
-| [安全与威胁模型](docs/security.md) | 不可信文档能够触及的范围 |
-| [开发指南](docs/development.md) | 构建、测试与修改行为 |
-
-独立的 [Web 组件](docs/mvaac.md)提供框架无关的 WASM 预览和 CodeMirror 分屏编辑器；编辑能力属于 Web 包，原生应用仍为只读阅读器。
-
-## 开发
-
-项目是 Rust workspace。请从[开发指南](docs/development.md)开始；[架构说明](docs/architecture.md)解释了修改代码时应保持的边界。
-
-```sh
-cargo run --release -- examples/welcome.md
-```
-
-Markview 使用 MIT 许可证；第三方声明见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+欢迎加入 [Markview QQ 群](https://qm.qq.com/q/hMYoLidy0w)，交流阅读体验、分享主题与反馈问题。
+群号：**584396685**。

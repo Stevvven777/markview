@@ -1,30 +1,45 @@
 # Comparison
 
-The [README](../README.md) shows one figure that sets the same text twice, once
-through a browser engine and once through Markview, and tables that time the
-readers — opening a document, and what each holds in memory afterwards — and the
-PDF pipelines against each other. This page records how all of them are produced
-and what they do and do not claim. Markview's own numbers, measured against its
+The [README](../../README.md) charts cold-start reading time and resident memory
+from the tables below. `scripts/generate_readme_comparison.py` reads those tables
+directly to generate both localized charts; axes start at zero and lower is better.
+This page also records the typography comparison and PDF pipeline measurements,
+how they are produced and what they do and do not claim. Markview's own numbers, measured against its
 targets rather than against other programs, live in the [performance
 model](performance.md).
 
 ## The figure
 
 `docs/screenshots/en-comparison.png` is produced by
-`scripts/render_typography_comparison.py` from one two-paragraph Markdown file,
-`docs/screenshots/source/en/justification.md`, set as:
+`scripts/render_typography_comparison.py` from the plain-text file
+[`docs/screenshots/source/typography.txt`](../screenshots/source/typography.txt), set as:
 
 | Setting | Both panels |
 | --- | --- |
-| Measure | 340 logical pixels |
-| Type | 18 logical pixels, Georgia, line height 1.65 |
+| Measure | 400 logical pixels |
+| Type | 18 logical pixels, Noto Serif, line height 1.65 |
 | Paragraph gap | 0.8 em |
 | Density | Two device pixels per logical pixel |
+
+The current sample is the title and opening two paragraphs of John Perry Barlow's
+[A Declaration of the Independence of Cyberspace](https://www.eff.org/cyberspace-independence),
+as supplied in the text file. The localized labels use the same English passage so both figures demonstrate
+English line breaking. Regenerate them with `python3 scripts/render_typography_comparison.py`
+and `python3 scripts/render_typography_comparison.py --language zh --out docs/screenshots/zh-comparison.png`.
+Replace the text file directly, separating paragraphs with blank lines; single
+line breaks within a paragraph become spaces. Text is treated literally, so
+Markdown punctuation does not introduce formatting. `--source /path/to/text.txt`
+selects another UTF-8 file. Both engines always read the same prepared paragraphs.
+The composition uses spacious margins, restrained headings and dotted column-edge
+guides, without framing or rounding the rendered text.
+Rendering explicitly loads the same Noto Serif font file used by Chromium and
+runs offline. Markview uses an isolated font directory for this controlled
+comparison, so personal and system fallback fonts cannot change its typeface.
 
 The right panel is `markview render` on the light stylesheet with the reader's
 defaults, so justification, whole-paragraph line breaking, hyphenation and the
 bounded word space are all in effect. The left panel is a headless Chromium page
-that pandoc renders the same Markdown into, carrying a conventional
+that receives the same paragraphs as escaped HTML, carrying a conventional
 Markdown-preview stylesheet: the same font, size, measure, paragraph gap and
 ragged right edge that a browser-based preview ships with, and `hyphens: auto`
 with `hyphenate-limit-chars: 6 2 2`, so that the engine is asked for hyphenation
@@ -39,10 +54,13 @@ nothing — the same paragraph renders byte for byte identically with `hyphens:
 none`. A long word that does not fit is moved whole to the next line, and the
 line it left behind ends short.
 
-The right panel justifies the column. Every line reaches the same right edge, the
-long words are broken rather than moved (`con-spicuous`,
-`incomprehensibili-ties`, `com-mitted`), and every word space stays inside
-Markview's bounds of two thirds and one and a half of the natural width.
+The right panel justifies the column: ordinary lines reach the same right edge,
+while the final line of each paragraph stays naturally short. This rendering
+sets the current sample in 17 lines in both panels; the comparison demonstrates
+edge alignment and spacing, rather than a reduction in line count. Markview
+balances line breaks over the whole paragraph with English hyphenation enabled.
+Its configured word-space bounds are
+two thirds and one and a half of the natural width.
 
 ## Why the left panel is ragged
 
@@ -182,7 +200,7 @@ installing TeX Live, which is measured in gigabytes here.
 
 ## Reproducing them
 
-The figure needs pandoc, Chromium, Pillow and numpy; the reader benchmark needs
+The figure needs Chromium, Fontconfig, Pillow and numpy; the reader benchmark needs
 python-xlib and a real X server with a desktop session; the PDF benchmark needs
 pandoc, Chromium and Poppler. All three need a release build that can reach a
 GPU:

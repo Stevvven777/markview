@@ -5,7 +5,7 @@ description: Create or refine Markview MVSS reader and PDF themes, including pal
 
 # MVSS theme authoring
 
-Read [the stylesheet guide](../../../docs/stylesheets.md) for syntax, cascade and the authoring workflow. Inspect a nearby [bundled theme](../../../crates/markview-core/styles/) and `builtin.mvss.toml` before editing.
+Read [the stylesheet guide](../../../docs/users/stylesheets.md) for syntax, cascade and the authoring workflow. Inspect a nearby [bundled theme](../../../crates/markview-core/styles) and `builtin.mvss.toml` before editing.
 
 Choose a reading context and deliberate visual identity. Define paper, ink, surface, muted ink, accent and border colors; pair heading and body roles. Give the theme one recognizable typographic or structural detail. Keep long-form reading comfortable, including mixed Latin/CJK text. Respect the user's requested direction and scope.
 

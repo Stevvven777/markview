@@ -1,0 +1,11 @@
+# 韦布的首次深空
+
+**韦伯的首次深空**（英语：Webb's First Deep Field），中国大陆又译**韦布的首次深空**，是[詹姆斯·韦伯空间望远镜](https://zh.wikipedia.org/wiki/%E8%A9%B9%E5%A7%86%E6%96%AF%C2%B7%E9%9F%A6%E4%BC%AF%E5%A4%AA%E7%A9%BA%E6%9C%9B%E8%BF%9C%E9%95%9C "詹姆斯·韦伯空间望远镜")（JWST）正式运作所拍下的全[假色](https://zh.wikipedia.org/wiki/%E5%81%87%E8%89%B2 "假色")星系照片，此张照片纪录了实际距离地球大约“只有”46亿[光年](https://zh.wikipedia.org/wiki/%E5%85%89%E5%B9%B4 "光年")的[SMACS J0723\.3–7327](https://zh.wikipedia.org/wiki/SMACS_J0723.3%E2%80%937327 "SMACS J0723\.3–7327")星系团。照片于美东时间2022年7月11日公开，是由望远镜的[近红外相机](https://zh.wikipedia.org/w/index.php?title=NIRCam&action=edit&redlink=1 "NIRCam（页面不存在）")（NIRCam）所拍摄，望远镜需要对准同一片天空，经过数百次的[曝光](https://zh.wikipedia.org/wiki/%E6%9B%9D%E5%85%89 "曝光")叠加，以此拍下遥远天体的微弱光芒，最后将这张绚烂多彩的太空照片呈现在世人眼前。[美国宇航局](https://zh.wikipedia.org/wiki/%E7%BE%8E%E5%9C%8B%E5%9C%8B%E5%AE%B6%E8%88%AA%E7%A9%BA%E6%9A%A8%E5%A4%AA%E7%A9%BA%E7%B8%BD%E7%BD%B2 "美国宇航局")（NASA）说，此照片是韦伯空间天文台首次捕捉到历来，“[早期宇宙](https://zh.wikipedia.org/wiki/%E5%AE%87%E5%AE%99%E5%B9%B4%E8%A1%A8#早期宇宙 "宇宙年表")最深处、最清晰的红外线影像”，可追溯到130亿年前[&#91;1&#93;](#cite_note-1)[&#91;2&#93;](#cite_note-2)。
+
+## 第一张公开照片
+
+韦伯空间天文台是一座[红外天文学](https://zh.wikipedia.org/wiki/%E7%BA%A2%E5%A4%96%E5%A4%A9%E6%96%87%E5%AD%A6 "红外天文学")望远镜，光学主镜是高达6\.5米镀金[铍](https://zh.wikipedia.org/wiki/%E9%88%B9 "铍")的花形镜、由18个6边形分割镜面组成，其优于以往的搜集与捕捉[红外线](https://zh.wikipedia.org/wiki/%E7%B4%85%E5%A4%96%E7%B7%9A "红外线")影像能力，将SMACS 0723星系团当作宇宙放大镜，窥视这个星系团背后极为遥远又黯淡的星系，这是所谓[引力透镜效应](https://zh.wikipedia.org/wiki/%E9%87%8D%E5%8A%9B%E9%80%8F%E9%8F%A1%E6%95%88%E6%87%89 "引力透镜效应")，如同眼镜原理，即利用前景星系的质量来弯曲星系背后物体的光线，是目前为止最清晰的聚焦修正，得以观看到更多的细节，比如其中的[星团](https://zh.wikipedia.org/wiki/%E6%98%9F%E5%9B%A2 "星团")和[漫反射](https://zh.wikipedia.org/wiki/%E6%BC%AB%E5%8F%8D%E5%B0%84 "漫反射")特性。
+
+韦伯将不同波长拍摄的照片重叠，用了12\.5小时就完成这张合成影像，以往[哈勃空间望远镜](https://zh.wikipedia.org/wiki/%E5%93%88%E4%BC%AF%E5%A4%AA%E7%A9%BA%E6%9C%9B%E9%81%A0%E9%8F%A1 "哈勃空间望远镜")（Hubble Space Telescope）可能要费时数周[&#91;3&#93;](#cite_note-:0-3)[&#91;4&#93;](#cite_note-:1-4)。
+
+此照片中可以看到SMACS 0723星系团46亿年前的模样[&#91;4&#93;](#cite_note-:1-4)。这个星系团的[角直径](https://zh.wikipedia.org/wiki/%E8%A7%92%E7%9B%B4%E5%BE%91 "角直径")，用肉眼比喻观看，相当于伸长手臂后在手指上的1[毫米](https://zh.wikipedia.org/wiki/%E6%AF%AB%E7%B1%B3 "毫米")沙粒所遮住的天空范围[&#91;3&#93;](#cite_note-:0-3)。由于距离过远，照片中的物体传来的光呈大幅地[红移](https://zh.wikipedia.org/wiki/%E7%B4%85%E7%A7%BB "红移")[&#91;5&#93;](#cite_note-5)。

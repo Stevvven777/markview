@@ -1,4 +1,4 @@
-import componentGuide from "../../../../docs/mvaac.md";
+import componentGuide from "../../../../docs/library/mvaac.md";
 
 export const documents = {
 	"component-guide": {

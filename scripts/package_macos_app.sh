@@ -5,7 +5,7 @@
 #
 # `EXTRACTED_DIR` is the directory holding the binary from the macOS release
 # archive. The bundle is ad-hoc signed only, so Gatekeeper requires an explicit
-# user override on first launch; see `docs/packaging.md`.
+# user override on first launch; see `docs/developers/packaging.md`.
 set -euo pipefail
 
 extracted=${1:?usage: package_macos_app.sh EXTRACTED_DIR VERSION OUTDIR}

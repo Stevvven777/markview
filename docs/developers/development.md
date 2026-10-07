@@ -1,6 +1,6 @@
 # Development guide
 
-This page is for contributors changing Markview. It is procedural: the design rationale is in [architecture](architecture.md), and the MVSS format is in [the stylesheet guide](stylesheets.md).
+This page is for contributors changing Markview. It is procedural: the design rationale is in [architecture](architecture.md), and the MVSS format is in [the stylesheet guide](../users/stylesheets.md).
 
 ## Build and verify
 
@@ -239,7 +239,28 @@ Common mistakes are treating source offsets as persistent identity, putting disp
 
 When a worker or loader changes, test stale-result rejection, replacement of pending requests, failed reads, and versioned image completion. Preserve the last valid snapshot on recoverable errors. When a change affects only colors or interaction overlays, avoid invalidating geometry; when it affects fonts, width, spacing, or intrinsic asset size, invalidate the relevant layout.
 
+## Bundled themes and visual verification
+
+Start with the [MVSS authoring workflow](../users/stylesheets.md#authoring-workflow).
+
+For a repository-bundled theme, add the file to `Stylesheet::named_rules` and its ID to `Stylesheet::READER_THEMES` or `Stylesheet::PDF_THEMES` according to its destination in `crates/markview-core/src/style.rs`; discovery and reserved-ID checks use that registry. Run `cargo fmt --all` and `cargo test --workspace`, then render the fixture. A new theme usually needs no parser or renderer changes. Extend MVSS only for a concrete visual requirement that existing fields cannot express, with parser and rendering tests plus documentation.
+
+The GPU comparison uses the host's installed fonts and draws requested weights 400, 450 and 500 at 12/14/16 logical pixels on light/dark panels and at 1×, 1.25× and 2× scale:
+
+```sh
+cargo test -p markview cjk_ui_weight_comparison -- --ignored --nocapture
+```
+
+Images are written to `artifacts/cjk-weight/`. With static Noto Sans CJK SC Regular and Medium faces, both 450 and 500 select Medium. Other families and operating systems need their own check; the screenshot's Traditional/Japanese sample still uses the SC font convention for this controlled comparison.
+
 ## Keep documentation maintainable
+
+Put native-reader usage in `docs/users/`, Web/TypeScript consumer APIs in
+`docs/library/`, and implementation, build, test and release material in
+`docs/developers/`. Add each page to its audience index; historical contracts
+belong in `docs/developers/history/`. Keep root READMEs focused on installation
+and product presentation. Run `python3 scripts/test_documentation.py` after
+documentation changes to check links, images, anchors and index coverage.
 
 Document guarantees and reasons in architecture pages, procedures and examples in guides, and measured facts in the performance page. Remove a stale statement instead of adding a contradictory exception. Link to the owning page rather than copying the same rule into several documents.
 

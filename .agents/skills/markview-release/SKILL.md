@@ -88,4 +88,4 @@ Rules:
 - `dist` is not on `PATH`; use `~/.cargo/bin/dist`.
 - Release from a clean `main`. Pre-1.0, feature releases have shipped as patch bumps, so use
   the version the user names.
-- Artifact matrix and platform requirements: `docs/packaging.md`.
+- Artifact matrix and platform requirements: `docs/developers/packaging.md`.

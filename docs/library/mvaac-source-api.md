@@ -80,12 +80,3 @@ disclosures, and waits for its layout. It uses the same navigation path as reade
 anchor links. The active heading is the last heading whose source start precedes
 the top reading reference. `onSectionChange` in mount options reports changes,
 including replacement with a new document version. Hosts own the TOC UI.
-
-## Verification
-
-`cargo test -p markview-core --test source` verifies Unicode coordinates, CRLF,
-long paragraphs/code, cells/quotes, cached geometry, deferred targets and nested,
-adjacent and quoted disclosure headings. `pnpm --dir web test
- tests/navigation.spec.mjs` exercises the built package with real canvas rendering,
-version replacement, pending navigation, focus, reflow, input cancellation and
-repeated mounting. Existing reader/resource/font regression suites remain in use.
