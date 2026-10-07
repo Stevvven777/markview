@@ -30,7 +30,7 @@ text. This file is generated from <code>Cargo.lock</code> by
 <p>Used by:</p>
 <ul>
 {{#each used_by}}
-	<li>{{crate.name}} {{crate.version}}</li>
+	<li>{{crate.name}} {{crate.version}}{{#if (eq ../id "MPL-2.0")}} — <a href="https://crates.io/api/v1/crates/{{crate.name}}/{{crate.version}}/download">source</a>{{/if}}</li>
 {{/each}}
 </ul>
 <pre>{{text}}</pre>

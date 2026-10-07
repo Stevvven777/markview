@@ -1,10 +1,9 @@
 # Configuration for `cargo about`, which generates the third-party notices
 # shipped with release artifacts.
 #
-# The accepted list covers every license identifier in the dependency tree.
-# Anything outside it fails the release build instead of silently shipping an
-# unreviewed license, which is the point of listing them rather than using a
-# wildcard. Add an identifier here only after confirming it is permissive.
+# The default list accepts permissive licenses; crate-specific exceptions live
+# below it. Anything outside these lists fails the release build. Add a default
+# identifier only after confirming it is permissive.
 accepted = [
 	"0BSD",
 	"Apache-2.0",
@@ -23,3 +22,17 @@ accepted = [
 
 # Workspace members are not dependencies of the shipped binary.
 private = { ignore = true }
+
+# The web article parser uses these unmodified MPL-2.0 components. The notices
+# include their license text and links to the exact published source packages.
+[cssparser]
+accepted = ["MPL-2.0"]
+
+[cssparser-macros]
+accepted = ["MPL-2.0"]
+
+[dtoa-short]
+accepted = ["MPL-2.0"]
+
+[selectors]
+accepted = ["MPL-2.0"]

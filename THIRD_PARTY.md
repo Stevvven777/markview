@@ -7,6 +7,8 @@ source and original license texts are available in Cargo's registry packages.
 | --- | --- | --- |
 | winit, wgpu | Native windows and GPU rendering | Apache-2.0 OR MIT |
 | Comrak | CommonMark and GFM parser | BSD-2-Clause |
+| dom_smoothie / dom_query | Web article extraction and HTML queries | MIT |
+| cssparser / cssparser-macros / selectors / dtoa-short | CSS parsing and selector matching for web articles | MPL-2.0 |
 | codex / chinese-number | Numbering patterns and numeral systems for ordered lists | Apache-2.0 (codex), MIT (chinese-number) |
 | krilla / pdf-writer | PDF content, font subsetting and serialization | MIT OR Apache-2.0 |
 | Skrifa / read-fonts | OpenType tables and variable-font instances | Apache-2.0 OR MIT |
@@ -50,3 +52,7 @@ Font License is reproduced in `licenses/RobotoFlex-OFL.txt`.
 Before packaging a release, include notices for the complete dependency tree,
 not only this architectural summary. `cargo metadata --locked` records that
 tree and each crate's declared license.
+
+The MPL-2.0 components above are used without modifications. Generated
+third-party notices include the MPL-2.0 text and download links to the exact
+published source packages, including their original license files.

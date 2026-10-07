@@ -148,6 +148,8 @@ public class Smoke extends Instrumentation {
                 swipe(100, 180, 220, 180);
                 require(state().getString("panel").equals("Tabs"), "Right swipe keeps Tabs open");
                 swipe(220, 180, 100, 180);
+                waitFor(s -> s.optString("panel").equals("Closed") && !s.optBoolean("outline_open"));
+                swipe(280, 180, 100, 180);
                 waitFor(s -> s.optBoolean("outline_open") && s.optString("panel").equals("Closed"));
                 swipe(100, 180, 280, 180);
                 waitFor(s -> s.optString("panel").equals("Tabs") && !s.optBoolean("outline_open"));

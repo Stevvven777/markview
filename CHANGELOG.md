@@ -35,6 +35,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Fix the Android drawer swipe regression test and include the web article parser's MPL-2.0 dependencies and source links in package notices.
 - Release retained reader resources when closing the last preserved tab from the empty page.
 - Close the open Tabs Drawer on a left swipe without also opening Contents.
 - Preserve semantic web LaTeX formulas and empty table headings through Markdown extraction, including formulas inside table cells.
