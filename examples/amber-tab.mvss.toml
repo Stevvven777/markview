@@ -1,0 +1,15 @@
+format_version = 2
+version = 1
+targets = ["ui"]
+
+[meta]
+name = "Amber tab specimen"
+description = "Sweet Cream, Buttercream and wood browns from the supplied color library"
+
+[[rule]]
+when = ["ui", "panel"]
+background = "#EFE0CD"
+color = "#363031"
+muted = "#685A4E"
+border_color = "#D2C2AC"
+accent = "#864C24"

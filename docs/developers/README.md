@@ -7,6 +7,7 @@ Start with [contributing](../../CONTRIBUTING.md) and the development guide.
 
 - [Development guide](development.md): build, test, choose a layer and change behavior.
 - [Architecture](architecture.md): pipeline, ownership, snapshots, versions and resource boundaries.
+- [Color fields](color-fields.md): composable Rust color functions and a reproducible native tab preview.
 - [Web component development](web.md): WASM/TypeScript workspace, demo, builds and verification.
 - [Android development](android.md): platform implementation, APK builds and headless emulator tests.
 - [Packaging and releases](packaging.md): release assets, configuration and release procedures.
