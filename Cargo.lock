@@ -2584,6 +2584,7 @@ dependencies = [
  "markview-selection",
  "mermaid-rs-renderer",
  "notify",
+ "parley",
  "percent-encoding",
  "pollster",
  "reqwest",

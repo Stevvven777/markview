@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Export unsaved Markdown through `markview export --stdin` to PDF or PNG, with templates, resource directories, JSON progress and cancellation.
 - Cover nested disclosures in quotes and lists, styled container edges, selection and horizontal scrolling with rendering baselines.
 - Compare document rendering with committed PNG baselines on Lavapipe, with explicit updates and CI difference images.
 - Expand rendering baselines across Markdown combinations, all bundled themes, MVSS drawing properties, PDF pages, diagrams, UI states and Chinese/English typography.
