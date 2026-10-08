@@ -46,6 +46,17 @@ a tree against an independent scan of the same bytes.
   tags the source wrote. How: the disclosure chain is rebuilt from the tree and
   compared with `Document::details_enclosing`, and every element's declared
   `open` is checked against its own opener rather than a sibling's.
+- **`anchors`** — looks for a fragment jump that is unreachable or lands on the
+  wrong block. How: `seam::fragment_targets` rebuilds the registry of every
+  target the tree declares — a raw-HTML `id`/`name` on a block or inline, a
+  heading slug, a footnote's `fn:` and `fnref:` — with the disclosure chain
+  framing each one. The target then demands that `details_enclosing` names that
+  chain, that expanding it makes the name resolvable, that the first block a
+  jump reaches is the block declaring the name first (with the reader's own
+  toggles, the first declaration the source left open), that the layout invents
+  no other anchor, that an anchor sits inside its block's box in y order, and
+  that pagination keeps up. Two readings of one input, no second
+  implementation.
 
 ### G2–G5 — stylesheets, layout, text
 
@@ -155,10 +166,12 @@ a tree against an independent scan of the same bytes.
 - `seam.rs` — the structural differentials the `G1` Tier-3 targets share:
   source ranges against the text they address (`assert_rich_text_covered`
   and the containment walks), reference resolution against an independent
-  scan of the same bytes (`assert_reference_resolution`), and the `<details>`
+  scan of the same bytes (`assert_reference_resolution`), the `<details>`
   tags the source wrote against the elements the tree built
-  (`details_elements`, `declared_open`). They need no second implementation,
-  only an input whose two readings disagree.
+  (`details_elements`, `declared_open`), and the fragment targets the tree
+  declares with the disclosure chain framing each one (`fragment_targets`).
+  They need no second implementation, only an input whose two readings
+  disagree.
 - `pdf_oracle.rs` — the `pdf` target's structural readback: the exported
   bytes are re-parsed and checked against the layout, pagination and geometry
   the export was given (page count, well-formedness, page geometry, per-page

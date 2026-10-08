@@ -40,7 +40,9 @@ if [[ ${1:-} == --full ]]; then
 	cargo +nightly build --release \
 		--bin parse --bin reparse --bin prefix --bin mvss --bin layout \
 		--bin layout_diff --bin math --bin highlight --bin shaping \
-		--bin fonts --bin pdf --bin geometry 2>&1 | tail -5
+		--bin fonts --bin pdf --bin geometry --bin refdef \
+		--bin sourcepos_content --bin details_structure --bin anchors \
+		2>&1 | tail -5
 fi
 
 echo "guard.sh: mvfuzz is green."

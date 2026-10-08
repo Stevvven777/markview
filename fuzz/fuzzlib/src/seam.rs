@@ -1095,6 +1095,116 @@ pub fn assert_details_structure(doc: &Document, source: &str) {
 	}
 }
 
+/// One fragment target the document tree declares, and the disclosures that
+/// hide it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FragmentTarget {
+	/// The fragment a `#name` link spells.
+	pub name: String,
+	/// Index into `Document::blocks` of the top-level block whose subtree
+	/// declares it.
+	pub block: usize,
+	/// The `<details>` ids framing the declaration, outermost first. The
+	/// declaration is unreachable until all of them are expanded.
+	pub chain: Vec<u64>,
+}
+
+/// Every fragment target the tree declares, in document order.
+///
+/// The reading comes from the tree, not from a scan of the source, because
+/// the two answer different questions: a scan can say what *looks* like a
+/// target, while only the tree can say what a jump would reach. The names
+/// collected are exactly the ones layout turns into anchors — `Block::anchors`,
+/// an invisible `InlineKind::Anchor`, a heading slug, a footnote definition's
+/// `fn:<label>`, and a reference's `fnref:<label>` — so a name that reaches
+/// only one side is a finding in either direction.
+///
+/// `chain` follows the walk `Document::details_enclosing` documents: an
+/// element's own targets and its summary sit in the *outer* chain, because a
+/// summary is drawn even when the body is collapsed, while the body's targets
+/// add the element's own id.
+pub fn fragment_targets(doc: &Document) -> Vec<FragmentTarget> {
+	fn rich(text: &RichText, out: &mut Vec<String>) {
+		for inline in text {
+			match &inline.kind {
+				InlineKind::Anchor(name) => out.push(name.clone()),
+				// A reference registers the anchor its own number returns to,
+				// and the number is the one the layout will use.
+				InlineKind::FootnoteRef(n) => {
+					out.push(format!("fnref:{n}"));
+				}
+				_ => {}
+			}
+		}
+	}
+	/// The names the block itself declares, excluding the blocks it contains.
+	fn direct(block: &Block, out: &mut Vec<String>) {
+		out.extend(block.anchors.iter().cloned());
+		match &block.kind {
+			BlockKind::Paragraph(text) => rich(text, out),
+			BlockKind::Heading { text, anchor, .. } => {
+				rich(text, out);
+				out.push(anchor.clone());
+			}
+			BlockKind::Footnote { label, .. } => {
+				out.push(format!("fn:{label}"));
+			}
+			BlockKind::Details { summary, .. } => rich(summary, out),
+			BlockKind::Table { rows, .. } => {
+				for row in rows {
+					for cell in row {
+						rich(cell, out);
+					}
+				}
+			}
+			_ => {}
+		}
+	}
+	fn walk(
+		blocks: &[Block],
+		top: usize,
+		open: &mut Vec<u64>,
+		out: &mut Vec<FragmentTarget>,
+	) {
+		for block in blocks {
+			let mut names = Vec::new();
+			direct(block, &mut names);
+			for name in names {
+				out.push(FragmentTarget {
+					name,
+					block: top,
+					chain: open.clone(),
+				});
+			}
+			let disclosure = matches!(block.kind, BlockKind::Details { .. });
+			if disclosure {
+				open.push(block.id);
+			}
+			match &block.kind {
+				BlockKind::Details { blocks, .. }
+				| BlockKind::Quote { blocks, .. }
+				| BlockKind::Footnote { blocks, .. }
+				| BlockKind::FrontMatter { blocks, .. } => walk(blocks, top, open, out),
+				BlockKind::List { items, .. } => {
+					for item in items {
+						walk(&item.blocks, top, open, out);
+					}
+				}
+				_ => {}
+			}
+			if disclosure {
+				open.pop();
+			}
+		}
+	}
+	let mut out = Vec::new();
+	let mut open = Vec::new();
+	for (top, block) in doc.blocks.iter().enumerate() {
+		walk(std::slice::from_ref(block), top, &mut open, &mut out);
+	}
+	out
+}
+
 /// The markdown text a `<details>` opener declares in its `<summary>`, from
 /// the source, as an independent re-derivation.
 ///
@@ -1443,5 +1553,37 @@ mod tests {
 			assert_reference_resolution(&doc)
 		}));
 		assert!(caught.is_err(), "an unexplained resolution must be caught");
+	}
+
+	/// The registry's chain is the property the `anchors` target compares
+	/// against `details_enclosing`, so the walk itself is pinned: a summary and
+	/// the element's own target are drawn while the body is collapsed, and both
+	/// spellings of a footnote target are collected.
+	#[test]
+	fn fragment_targets_carry_the_disclosure_chain_of_each_declaration() {
+		let doc = parse(
+			"<details id='a'><summary id='s'>S</summary>\n\n\
+			 <div id='b'>\n\nText <a name='hidden'></a>[^f]\n\n</div>\n\n\
+			 </details>\n\n[^f]: note",
+		);
+		let targets = fragment_targets(&doc);
+		let chain = |name: &str| {
+			targets
+				.iter()
+				.find(|target| target.name == name)
+				.unwrap_or_else(|| panic!("{name:?} is not registered"))
+				.chain
+				.clone()
+		};
+		let element = doc.blocks[0].id;
+		// The element's own id and its summary are reachable while collapsed.
+		assert!(chain("a").is_empty());
+		assert!(chain("s").is_empty());
+		// The body's declarations are not.
+		assert_eq!(chain("b"), [element]);
+		assert_eq!(chain("hidden"), [element]);
+		assert_eq!(chain("fnref:1"), [element]);
+		// The definition is hoisted to the top level, so its `fn:` is not.
+		assert!(chain("fn:1").is_empty());
 	}
 }
