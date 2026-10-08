@@ -1,4 +1,7 @@
 //! Immutable drawing and hit-test geometry shared by layout and rendering.
+mod color_field;
+pub use color_field::{ColorField, ColorFieldBuilder};
+
 use crate::{
 	math::MathBox,
 	text::{TextCluster, TextNode},
@@ -95,6 +98,11 @@ pub struct IconPath {
 
 #[derive(Clone, Debug)]
 pub enum Draw {
+	/// A trusted component shader, evaluated directly by the GPU. UI only.
+	ColorField {
+		rect: Rect,
+		shader: Arc<str>,
+	},
 	/// A group clipped to a local rectangle.
 	Clipped {
 		rect: Rect,
@@ -217,6 +225,7 @@ impl Draw {
 				g.y += y;
 			}
 			Self::Rect(r, _)
+			| Self::ColorField { rect: r, .. }
 			| Self::Box { rect: r, .. }
 			| Self::Image { rect: r, .. } => {
 				r.x += x;

@@ -93,6 +93,37 @@ impl Renderer {
 		hovered: bool,
 	) {
 		match draw {
+			Draw::ColorField { rect, shader } => {
+				if self.prewarming {
+					return;
+				}
+				let rect = Rect {
+					x: rect.x + dx,
+					y: rect.y + dy,
+					..*rect
+				};
+				if rect.intersect(clip).is_none() {
+					return;
+				}
+				let start = self.geometry.len();
+				self.geometry.quad(
+					rect,
+					Rect {
+						x: 0.,
+						y: 0.,
+						w: ATLAS_SIZE as f32,
+						h: ATLAS_SIZE as f32,
+					},
+					[rect.w, rect.h, view.scale, 0.],
+					clip,
+					view,
+				);
+				self.fields.record(
+					start..self.geometry.len(),
+					shader,
+					&self.gpu,
+				);
+			}
 			Draw::Clipped { rect, draws } => {
 				let rect = Rect {
 					x: rect.x + dx,

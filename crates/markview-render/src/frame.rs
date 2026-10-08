@@ -13,6 +13,7 @@ impl Renderer {
 		self.geometry.clear();
 		if !self.prewarming {
 			self.images.begin(&snapshot.images);
+			self.fields.begin();
 		}
 		let full = Rect {
 			x: 0.0,
@@ -104,6 +105,7 @@ impl Renderer {
 					| Draw::Clipped { .. }
 					| Draw::Glyph(_)
 					| Draw::Image { .. }
+					| Draw::ColorField { .. }
 					| Draw::Icon { .. }
 					| Draw::Math { .. } => foreground.push((draw, dx, dy, clip, hovered)),
 					Draw::Rect(..)
@@ -207,6 +209,7 @@ impl Renderer {
 		// of the one the reader is looking at.
 		if !self.prewarming {
 			self.images.publish();
+			self.fields.end();
 		}
 	}
 	/// Renders one frame with a stylesheet of its own, leaving the renderer's
@@ -293,19 +296,36 @@ impl Renderer {
 			pass.set_bind_group(0, self.raster.bind_group(), &[]);
 			pass.set_vertex_buffer(0, self.geometry.buffer().slice(..));
 			let mut cursor = 0;
-			for (range, key) in self.images.runs() {
-				pass.set_pipeline(&self.pipeline);
-				pass.set_bind_group(0, self.raster.bind_group(), &[]);
-				pass.draw(cursor..range.start, 0..1);
-				pass.set_pipeline(&self.images.pipeline);
-				pass.set_bind_group(
-					0,
-					match key {
+			let mut images = self.images.runs().iter().peekable();
+			let mut fields = self.fields.runs().iter().peekable();
+			loop {
+				// Both streams are already ordered by their geometry range.
+				let field_next = fields.peek().is_some_and(|(range, _)| {
+					images
+						.peek()
+						.is_none_or(|(image, _)| range.start < image.start)
+				});
+				let (range, pipeline, group) = if field_next {
+					let (range, source) = fields.next().unwrap();
+					(range, self.fields.pipeline(source), None)
+				} else if let Some((range, key)) = images.next() {
+					let group = match key {
 						Some(key) => self.images.bind_group(key),
 						None => self.raster.color_bind_group(),
-					},
-					&[],
-				);
+					};
+					(range, &self.images.pipeline, Some(group))
+				} else {
+					break;
+				};
+				if cursor < range.start {
+					pass.set_pipeline(&self.pipeline);
+					pass.set_bind_group(0, self.raster.bind_group(), &[]);
+					pass.draw(cursor..range.start, 0..1);
+				}
+				pass.set_pipeline(pipeline);
+				if let Some(group) = group {
+					pass.set_bind_group(0, group, &[]);
+				}
 				pass.draw(range.clone(), 0..1);
 				cursor = range.end;
 			}

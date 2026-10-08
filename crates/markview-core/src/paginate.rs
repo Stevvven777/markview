@@ -198,7 +198,9 @@ fn bands(layout: &BlockLayout) -> Vec<Band> {
 					.fold(f32::NEG_INFINITY, f32::max);
 				Some((center[1] + top, center[1] + bottom))
 			}
-			Draw::Image { rect, .. } => Some((rect.y, rect.y + rect.h)),
+			Draw::Image { rect, .. } | Draw::ColorField { rect, .. } => {
+				Some((rect.y, rect.y + rect.h))
+			}
 			Draw::Math { math, y, .. } => {
 				Some((*y, *y + math.ascent + math.descent))
 			}

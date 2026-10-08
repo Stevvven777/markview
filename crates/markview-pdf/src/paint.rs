@@ -657,8 +657,8 @@ impl Painter<'_> {
 				}
 			}
 			Draw::Glyph(_) => {}
-			// Icons belong to the reader's chrome, which paper never paints.
-			Draw::Icon { .. } => {}
+			// Icons and GPU color fields belong to the reader's chrome.
+			Draw::Icon { .. } | Draw::ColorField { .. } => {}
 			Draw::Rect(rect, paint) => {
 				if let Some(rect) = frame.rect(*rect) {
 					self.solid(surface, rect, *paint);
@@ -1271,7 +1271,9 @@ fn visible(cluster: Option<&Cluster>, draw: &Draw, item: &PageItem) -> bool {
 				.fold(f32::NEG_INFINITY, f32::max);
 			(center[1] + top, center[1] + bottom)
 		}
-		Draw::Image { rect, .. } => (rect.y, rect.y + rect.h),
+		Draw::Image { rect, .. } | Draw::ColorField { rect, .. } => {
+			(rect.y, rect.y + rect.h)
+		}
 		Draw::Math { math, y, .. } => (*y, *y + math.ascent + math.descent),
 		Draw::Icon { y, size, .. } => (*y, *y + *size),
 		// A container spans its whole block; each fragment clips its own part.

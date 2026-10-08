@@ -1304,7 +1304,9 @@ pub(in crate::app) fn fade(draws: &mut [Draw], ui: &TextShaper, opacity: f32) {
 			| Draw::Icon { paint, .. }
 			| Draw::Polygon { paint, .. }
 			| Draw::Math { paint, .. } => paint,
-			Draw::Box { .. } | Draw::Image { .. } => continue,
+			Draw::Box { .. } | Draw::Image { .. } | Draw::ColorField { .. } => {
+				continue;
+			}
 		};
 		let mut rgba = ui.stylesheet.paint(*paint);
 		rgba[3] *= opacity;

@@ -1,7 +1,4 @@
 //! Image semantics and immutable resource metadata. No I/O or GPU dependencies.
-mod color_field;
-pub use color_field::{ColorField, ColorFieldBuilder};
-
 use std::{
 	collections::HashMap,
 	sync::{Arc, Mutex},
@@ -84,11 +81,6 @@ impl ImagePixels {
 	pub fn insert(&self, alias: String, version: u64, pixels: Arc<Pixels>) {
 		let retired = crate::sync::cache(&self.decoded, "Image pixels")
 			.insert((alias, version), pixels);
-		drop(retired);
-	}
-	pub fn remove(&self, alias: &str, version: u64) {
-		let retired = crate::sync::cache(&self.decoded, "Image pixels")
-			.remove(&(alias.to_owned(), version));
 		drop(retired);
 	}
 	pub fn publish_demand(

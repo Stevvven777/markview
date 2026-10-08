@@ -1,26 +1,11 @@
-//! An isolated native tab specimen with a cached normalized color function.
+//! An isolated native tab specimen with a normalized GPU fragment program.
 use markview_core::{
-	image::ColorField,
-	scene::{Draw, LayoutSnapshot, Paint, Rect},
+	scene::{ColorField, Draw, LayoutSnapshot, Paint, Rect},
 	shaping::TextShaper,
 	style::{Color, ColorField as C, Condition as K, Stylesheet},
 };
 use markview_render::{Renderer, Theme, View};
-use std::{
-	collections::HashMap, num::NonZeroU32, path::Path, sync::Arc, time::Instant,
-};
-
-fn with_alpha(color: Color, alpha: f32) -> Color {
-	Color((color.0 & 0xFFFFFF00) | (alpha.clamp(0., 1.) * 255.).round() as u32)
-}
-
-fn rounded_alpha(x: f32, y: f32, scale: f32) -> f32 {
-	// The rounded mask uses logical distances; only antialiasing follows DPI.
-	let qx = ((x - 0.5) * 178.).abs() - 84.;
-	let qy = ((y - 0.5) * 30.).abs() - 10.;
-	let distance = qx.max(0.).hypot(qy.max(0.)) + qx.max(qy).min(0.) - 5.;
-	(0.5 - distance * scale).clamp(0., 1.)
-}
+use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 
 fn main() -> anyhow::Result<()> {
 	let directory =
@@ -66,33 +51,28 @@ fn main() -> anyhow::Result<()> {
 		));
 	}
 	let horizontal = HashMap::new();
-	for (index, scale) in [1., 1.25, 3.].into_iter().enumerate() {
-		let start = Instant::now();
-		let field = ColorField::builder([
-			NonZeroU32::new((inner.w * scale).ceil() as u32).unwrap(),
-			NonZeroU32::new((inner.h * scale).ceil() as u32).unwrap(),
-		])
-		.paint(|_, _| Color(0xEFE0CDFF))
-		.paint(|x, y| {
-			let grain = (y * 96. + (x * 12.).sin() * 0.7).sin() * 0.5 + 0.5;
-			with_alpha(Color(0xD2C2ACFF), 0.04 + 0.08 * grain)
-		})
-		.paint(|x, y| {
-			let glow = (-((x - 0.085) / 0.18).powi(2)
-				- ((y - 0.45) / 0.7).powi(2))
-			.exp();
-			with_alpha(Color(0xC37C54FF), glow * 0.16)
-		})
-		.paint(|x, y| {
-			let light = (-((x - 0.085) / 0.022).powi(2)
-				- ((y - 0.45) / 0.13).powi(2))
-			.exp();
-			with_alpha(Color(0xF0EAD6FF), light * 0.9)
-		})
-		.map(|x, y, color| with_alpha(color, rounded_alpha(x, y, scale)))
-		.finish();
-		let raster_ms = start.elapsed().as_secs_f64() * 1000.;
-		let mut snapshot = LayoutSnapshot::default();
+	let field = ColorField::builder()
+        .paint("return rgba(0xEFE0CDFFu);")
+        .paint(r#"
+            let grain = sin(y * 96.0 + sin(x * 12.0) * 0.7) * 0.5 + 0.5;
+            return vec4<f32>(rgba(0xD2C2ACFFu).rgb, 0.04 + 0.08 * grain);
+        "#)
+        .paint(r#"
+            let p = (vec2<f32>(x, y) - vec2<f32>(0.085, 0.45)) / vec2<f32>(0.18, 0.7);
+            return vec4<f32>(rgba(0xC37C54FFu).rgb, exp(-dot(p, p)) * 0.16);
+        "#)
+        .paint(r#"
+            let p = (vec2<f32>(x, y) - vec2<f32>(0.085, 0.45)) / vec2<f32>(0.022, 0.13);
+            return vec4<f32>(rgba(0xF0EAD6FFu).rgb, exp(-dot(p, p)) * 0.9);
+        "#)
+        .map(r#"
+            let q = abs((vec2<f32>(x, y) - vec2<f32>(0.5)) * size) - (size * 0.5 - vec2<f32>(5.0));
+            let distance = length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - 5.0;
+            return vec4<f32>(color.rgb, color.a * clamp(0.5 - distance * scale, 0.0, 1.0));
+        "#)
+        .finish();
+	for scale in [1., 1.25, 3.] {
+		let snapshot = LayoutSnapshot::default();
 		let mut draws = vec![
 			Draw::Box {
 				rect,
@@ -103,12 +83,7 @@ fn main() -> anyhow::Result<()> {
 				left_only: false,
 				decoration: None,
 			},
-			field.draw(
-				inner,
-				"ui:amber-tab",
-				index as u64 + 1,
-				&mut snapshot.images,
-			),
+			field.draw(inner),
 		];
 		draws.extend(foreground.clone());
 		let view = View {
@@ -160,9 +135,11 @@ fn main() -> anyhow::Result<()> {
 			renderer.wait(Some(submission))?;
 		}
 		assert_eq!(renderer.gpu_bytes(), bytes);
+		assert_eq!(renderer.color_field_stats(), (1, 1));
 		println!(
-			"{scale}x: raster {raster_ms:.3} ms; cached frame {:.3} ms; GPU bytes {bytes}",
-			start.elapsed().as_secs_f64() * 10.
+			"{scale}x: cached frame {:.3} ms; tracked GPU bytes {bytes}; field pipelines {:?}",
+			start.elapsed().as_secs_f64() * 10.,
+			renderer.color_field_stats()
 		);
 	}
 	Ok(())

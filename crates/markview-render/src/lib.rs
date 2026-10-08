@@ -1,4 +1,5 @@
 //! Event-driven wgpu renderer. Only visible glyphs and paths are rasterized.
+mod color_fields;
 mod frame;
 mod geometry;
 mod gpu;
@@ -98,6 +99,7 @@ impl View<'_> {
 }
 
 pub struct Renderer {
+	fields: color_fields::ColorFields,
 	ui_origin: (f32, f32),
 	gpu: gpu::Gpu,
 	raster: raster::RasterCache,
@@ -171,6 +173,7 @@ impl Renderer {
 		let geometry = geometry::Geometry::new(&gpu.device);
 		let adapter_name = gpu.adapter_name.clone();
 		Ok(Self {
+			fields: Default::default(),
 			ui_origin: (0.0, 0.0),
 			backend: gpu.backend,
 			gpu,
@@ -235,6 +238,10 @@ impl Renderer {
 			+ self.raster.color_bytes()
 			+ self.geometry.capacity_bytes()
 			+ self.images.bytes()
+	}
+	/// Number of cached field pipelines and total compilations for this renderer.
+	pub fn color_field_stats(&self) -> (usize, usize) {
+		self.fields.stats()
 	}
 	pub fn clear_raster_cache(&mut self) {
 		self.raster.reset_atlas(&self.gpu.queue);
