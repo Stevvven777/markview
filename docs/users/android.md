@@ -32,8 +32,9 @@ the open search or panel before returning the task to the background.
 
 Settings, downloaded fonts, styles and image cache live under the private app
 files directory in `markview/`. Android settings omit the desktop buttons for
-opening `settings.toml`, the fonts folder and the styles folder. Downloaded
-fonts use the existing catalogue and font-family selectors.
+opening `settings.toml`, the fonts folder and the styles folder, and the toolbar
+omits the desktop Reveal button because no file manager browses that directory.
+Downloaded fonts use the existing catalogue and font-family selectors.
 Export uses Android's system save dialog and passes the written result to an
 installed viewer. Repeated watched exports update the selected destination.
 

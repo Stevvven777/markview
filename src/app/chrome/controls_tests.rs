@@ -197,16 +197,20 @@ fn controls_fit_minimum_window_and_panel_focus_has_no_document_actions() {
 			width,
 			height,
 		);
+		let mut expected = vec![Command::NewPage];
+		#[cfg(target_os = "android")]
+		expected.push(Command::SearchOpen);
+		#[cfg(not(target_os = "android"))]
+		expected.push(Command::RevealFolder);
+		expected.extend([
+			Command::Open,
+			Command::Export,
+			Command::Settings,
+			Command::Outline,
+		]);
 		assert_eq!(
 			toolbar.iter().map(|b| b.action).collect::<Vec<_>>(),
-			vec![
-				Command::NewPage,
-				Command::RevealFolder,
-				Command::Open,
-				Command::Export,
-				Command::Settings,
-				Command::Outline
-			]
+			expected
 		);
 		let last = toolbar.last().expect("a toolbar button");
 		assert_eq!(last.rect.x + last.rect.w, width - 16.0);
@@ -350,6 +354,7 @@ fn the_toolbar_and_panel_close_buttons_carry_icons() {
 fn compiled_icons_stay_inside_the_unit_box() {
 	for icon in [
 		icons::OPEN,
+		#[cfg(not(target_os = "android"))]
 		icons::REVEAL,
 		icons::EXPORT,
 		icons::DOWNLOAD,

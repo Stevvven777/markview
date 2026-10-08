@@ -732,6 +732,11 @@ impl<P: super::SendEvent> App<P> {
 							"b" if !self.panel_has_focus() => {
 								self.action(Command::Outline)
 							}
+							// Android has no file manager, so Ctrl-Shift-O is
+							// not a reveal there and `o` just opens a file.
+							#[cfg(target_os = "android")]
+							"o" if !self.panel_has_focus() => self.action(Command::Open),
+							#[cfg(not(target_os = "android"))]
 							"o" if !self.panel_has_focus() => {
 								if self.interaction.modifiers.shift_key() {
 									self.action(Command::RevealFolder)

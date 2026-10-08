@@ -538,6 +538,7 @@ impl<P: super::SendEvent> App<P> {
 				});
 				return;
 			}
+			#[cfg(not(target_os = "android"))]
 			Command::RevealFolder => {
 				let dir = self
 					.readers

@@ -375,6 +375,9 @@ pub(super) fn toolbar_controls_at(
 			lang.search_placeholder(),
 			Command::SearchOpen,
 		),
+		// Android has no file manager to reveal a folder in, and its asset
+		// picker is not one, so the control waits for a native equivalent.
+		#[cfg(not(target_os = "android"))]
 		(icons::REVEAL, lang.toolbar_reveal(), Command::RevealFolder),
 		(icons::OPEN, lang.toolbar_open(), Command::Open),
 		(icons::EXPORT, lang.toolbar_export(), Command::Export),

@@ -38,6 +38,7 @@ pub(crate) enum Command {
 	NewPage,
 	Open,
 	/// Reveal the active document's folder in the file manager.
+	#[cfg(not(target_os = "android"))]
 	RevealFolder,
 	Smaller,
 	Larger,

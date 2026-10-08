@@ -12,6 +12,7 @@ pub(super) const TABS: &[IconPath] = markview_icon::icon!("assets/ui/tabs.svg");
 
 pub(super) const OPEN: &[IconPath] =
 	markview_icon::icon!("assets/ui/file-plus.svg");
+#[cfg(not(target_os = "android"))]
 pub(super) const REVEAL: &[IconPath] =
 	markview_icon::icon!("assets/ui/folder-open.svg");
 pub(super) const EXPORT: &[IconPath] =

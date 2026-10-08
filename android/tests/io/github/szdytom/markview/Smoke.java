@@ -92,6 +92,7 @@ public class Smoke extends Instrumentation {
             }
             if (layoutOnly) {
                 require((button(state(), "Tabs") != null) == phone, "Drawer toggle matches sw600dp");
+                checkToolbar();
                 screenshot("reader");
                 tap("Settings");
                 waitFor(s -> s.optString("panel").equals("Settings(Generic)"));
@@ -131,6 +132,7 @@ public class Smoke extends Instrumentation {
             require(initial.getString("backend").equals("Vulkan") || initial.getString("backend").equals("Gl"), "GPU backend");
             stableLayout();
             screenshot("reader");
+            checkToolbar();
             checkSystemBars(true);
             swipe(280, 180, 100, 180);
             waitFor(s -> s.optBoolean("outline_open"));
@@ -677,6 +679,18 @@ public class Smoke extends Instrumentation {
         field.setAccessible(true);
         ((java.util.concurrent.ExecutorService)field.get(activity)).submit(() -> {}).get(20, java.util.concurrent.TimeUnit.SECONDS);
         stableLayout();
+    }
+    private void checkToolbar() throws Exception {
+        JSONObject current = state();
+        require(button(current, "RevealFolder") == null, "The Android toolbar omits the desktop folder reveal");
+        // The removed control must not leave its slot behind: the last one
+        // still ends at the right inset the layout reserves for the group.
+        JSONObject last = button(current, "Outline");
+        require(last != null, "The toolbar keeps its Outline control");
+        double right = current.getJSONArray("dimensions").getDouble(0) - 16;
+        require(Math.abs(last.getDouble("x") + last.getDouble("w") - right) < 0.01,
+            "The toolbar ends at the right inset: " + (last.getDouble("x") + last.getDouble("w")) + " vs " + right);
+        pass("Android toolbar omits the desktop folder reveal and meets the right inset");
     }
     private void requireSettingsLayout() throws Exception {
         JSONObject current = state();

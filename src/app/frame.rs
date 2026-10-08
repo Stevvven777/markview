@@ -101,11 +101,9 @@ impl Layout {
 		} else {
 			CONTROL_SIZE
 		};
-		let count = if cfg!(target_os = "android") {
-			6.0
-		} else {
-			5.0
-		};
+		// Five controls follow the New page button on every platform, and the
+		// toolbar's left edge reserves exactly their span.
+		let count = 5.0;
 		let toolbar_x =
 			right - (count * toolbar_button_size + (count - 1.0) * CONTROL_GAP);
 		let drag_width = if cfg!(target_os = "android") {
