@@ -10,13 +10,15 @@ This page records threat details, implementation controls, and historical findin
 | T2 | Hang or CPU exhaustion | K0 | A1 | **P0** | Bounded |
 | T3 | Memory exhaustion | K0, K2 | A1 | P1 | Open, needs measurement |
 | T4 | Memory corruption in a dependency | K0, K1 | A3 | **P0** | Open, verification only |
-| T5 | Arbitrary local file read | K0 | A2 | P1 | Policy decided |
+| T5 | Local reads beyond document authority | K0 | A2 | P1 | Relative-path controls exist; Untrusted read gate planned |
 | T6 | Arbitrary file opened by the OS | K0 + one click | A3 | **P0** | Mitigated, confirmation remains the weakest control |
-| T7 | SSRF and network beaconing | K2 | A4 | P1 | Mitigated |
+| T7 | Network tracking and cache history | K0, K2 | A4 | P1 | Accepted privacy risk |
 | T8 | Symlink and time-of-check/time-of-use races | K1 | A2, A1 | P2 | Accepted |
 | T9 | Concurrency state-machine races | K0 triggers | A1 | P2 | Open, needs a model |
 | T10 | GPU and driver boundary | K0 | A1, A3 | P1 | Separate track |
 | T11 | Interface impersonation | K0 | A5 | P3 | Accepted |
+| T12 | Unauthorized requests to local services | K0, K2 | A7 | P1 | Direct destinations restricted; document modes and scoped authorization planned |
+| T13 | Sensitive data sent beyond reading authority | K0, K2 | A2 | P1 | Information-flow boundary defined; credential and routing audit open |
 
 ### T1: process abort from unbounded recursion
 
@@ -63,19 +65,19 @@ Verification priorities for these dependencies are tracked under [dependency cov
 
 ### T5: arbitrary local file read
 
-Relative image paths can render sensitive local images and expose existence or file-type information through errors. Directory containment is deliberately absent; see the [image-path policy](security.md#image-paths) and [resolution details](#image-source-resolution).
+Relative image paths can render sensitive local images and expose existence or file-type information through errors. The target [document modes](security.md#document-trust-modes) allow supported reads by default for Trusted local files, while Untrusted clipboard and web content need authorization for the identified local resource. Temporary staging must not supply local-read authority. This gate is not implemented yet: all three sources currently use the relative-path resolver. Directory containment remains deliberately absent for authorized reads; see the [image-path policy](security.md#image-paths) and [resolution details](#image-source-resolution).
 
 ### T6: arbitrary file opened by the operating system
 
 A document-controlled link can reach an OS handler after a click. Markdown stays in the reader; other local targets follow [local-link classification](#local-link-classification). Confirmation is the remaining gate for non-allowlisted types and can be approved by mistake. The [policy and accepted risks](security.md#links-and-os-handlers) explain that tradeoff.
 
-### T7: server-side request forgery and network beaconing
+### T7: network tracking and cache history
 
-Remote images can disclose the reader's address and opening activity. A default source cap limits automatic activity, while DNS checks, pinned addresses, and redirect checks block access to non-public destinations. Load all changes only the source cap. The notice does not precede requests within the cap. Fresh cached bodies can avoid a request; stale bodies may be revalidated. See [network implementation](#network-and-font-downloads) and the [network policy](security.md#network-access-and-caching).
+**Accepted privacy risk.** Remote images can disclose the reader's address and opening activity, including a tracking URL authored directly in Markdown. A default source cap limits automatic activity; it is not a tracking-consent mechanism. Load all changes only that cap. Fresh cached bodies can avoid a request; stale bodies may be revalidated, and cached URLs leave a local history. Offline mode prevents network requests. This is separate from unauthorized local-service access (T12) and disclosure of sensitive data (T13). See [network implementation](#network-and-font-downloads) and the [network policy](security.md#network-access-and-caching).
 
 ### T8: symlink and time-of-check/time-of-use races
 
-**Accepted.** With containment removed from the image policy, a symlink inside the document directory can point anywhere and Markview will read through it. This is deliberate: the containment check that would have blocked it also blocked `../`, and it protects against an adversary who can already write to the document directory. On top of that, the image staleness stamp is still `(len, mtime)`, and a writer can preserve both.
+**Accepted within authorized local reads.** With containment removed from the image policy, a symlink inside the document directory can point anywhere and Markview will read through it. This permits neighbouring image directories and `../`. Under the target modes that default authority belongs to Trusted documents; Untrusted local reads require an identified resource grant before image contents are read. The mode gate is pending. The image staleness stamp is still `(len, mtime)`, and a writer can preserve both.
 
 ### T9: concurrency state-machine races
 
@@ -88,6 +90,18 @@ Malformed geometry reaches wgpu as validation errors, device loss, or driver def
 ### T11: interface impersonation
 
 The HTML subset interprets no `class` or `style`, so document content cannot adopt reader styling. Headings, link text, and image alt text remain attacker-controlled, which is a low risk recorded here so that it is not re-litigated. It is a P3 non-goal. The confirmation modal deliberately shows the canonical path rather than the link label, which is the one place where this risk could have been amplified.
+
+### T12: unauthorized requests to local services
+
+A document can name `http://localhost:PORT/action` as an image source without controlling that server. If a request is sent, an operation may happen even when the response cannot decode as an image. Redirects and DNS answers can also move a nominally public resource to a local service. This is a client-side request and authorization threat; ordinary NAS images or an explicitly opened intranet page are not attacks in themselves.
+
+Currently `src/net.rs` checks resolved addresses and pins direct connections, refusing non-public targets before requests and on redirects. It also refuses explicitly requested local pages and font mirrors. Proxy routing is not yet verified as enforcing the same boundary. The [target policy](security.md#target-authorization-policy) allows ordinary LAN, VPN, and localhost image requests by default for Trusted local documents, and requires origin- and address-class-scoped grants for Untrusted sessions. An explicitly opened local web page stays Untrusted with authority for that target alone. Mode-aware access and grants are not implemented yet; Trusted defaults or a target grant accept the risk that a GET there has side effects.
+
+### T13: sensitive data sent beyond reading authority
+
+The confidentiality boundary is whether document input can cause local file contents, ambient credentials, or a fetched response to be sent to another destination. Supported relative image reads and passive cross-origin image display do not by themselves establish that information flow. An authored tracking URL belongs to T7; borrowing host authority to disclose a secret belongs here.
+
+Documents have no scripts or response-reading API. Local image loading does not compose remote URLs from file contents, SVG image-href loading is disabled, and the HTTP client disables automatic referrers and has no cookie store enabled. These are specific controls, not a complete credential guarantee: URL userinfo, authorization across redirects, and configured proxy behavior remain audit work. A server accepting other users' documents must separately prevent SSRF and isolate its own secrets; see [scope and assumptions](security.md#scope-and-assumptions).
 
 ## Resource limits
 
@@ -114,9 +128,17 @@ Controls include: `unsafe_code` forbidden workspace-wide; ratex pinned to an exa
 
 ## Boundary implementation
 
+### Document origin and mode
+
+The [Trusted and Untrusted modes](security.md#document-trust-modes) are a target design, not current enforcement. `src/app/interaction.rs` writes pasted text to a temporary file before opening it, and `src/app/web_page.rs` stages extracted articles as temporary Markdown too. A local path therefore cannot identify a Trusted entry.
+
+Origin and mode must travel with the reading session into navigation, image jobs, cache access, session restoration, and PDF export. Local Markdown links inherit the initiating mode; an Untrusted local link also needs read authorization, and web loads always enter Untrusted mode. Tab reuse and staging must not promote trust. Target grants authorize resources without changing document mode. Verification belongs to the [follow-up plan](security-verification.md#network-authorization-follow-up).
+
 ### Image source resolution
 
 Implementation: `src/images/source.rs`.
+
+This resolver currently applies regardless of document origin. The target Untrusted local-read gate must precede resource access; Trusted mode retains these supported path rules rather than allowing absolute or `file:` image sources.
 
 ```text
 1. Reject an empty src.
@@ -146,15 +168,21 @@ The modal offers **Open folder** (the default), **Open anyway**, and **Close**, 
 
 `src/link.rs` canonicalizes existing targets before testing their extensions, so `note.txt` pointing to `payload.desktop` is classified as `.desktop`. If canonicalization fails, it retains the supplied path. Classification uses the extension, not Unix executable permission bits; an allowlisted extension is not made confirmation-only by setting an executable bit. HTTP, HTTPS, and mailto URLs go to the OS; `file:` URLs enter local classification, and other schemes are refused.
 
+This is current classification. The pending document-mode policy adds authorization for an Untrusted link to local Markdown and preserves its Untrusted mode; Trusted local Markdown links retain Trusted mode. OS-handler allowlisting and confirmation remain the same in both modes.
+
 ### Network and font downloads
 
-Implementation: `src/images.rs` (cap, notice state), `src/net.rs` (resolution, pinning, and the streaming download client), `src/images/cache.rs` (bounded disk cache) and `src/fonts.rs` (the explicit font download); the strip is drawn from `src/app/chrome.rs` and the catalogue from `src/app/font_panel/view.rs`, with `markview fonts` in `src/app/fonts_command.rs`.
+Implementation: `src/images.rs` (cap, notice state), `src/net.rs` (resolution, pinning, and the streaming download client), `src/web_page.rs` (explicit article fetch and extraction), `src/images/cache.rs` (bounded disk cache) and `src/fonts.rs` (the explicit font download); the strip is drawn from `src/app/chrome.rs` and the catalogue from `src/app/font_panel/view.rs`, with `markview fonts` in `src/app/fonts_command.rs`.
+
+These are current implementation controls. The [target network authorization policy](security.md#target-authorization-policy) has not been implemented: automatic images, explicit web pages, font transfers, and mirror probes still share the public-address restriction. Trusted local files do not yet have broader network access, and Untrusted sessions do not yet have target grants. That restriction does not define normal local-network reading as a vulnerability.
 
 1. By default, at most 128 distinct remote sources are admitted per document revision; Load all lifts this cap. The remainder render as placeholders naming the reason, so a headless `render` or `smoke-test` run cannot block on them.
 2. The notice strip appears below the tab bar and offers Dismiss and Load all. Both answers belong to the tab and content revision they were chosen in: opening another document shows its own notice and starts capped again, and so does a reload. The exemption travels with the layout request instead of a shared flag, so it cannot leak into the next document laid out.
-3. Image requests allow at most five redirect hops, 32 MiB per body, 15 s total and 5 s to connect. Loopback, private, link-local, carrier-grade NAT, unspecified, documentation, multicast, and broadcast addresses are refused on the initial URL and on every redirect hop, after resolution and before connecting. The Load all exemption never bypasses this policy.
+3. Image requests allow at most five redirect hops, 32 MiB per body, 15 s per hop and 5 s to connect. Loopback, private, link-local, carrier-grade NAT, unspecified, documentation, multicast, and broadcast addresses are refused on the initial URL and on every redirect hop, after resolution and before connecting. The Load all exemption never bypasses this policy. The client checks the origin's DNS answers; equivalent enforcement when a configured proxy routes or resolves the request remains unverified.
 4. A fetched body is stored under `cache/images` beside `settings.toml`, keyed by a hash of its absolute URL, bounded at 128 MiB with least-recently-used eviction, and installed by rename so a partial body is never served. A fresh entry needs no request; a stale one revalidates with the stored `ETag`/`Last-Modified`. `--offline` never calls the client but serves a cached body whether or not it is fresh, deliberately overriding `no-cache` and `must-revalidate` because there is no network to revalidate against.
 5. A font family a stylesheet declares under `[[font-family]]` is fetched only by an explicit action on the reader's Fonts page or by `markview fonts download`. Both use a streaming async client with the same resolution, pinning and address policy as the image client. Transfers stream to a file with no whole-request limit, a 5 s connect limit and a 60 s silence limit, and a `User-Agent` naming the reader, because a mirror may refuse an anonymous client. HTTPS is preferred; plain `http` is accepted because a mirror may serve only that, and the cost is transport privacy for a URL the user chose. A family's sources are mirrors ordered by a one-time latency measurement per host — the declared order only breaks ties — each a set of files or one archive; the container is recognized from its own leading bytes, extraction refuses directories, symlinks, hard links and any path outside the download directory, and is bounded at 2 GiB and 4096 members. A font file is capped at 64 MiB, an archive at 2 GiB, a declared `sha256` must match, and the body is verified as a font (every table record inside it, the tables a drawable face needs — outlines, or a color emoji face's `CBDT`/`sbix` bitmap strikes — and a nonempty character map) before it is renamed into place, so a partial transfer is never registered. A failed source's own files are removed before the next mirror runs. Nothing is cached by the image cache; the verified files in `fonts/` are their own cache. `--offline` refuses the job with a message. The directory is a personal resource: the reader, its export jobs, and the drawing subcommands load it by default, while the measurement modes and `--ignore-system-fonts` keep the configured set, so a download cannot change a pinned export.
+
+Web-page loads use the same client, the document byte limit, and a 30 s download deadline. Extraction accepts UTF-8 HTML and limits parsed elements to 100,000 before handing Markdown to the native pipeline. `--offline` refuses web-page loads. No extracted article scripts execute.
 
 ## Historical findings
 

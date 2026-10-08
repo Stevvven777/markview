@@ -13,9 +13,33 @@ This page tracks security evidence, proposed harnesses, and outstanding work. [S
 | I5 | Every filesystem path is confined to the document directory subtree | **Deliberately not enforced.** Local image sources are relative-only; links are not; see [T5](security-reference.md#t5-arbitrary-local-file-read) |
 | I6 | Rendering the same input is deterministic across runs and processes | Satisfied for image selection: `Prepared::images` is a `BTreeMap`, so the sole-image caption path is deterministic |
 | I7 | Every output geometry value is finite and bounded in magnitude | Unverified; the stylesheet validates only finiteness and sign, so a finite but absurd size such as `1e30` passes |
-| I8 | The only URL Markview opens comes from a single scheme allowlist, with no second path | Satisfied: `src/link.rs` is the only policy, and `openable_link` no longer exists as a second one |
+| I8 | Every document link sent to an OS handler passes through the same scheme and local-file classification | Satisfied: `src/link.rs` owns OS-link policy; internal web fetches follow the separate HTTP client policy |
 | I9 | The number of remote requests and total bytes triggered by one document is bounded | Default admission cap: 128 distinct sources per revision, lifted by Load all; 32 MiB per body and 128 MiB disk cache. These are not a universal bound on request count or lifetime traffic |
 | I10 | Any path handed to the OS has had its executability judged for that platform and confirmed by the user | Historical proposal, not current policy: directories and allowlisted extensions bypass confirmation, and executable permission bits are not checked |
+| I11 | Local reads, local requests, and local cache reuse stay within the receiving document's mode and target authority | Target policy, not implemented; relative reads lack an origin gate and direct network requests use blanket non-public address refusal |
+| I12 | Document input cannot send local reads, ambient credentials, or fetched responses to another destination | No scripts or file-to-URL composition; referrers disabled and no cookie store enabled; URL credentials, redirects, and proxy routing need audit |
+| I13 | Origin and trust mode survive staging, navigation, tab reuse, restoration, and export without implicit promotion | Target policy, not implemented; clipboard and web articles are currently staged as local files |
+
+## Network authorization follow-up
+
+The [document modes](security.md#document-trust-modes) give user-opened local files Trusted resource permissions and classify clipboard and web content as Untrusted. Target grants authorize individual resources without promoting a document. The [network policy](security.md#network-access-and-caching) separates ordinary reading, tracking (T7), unauthorized local requests (T12), and sensitive information flows (T13). Modes and session grants are pending. Existing address checks do not prove that design, and private image services failing today are a compatibility restriction rather than evidence that their use is an attack.
+
+Implementation and verification must cover these boundaries before replacing the current restriction:
+
+| Boundary | Required evidence | Status |
+| --- | --- | --- |
+| Entry classification and staging | Direct file-picker, file-manager, and CLI local opens are Trusted, including downloaded files; clipboard, shared text, and web loads remain Untrusted after temporary writes | Planned; no enforced mode distinction |
+| Navigation and lifecycle | Local Markdown links inherit mode; Untrusted local targets need read authorization; web loads always become Untrusted; tab reuse, reload, and restoration preserve source authority | Planned; path-based reuse and restoration need mode propagation |
+| Local image reads | Trusted relative images work; Untrusted content cannot read a local image without resource authorization or use its staging directory as a base | Planned; current relative-path resolver has no origin gate |
+| Network images versus explicit targets | Trusted LAN, VPN, and localhost images work without grants; Untrusted local requests wait for a grant; explicitly opened local pages stay Untrusted with same-origin authority; font jobs cover only disclosed mirrors and probes | Planned; local network targets currently refused |
+| Grant scope and lifecycle | Repeated Untrusted images use one grant; tabs, content revisions, other origins, and other address classes cannot borrow it; a grant never changes mode and Load all changes only the source cap | Planned; no grants exist |
+| DNS and redirects | Controlled resolver and HTTP fixtures show requests and redirects follow document mode; rebinding cannot expand an Untrusted grant, including IPv4-mapped IPv6 destinations; link-local targets need separate authority in both modes | Address checks exist; mode and authorization integration tests pending |
+| Credentials and routing | Request capture verifies no ambient cookies, authentication, or local-path referrers; URL userinfo, redirect authorization, unsafe ports, and HTTP/SOCKS proxy routing follow the policy | Audit open; no browser-equivalence claim |
+| Cache and offline mode | A local body cached by a Trusted session remains gated in an Untrusted session, across tabs and revisions; offline mode makes no requests | Local cache authorization pending; current offline image behavior implemented |
+| Personal headless export | Export preserves mode: directly opened local files use Trusted defaults, clipboard/web exports stay Untrusted, and missing local authority fails without a prompt | Planned; mode propagation and grant CLI absent |
+| Shared safety controls | Both modes retain processing budgets, decoder checks, script prohibition, and OS-handler confirmations; Trusted mode never authorizes credential forwarding | Existing controls apply to all sources; explicit mode regression coverage pending |
+
+Tests should inspect requests actually received, not just whether an image decoded: a service-side effect may precede a decode failure. A conversion service's sandbox and egress isolation need separate deployment evidence and are outside these personal-reader tests.
 
 ## Mitigations
 
@@ -57,7 +81,7 @@ As of 2026-10-02 the fuzzing plan that superseded the harness work in this secti
 | I7 | Layout over generated numeric options | Finiteness and magnitude bounds on every geometry value | Fuzzed: `geometry` feeds `f32` bit patterns to the render primitives and layout asserts snapshot finiteness |
 | T4 | Shaping, highlighting, math, and PDF export | ASAN cleanliness | Fuzzed under ASAN (`shaping`, `highlight`, `math`, `pdf`); decode and SVG rasterization deferred |
 | T2 | Highlight, math, and line breaking, each with a timeout | Wall-clock budget per input | Wall-clock budgets are enforced per input by `fuzzlib::budget`; the budget defaults are calibrated, not guessed |
-| T7 | Address policy and cap | An address class table and a per-revision counter | Implemented as `src/net.rs` address-policy tests and `src/images/tests.rs` cap tests |
+| T7, T12 | Current address restriction and source cap | An address class table and a per-revision counter | Implemented as `src/net.rs` address-policy tests and `src/images/tests.rs` cap tests; document modes and grants remain pending |
 | Differential | Cached versus uncached layout; progressive prefix versus final snapshot | Field-by-field equality. Both properties are already asserted in unit tests and should be enforced during fuzzing | Incremental-reparse equality and progressive-prefix equality are fuzzed; cached-versus-uncached is unit-tested |
 
 Input generation is structured rather than byte-level: the text targets mutate whole lines and Markdown markers (`fuzz/fuzzlib/src/mutators.rs`), and the geometry target derives its input through `arbitrary`. Comrak exposes an `arbitrary` feature that derives `Arbitrary` for its option types, which makes randomized configuration free, and the comrak repository already carries a fuzz suite whose targets include a complexity-focused one and a `sourcepos`-focused one that exercises the same positions `Reader::range` depends on. See [Existing fuzzing assets](#existing-fuzzing-assets); upstream capabilities must be checked before adapting them.

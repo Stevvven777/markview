@@ -24,7 +24,7 @@ at the same level, without `[brackets]`.
 ### Changed
 
 - Share PNG rendering and encoding across callers, and accept in-memory Markdown for PDF and PNG export.
-
+- Define Trusted local-file and Untrusted clipboard/web modes, origin-preserving navigation and target authorization in the threat model; distinguish the design from current enforcement.
 - Refresh README imagery and source credits for the Cyberspace Independence Declaration, Open Access Manifesto and revised Rust excerpts.
 - Add localized four-panel README previews from the Open Access Manifesto, the Rust Book, OpenStax's Stokes' theorem and Wikipedia web extraction, with source and license credits.
 - Refine README typography comparison styling and load its replaceable sample from a plain-text file.
