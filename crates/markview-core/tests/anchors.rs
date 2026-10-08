@@ -1,8 +1,23 @@
 use markview_core::{
 	document,
+	fonts::FontConfig,
 	layout::{LayoutEngine, LayoutOptions},
 };
 use std::sync::Arc;
+
+fn test_options() -> LayoutOptions {
+	LayoutOptions {
+		fonts: FontConfig {
+			ignore_system_fonts: true,
+			directories: vec![
+				std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+					.join("tests/fonts"),
+			],
+			..Default::default()
+		},
+		..Default::default()
+	}
+}
 
 #[test]
 fn target_after_an_image_and_newline_resolves() {
@@ -11,7 +26,7 @@ fn target_after_an_image_and_newline_resolves() {
 		image::{ImageInfo, ImageSnapshot},
 	};
 
-	let options = LayoutOptions::default();
+	let options = test_options();
 	let mut engine = LayoutEngine::new();
 	for source in [
 		"<img>\n<em id='a'>",
@@ -54,7 +69,7 @@ fn target_after_an_image_and_newline_resolves() {
 fn html_targets_resolve_across_elements_and_preserve_heading_slugs() {
 	let source = "<h2 id='custom'>Heading</h2>\n\n<div id='wrapper'>\n\nText <b id='bold'>bold</b> <a id='new' name='old'></a>end.\n\n</div>\n\n<hr id='rule'>\n\n<img id='image' src='missing.png'>\n\n<svg id='vector' width='10' height='10'></svg>\n\n<widget id='unsupported'>text</widget>\n\n<a name='last'></a>";
 	let doc = document::parse(source);
-	let layout = LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+	let layout = LayoutEngine::new().layout(&doc, &test_options());
 	for anchor in [
 		"custom",
 		"heading",
@@ -86,7 +101,7 @@ fn inline_and_empty_targets_follow_their_lines_without_adding_text_or_height() {
 			.replace("<a id='end'></a>", "");
 		let options = LayoutOptions {
 			width: 240.,
-			..Default::default()
+			..test_options()
 		};
 		let mut engine = LayoutEngine::new();
 		let layout = engine.layout(&document::parse(source), &options);
@@ -110,14 +125,14 @@ fn targets_inside_nested_details_report_the_disclosures_to_expand() {
 	assert!(doc.details_enclosing("outer").is_empty());
 	assert!(doc.details_enclosing("summary").is_empty());
 	let mut engine = LayoutEngine::new();
-	let collapsed = engine.layout(&doc, &LayoutOptions::default());
+	let collapsed = engine.layout(&doc, &test_options());
 	assert!(collapsed.anchor_y("hidden").is_none());
 	assert!(collapsed.anchor_y("summary").is_some());
 	let options = LayoutOptions {
 		details_open: Arc::new(
 			enclosing.into_iter().map(|id| (id, true)).collect(),
 		),
-		..Default::default()
+		..test_options()
 	};
 	assert!(engine.layout(&doc, &options).anchor_y("hidden").is_some());
 }
@@ -133,13 +148,13 @@ fn a_footnote_reference_hidden_by_details_reports_its_disclosure() {
 	assert_eq!(enclosing.len(), 1);
 	assert!(doc.details_enclosing("fn:1").is_empty());
 	let mut engine = LayoutEngine::new();
-	let collapsed = engine.layout(&doc, &LayoutOptions::default());
+	let collapsed = engine.layout(&doc, &test_options());
 	assert!(collapsed.anchor_y("fnref:1").is_none());
 	let options = LayoutOptions {
 		details_open: Arc::new(
 			enclosing.into_iter().map(|id| (id, true)).collect(),
 		),
-		..Default::default()
+		..test_options()
 	};
 	assert!(engine.layout(&doc, &options).anchor_y("fnref:1").is_some());
 }
@@ -150,7 +165,7 @@ fn only_real_html_registers_targets_and_anchor_changes_invalidate_cached_layouts
 	let source = "`<a id='code'></a>`\n\n```html\n<div id='fence'>\n```\n\n<!-- <a id='comment'></a> -->\n\n<script id='script'><a id='script-body'></a></script>\n\nText <b ID='中文&amp;目标'>bold</b> <a id='' name='legacy'></a>\n\n<a name='duplicate'></a>first\n\n<a name='duplicate'></a>second";
 	let doc = document::parse(source);
 	let mut engine = LayoutEngine::new();
-	let options = LayoutOptions::default();
+	let options = test_options();
 	let layout = engine.layout(&doc, &options);
 	for anchor in ["code", "fence", "comment", "script-body", ""] {
 		assert!(layout.anchor_y(anchor).is_none(), "{anchor}");
@@ -173,7 +188,7 @@ fn pagination_keeps_empty_targets_and_uses_the_first_duplicate() {
 	let doc = document::parse(
 		"<a name='start'></a>\n\n<div id='duplicate'>\n\nText <b id='duplicate'>bold</b>\n\n</div>\n\n<a name='end'></a>",
 	);
-	let layout = LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+	let layout = LayoutEngine::new().layout(&doc, &test_options());
 	let pages = paginate(
 		&doc,
 		&layout,
@@ -200,7 +215,7 @@ fn targets_after_hard_breaks_remain_on_their_own_line() {
 	let doc = document::parse(
 		"<p><b id='first'>one</b><br><a id='second'></a>two<br><a id='third'></a>three</p>",
 	);
-	let layout = LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+	let layout = LayoutEngine::new().layout(&doc, &test_options());
 	assert!(
 		layout.anchor_y("first").unwrap() < layout.anchor_y("second").unwrap()
 	);
@@ -220,7 +235,7 @@ fn summary_descendant_targets_keep_their_inline_positions() {
 			&doc,
 			&LayoutOptions {
 				width: 240.,
-				..Default::default()
+				..test_options()
 			},
 		);
 		let targets: Vec<_> = layout.blocks[0]
@@ -265,7 +280,7 @@ fn invisible_targets_preserve_normalized_whitespace() {
 		let mut engine = LayoutEngine::new();
 		let options = LayoutOptions {
 			width: 100.,
-			..Default::default()
+			..test_options()
 		};
 		let layout = engine.layout(&document::parse(source), &options);
 		let plain = engine.layout(&document::parse(baseline), &options);
@@ -292,8 +307,7 @@ fn inline_opaque_contents_do_not_register_targets() {
 				"Text <{tag} id='outer'>{body}</{tag}> <a id='after'></a>tail"
 			);
 			let doc = document::parse(source.clone());
-			let layout =
-				LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+			let layout = LayoutEngine::new().layout(&doc, &test_options());
 			for anchor in ["outer", "after"] {
 				assert!(
 					layout.anchor_y(anchor).is_some(),
@@ -322,7 +336,7 @@ fn empty_line_targets_register_before_the_next_visible_line() {
 			));
 			let options = LayoutOptions {
 				greedy,
-				..Default::default()
+				..test_options()
 			};
 			let mut engine = LayoutEngine::new();
 			let layout = engine.layout(&doc, &options);
@@ -359,7 +373,7 @@ fn standalone_and_additional_summaries_keep_their_element_targets() {
 			details_open: Arc::new(
 				enclosing.into_iter().map(|id| (id, true)).collect(),
 			),
-			..Default::default()
+			..test_options()
 		};
 		let layout = LayoutEngine::new().layout(&doc, &options);
 		assert!(layout.anchor_y("target").is_some(), "{source}");
@@ -407,7 +421,7 @@ fn invisible_targets_preserve_styled_run_geometry() {
 			let options = LayoutOptions {
 				width,
 				stylesheet: Arc::new(stylesheet.clone()),
-				..Default::default()
+				..test_options()
 			};
 			let mut engine = LayoutEngine::new();
 			let anchored = engine.layout(&document::parse(source), &options);
@@ -451,7 +465,7 @@ fn heading_slugs_win_collisions_with_descendant_targets() {
 		let doc = document::parse(source);
 		let baseline = document::parse(source.replace(" id='firstsecond'", ""));
 		let mut engine = LayoutEngine::new();
-		let options = LayoutOptions::default();
+		let options = test_options();
 		let anchored = engine.layout(&doc, &options);
 		let plain = engine.layout(&baseline, &options);
 		assert_eq!(
@@ -493,7 +507,7 @@ fn invisible_container_edges_preserve_visible_child_spacing() {
 			let mut engine = LayoutEngine::new();
 			let options = LayoutOptions {
 				stylesheet: Arc::new(sheet.clone()),
-				..Default::default()
+				..test_options()
 			};
 			let layout = engine.layout(&document::parse(source), &options);
 			let plain = engine.layout(&document::parse(baseline), &options);
@@ -516,7 +530,7 @@ fn empty_html_headings_are_invisible_targets() {
 	] {
 		let doc = document::parse(source);
 		let mut engine = LayoutEngine::new();
-		let options = LayoutOptions::default();
+		let options = test_options();
 		let layout = engine.layout(&doc, &options);
 		let plain = engine.layout(&document::parse("Text"), &options);
 		assert_eq!(layout.height, plain.height);
@@ -542,7 +556,7 @@ fn footnote_groups_traverse_invisible_targets() {
 			.replace(" id='target'", "")
 			.replace(" name='legacy'", "");
 		let mut engine = LayoutEngine::new();
-		let options = LayoutOptions::default();
+		let options = test_options();
 		let layout = engine.layout(&document::parse(source), &options);
 		let plain = engine.layout(&document::parse(baseline), &options);
 		let copied = layout.extract_text(layout.select_all(1).unwrap(), 1);
@@ -559,7 +573,7 @@ fn unsupported_summary_descendants_keep_targets() {
 	let doc = document::parse(
 		"<details><summary id='summary'><span id='target'>Title</span></summary>Body</details>",
 	);
-	let layout = LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+	let layout = LayoutEngine::new().layout(&doc, &test_options());
 	assert!(layout.anchor_y("target").is_some());
 	assert!(doc.details_enclosing("target").is_empty());
 	let pages = paginate(
@@ -588,8 +602,7 @@ fn opaque_target_exclusion_survives_blank_lines_and_html_blocks() {
 			let doc = document::parse(format!(
 				"Text <{tag} id='outer'>start\n\n{inner}\n\n</{tag}>\n\nText <a id='after'></a>end"
 			));
-			let layout =
-				LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+			let layout = LayoutEngine::new().layout(&doc, &test_options());
 			assert!(layout.anchor_y("outer").is_some(), "{tag}: {inner}");
 			assert!(layout.anchor_y("inner").is_none(), "{tag}: {inner}");
 			assert!(layout.anchor_y("after").is_some(), "{tag}: {inner}");
@@ -620,7 +633,7 @@ fn opaque_html_edits_match_full_parses() {
 			let full = document::parse(changed);
 			assert_eq!(reparsed.content_id, full.content_id, "{tag}");
 			let mut engine = LayoutEngine::new();
-			let options = LayoutOptions::default();
+			let options = test_options();
 			let updated = engine.layout(&reparsed, &options);
 			let expected = engine.layout(&full, &options);
 			for target in ["inner", "after"] {
@@ -644,8 +657,7 @@ fn image_alt_html_does_not_change_document_targets() {
 		let doc = document::parse(format!(
 			"![<{tag} id='alt'>](missing.png) Text <a id='after'></a>end\n\nLater <a id='later'></a>text"
 		));
-		let layout =
-			LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+		let layout = LayoutEngine::new().layout(&doc, &test_options());
 		assert!(layout.anchor_y("alt").is_none(), "{tag}");
 		assert!(layout.anchor_y("after").is_some(), "{tag}");
 		assert!(layout.anchor_y("later").is_some(), "{tag}");
@@ -669,7 +681,7 @@ fn targets_on_both_sides_of_breaks_keep_their_lines() {
 				&document::parse(source),
 				&LayoutOptions {
 					greedy,
-					..Default::default()
+					..test_options()
 				},
 			);
 			assert_eq!(
@@ -696,7 +708,7 @@ fn root_child_styles_ignore_invisible_targets_and_reuse_geometry() {
 	sheet.merge(&Stylesheet::parse("format_version=2\nversion=1\n[[rule]]\nwhen=['p','first_child']\nsize=2\n[[rule]]\nwhen=['p','last_child']\nspace_after=2").unwrap());
 	let options = LayoutOptions {
 		stylesheet: Arc::new(sheet),
-		..Default::default()
+		..test_options()
 	};
 	for body in ["Text", "First\n\nMiddle\n\nLast"] {
 		let mut engine = LayoutEngine::new();
@@ -746,10 +758,8 @@ fn block_html_opaque_scopes_exclude_later_targets() {
 					.join("\n"),
 				_ => source,
 			};
-			let layout = LayoutEngine::new().layout(
-				&document::parse(source.clone()),
-				&LayoutOptions::default(),
-			);
+			let layout = LayoutEngine::new()
+				.layout(&document::parse(source.clone()), &test_options());
 			assert!(layout.anchor_y("outer").is_some(), "{source}");
 			assert!(layout.anchor_y("inner").is_none(), "{source}");
 			assert!(layout.anchor_y("after").is_some(), "{source}");
@@ -760,7 +770,7 @@ fn block_html_opaque_scopes_exclude_later_targets() {
 		"<div data-tag='<title>'>\n\nText <a id='after'></a>end\n\n</div>",
 	] {
 		let layout = LayoutEngine::new()
-			.layout(&document::parse(source), &LayoutOptions::default());
+			.layout(&document::parse(source), &test_options());
 		assert!(layout.anchor_y("after").is_some(), "{source}");
 	}
 }
@@ -778,7 +788,7 @@ fn soft_wrap_targets_stay_on_their_side_of_discarded_spaces() {
 			let options = LayoutOptions {
 				width: 60.,
 				greedy,
-				..Default::default()
+				..test_options()
 			};
 			let layout = LayoutEngine::new()
 				.layout(&document::parse(source.clone()), &options);
@@ -814,8 +824,7 @@ fn inline_non_tag_html_is_ignored_without_changing_targets() {
 			"Text {fragment} <a id='after'></a>tail\n\nLater <a id='later'></a>end"
 		);
 		let doc = document::parse(source);
-		let layout =
-			LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+		let layout = LayoutEngine::new().layout(&doc, &test_options());
 		assert_eq!(
 			layout.extract_text(layout.select_all(1).unwrap(), 1),
 			"Text tail\n\nLater end",
@@ -830,7 +839,7 @@ fn inline_non_tag_html_is_ignored_without_changing_targets() {
 #[test]
 fn invisible_math_prefixes_preserve_copied_paragraph_separators() {
 	let mut engine = LayoutEngine::new();
-	let options = LayoutOptions::default();
+	let options = test_options();
 	let baseline =
 		engine.layout(&document::parse("Before\n\n$$a$$\n\nAfter"), &options);
 	for prefix in [
@@ -868,10 +877,8 @@ fn opaque_elements_close_after_literal_less_than_signs() {
 			let source = format!(
 				"{prefix}<{tag} id='outer'>2 < 3 < 4</{tag}>\n\n<a id='after'></a>end"
 			);
-			let layout = LayoutEngine::new().layout(
-				&document::parse(source.clone()),
-				&LayoutOptions::default(),
-			);
+			let layout = LayoutEngine::new()
+				.layout(&document::parse(source.clone()), &test_options());
 			assert!(layout.anchor_y("outer").is_some(), "{source}");
 			assert!(layout.anchor_y("after").is_some(), "{source}");
 		}
@@ -888,7 +895,7 @@ fn non_element_html_regions_do_not_open_opaque_scopes() {
 	] {
 		let source = format!("{region}\n\n<a id='after'></a>end");
 		let layout = LayoutEngine::new()
-			.layout(&document::parse(source), &LayoutOptions::default());
+			.layout(&document::parse(source), &test_options());
 		assert!(layout.anchor_y("false").is_none(), "{region}");
 		assert!(layout.anchor_y("after").is_some(), "{region}");
 	}
@@ -904,7 +911,7 @@ fn raw_html_comments_after_text_do_not_register_targets() {
 	] {
 		let source = format!("<p>before {region} <a id='after'></a>after</p>");
 		let layout = LayoutEngine::new()
-			.layout(&document::parse(source), &LayoutOptions::default());
+			.layout(&document::parse(source), &test_options());
 		assert!(layout.anchor_y("false").is_none(), "{region}");
 		assert!(layout.anchor_y("after").is_some(), "{region}");
 		assert_eq!(
@@ -931,10 +938,8 @@ fn svg_snippets_preserve_original_opaque_extents() {
 			} else {
 				source.clone()
 			};
-			let layout = LayoutEngine::new().layout(
-				&document::parse(source.clone()),
-				&LayoutOptions::default(),
-			);
+			let layout = LayoutEngine::new()
+				.layout(&document::parse(source.clone()), &test_options());
 			assert!(layout.anchor_y("outer").is_some(), "{source}");
 			assert!(layout.anchor_y("inside").is_none(), "{source}");
 			assert!(layout.anchor_y("body").is_none(), "{source}");
@@ -945,10 +950,8 @@ fn svg_snippets_preserve_original_opaque_extents() {
 		let source = format!(
 			"Text <svg id='visible'>\n\n</svg> Text <{tag} id='outer'>\n\nBody <a id='body'></a>text\n\n</{tag}>\n\nText <a id='after'></a>end"
 		);
-		let layout = LayoutEngine::new().layout(
-			&document::parse(source.clone()),
-			&LayoutOptions::default(),
-		);
+		let layout = LayoutEngine::new()
+			.layout(&document::parse(source.clone()), &test_options());
 		assert!(layout.anchor_y("visible").is_some(), "{source}");
 		assert!(layout.anchor_y("outer").is_some(), "{source}");
 		assert!(layout.anchor_y("body").is_none(), "{source}");
@@ -963,7 +966,7 @@ fn svg_snippets_preserve_original_opaque_extents() {
 			"{prefix}<svg id='visible'>\n\n</svg>\n\nText <a id='after'></a>end"
 		);
 		let layout = LayoutEngine::new()
-			.layout(&document::parse(source), &LayoutOptions::default());
+			.layout(&document::parse(source), &test_options());
 		assert!(layout.anchor_y("visible").is_some(), "{prefix}");
 		assert!(layout.anchor_y("after").is_some(), "{prefix}");
 	}
@@ -976,7 +979,7 @@ fn footnote_targets_win_collisions_with_descendants() {
 	let doc = document::parse(source);
 	let baseline = document::parse(source.replace(" id='fn:1'", ""));
 	let mut engine = LayoutEngine::new();
-	let options = LayoutOptions::default();
+	let options = test_options();
 	let layout = engine.layout(&doc, &options);
 	let plain = engine.layout(&baseline, &options);
 	assert_eq!(layout.anchor_y("fn:1"), plain.anchor_y("fn:1"));
@@ -1021,8 +1024,7 @@ fn summary_opaque_offsets_use_the_original_body_range() {
 				source
 			};
 			let doc = document::parse(source.clone());
-			let layout =
-				LayoutEngine::new().layout(&doc, &LayoutOptions::default());
+			let layout = LayoutEngine::new().layout(&doc, &test_options());
 			assert!(layout.anchor_y("hidden").is_none(), "{source}");
 			if body.contains("id='after'") {
 				assert!(layout.anchor_y("after").is_some(), "{source}");

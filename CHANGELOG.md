@@ -48,6 +48,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Use committed font subsets in anchor integration tests, fixing Linux CI with system fonts disabled.
+
 - Expand a collapsed `<details>` when jumping to a footnote reference inside it, whose `fnref:` anchor the disclosure lookup missed.
 
 - Drop empty HTML text runs after trimming trailing whitespace, preventing panics on images followed by invisible anchors.
