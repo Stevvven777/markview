@@ -47,7 +47,7 @@ jobs:
       - name: Release notes use the installable packages
         run: python3 -m unittest discover -s scripts -p 'test_render_release_notes.py'
       - name: Android build orchestration
-        run: python3 -m unittest discover -s android -p 'test_build.py'
+        run: python3 -m unittest discover -s android -p 'test_*.py'
       - name: Committed icons match the source SVG
         run: cargo run -p xtask -- icons --check
       - name: Shell scripts are sound

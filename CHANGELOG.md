@@ -45,6 +45,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Make Android system-picker tests activate accessible controls directly and keep device logging connected across emulator root setup.
+
 - Preserve shared Markdown containing bare links, formatted titles, indented URL code blocks or prose after URLs; use native URL parsing without accepting internal whitespace.
 - Keep the Android keyboard and search bar stable when navigating between search results.
 - Keep search keyboard visibility checks compatible with Android 9 and 10.

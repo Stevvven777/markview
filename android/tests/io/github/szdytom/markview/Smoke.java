@@ -424,6 +424,9 @@ public class Smoke extends Instrumentation {
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             android.util.Log.e("MarkviewTest", "Integration failure", error);
+            results.append("FAIL: ").append(android.util.Log.getStackTraceString(error)).append('\n');
+            // Preserve the original failure even if native inspection cannot respond.
+            result.putString("stream", results.toString());
             try {
                 File dir = new File(activity.getFilesDir(), "test-artifacts");
                 dir.mkdirs();
@@ -432,7 +435,7 @@ public class Smoke extends Instrumentation {
                 pixels.recycle();
                 results.append("STATE: ").append(state()).append('\n');
             } catch (Exception captureError) { android.util.Log.w("MarkviewTest", "Failure capture", captureError); }
-            result.putString("stream", results.toString() + "FAIL: " + error + "\n");
+            result.putString("stream", results.toString());
             finish(Activity.RESULT_CANCELED, result);
         }
     }
@@ -716,13 +719,11 @@ public class Smoke extends Instrumentation {
         while (SystemClock.uptimeMillis() < deadline) {
             AccessibilityNodeInfo root = getUiAutomation().getRootInActiveWindow();
             if (root != null) for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(text)) {
-                Rect bounds = new Rect(); node.getBoundsInScreen(bounds);
-                long down = SystemClock.uptimeMillis();
-                MotionEvent press = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, bounds.centerX(), bounds.centerY(), 0);
-                press.setSource(InputDevice.SOURCE_TOUCHSCREEN); getUiAutomation().injectInputEvent(press, true); press.recycle();
-                MotionEvent release = MotionEvent.obtain(down, down + 60, MotionEvent.ACTION_UP, bounds.centerX(), bounds.centerY(), 0);
-                release.setSource(InputDevice.SOURCE_TOUCHSCREEN); getUiAutomation().injectInputEvent(release, true); release.recycle();
-                return;
+                // Labels can be children of the clickable share or picker control.
+                for (AccessibilityNodeInfo control = node; control != null; control = control.getParent()) {
+                    if (control.isVisibleToUser() && control.isEnabled() && control.isClickable()
+                        && control.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+                }
             }
             SystemClock.sleep(100);
         }

@@ -6,6 +6,9 @@ boundary_width=$2
 serial=emulator-5554
 artifacts="artifacts/android/$layout"
 mkdir -p "$artifacts"
+# Root before streaming: restarting `adbd` would disconnect `logcat`.
+adb -s "$serial" root
+adb -s "$serial" wait-for-device
 adb -s "$serial" shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.gestural
 adb -s "$serial" logcat -c
 adb -s "$serial" logcat -v threadtime > "$artifacts/logcat.txt" &
@@ -15,7 +18,7 @@ finish() {
   if ((status != 0)); then
     adb -s "$serial" exec-out screencap -p > "$artifacts/after-test.png" || true
   fi
-  kill "$logcat_pid" || true
+  kill "$logcat_pid" 2>/dev/null || true
   exit "$status"
 }
 trap finish EXIT
