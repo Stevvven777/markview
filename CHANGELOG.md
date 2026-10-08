@@ -48,6 +48,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep Android CI device logs alive across web-fixture setup by restarting adb before starting logcat.
+
 - Use committed font subsets in anchor integration tests, fixing Linux CI with system fonts disabled.
 
 - Expand a collapsed `<details>` when jumping to a footnote reference inside it, whose `fnref:` anchor the disclosure lookup missed.

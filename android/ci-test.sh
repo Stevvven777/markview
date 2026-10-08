@@ -6,6 +6,9 @@ boundary_width=$2
 serial=emulator-5554
 artifacts="artifacts/android/$layout"
 mkdir -p "$artifacts"
+# `test.py` needs root for its local web fixture; restart `adbd` before logging.
+adb -s "$serial" root
+adb -s "$serial" wait-for-device
 adb -s "$serial" shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.gestural
 adb -s "$serial" logcat -c
 adb -s "$serial" logcat -v threadtime > "$artifacts/logcat.txt" &
