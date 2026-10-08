@@ -108,8 +108,19 @@ pub(crate) fn export_with_services(
 	args: &PdfRequest,
 	services: Arc<crate::services::Services>,
 ) -> Result<ExportStats> {
+	let text = read_document(&args.path)?;
+	export_text(args, &text, services, || Ok(()))
+}
+
+/// Exports a host's text using the original path only for resources.
+pub(crate) fn export_text(
+	args: &PdfRequest,
+	text: &str,
+	services: Arc<crate::services::Services>,
+	before_write: impl Fn() -> Result<()>,
+) -> Result<ExportStats> {
 	Exporter::with_services(args, services)?
-		.export(false)?
+		.export_source(text, true, before_write)?
 		.context("the export produced no output")
 }
 
@@ -227,17 +238,24 @@ impl Exporter {
 	/// Rebuilds the PDF, or returns `None` when the document is unchanged and
 	/// `force` did not ask for a rebuild anyway.
 	fn export(&mut self, force: bool) -> Result<Option<ExportStats>> {
-		let started = Instant::now();
 		let text = read_document(&self.path)?;
-		let unchanged =
-			!self.dirty && self.source.as_deref() == Some(text.as_str());
+		self.export_source(&text, force, || Ok(()))
+	}
+	fn export_source(
+		&mut self,
+		text: &str,
+		force: bool,
+		before_write: impl Fn() -> Result<()>,
+	) -> Result<Option<ExportStats>> {
+		let started = Instant::now();
+		let unchanged = !self.dirty && self.source.as_deref() == Some(text);
 		if unchanged && !force {
 			return Ok(None);
 		}
 		// A build that fails anywhere below leaves this set, so the next save
 		// of the same content is not mistaken for one already on the disk.
 		self.dirty = true;
-		let changed = self.source.as_deref() != Some(text.as_str());
+		let changed = self.source.as_deref() != Some(text);
 		if changed {
 			let source: Arc<str> = text.into();
 			let document = match &self.document {
@@ -298,6 +316,7 @@ impl Exporter {
 			links: self.links,
 			fonts: self.options.fonts.clone(),
 		})?;
+		before_write()?;
 		write_pdf(&self.output, &bytes)?;
 		// Only now is this build on the disk.
 		self.dirty = false;
@@ -413,6 +432,33 @@ mod tests {
 		fs::write(&path, source).unwrap();
 		let exporter = Exporter::new(&options(&path, &output)).unwrap();
 		(path, output, exporter)
+	}
+
+	#[test]
+	fn exports_unsaved_text_and_checks_cancellation_before_replacing_output() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join("unsaved.md");
+		let output = dir.path().join("out.pdf");
+		let request = options(&path, &output);
+		let services = Arc::new(crate::services::Services::new(2));
+		export_text(
+			&request,
+			"# Unsaved snapshot",
+			services.clone(),
+			|| Ok(()),
+		)
+		.unwrap();
+		assert!(!path.exists());
+		let pdf = lopdf::Document::load(&output).unwrap();
+		assert!(pdf.extract_text(&[1]).unwrap().contains("Unsaved snapshot"));
+		let previous = fs::read(&output).unwrap();
+		assert!(
+			export_text(&request, "# Replacement", services, || {
+				anyhow::bail!("Cancelled")
+			})
+			.is_err()
+		);
+		assert_eq!(fs::read(&output).unwrap(), previous);
 	}
 
 	#[test]
