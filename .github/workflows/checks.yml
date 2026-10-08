@@ -17,10 +17,10 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       # Tests shape with the committed subsets, not the host's fonts, so only
-      # the native libraries and Poppler for PDF selection checks are installed.
+      # native libraries, Poppler and a software Vulkan driver are installed.
       - name: Linux native development libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libwayland-dev poppler-utils
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libwayland-dev poppler-utils libvulkan1 mesa-vulkan-drivers
       - run: cargo check --workspace --locked --all-targets
       - run: cargo test --workspace --locked --all-targets
         env:

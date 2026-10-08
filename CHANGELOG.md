@@ -53,6 +53,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Prepare browser font fixtures and Linux software rendering in CI, and tolerate platform-dependent CLI enum sizes in Clippy.
+
 - Restore VS Code preview panels and reading positions across window reloads, reconnecting to unsaved documents.
 
 - Preserve edit-follow animation progress during continuous typing so wrapped code lines remain visible.

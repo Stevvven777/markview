@@ -202,7 +202,7 @@ struct Reading {
 #[derive(Subcommand)]
 // The parsed command line is built once and dropped; a variant is never held
 // in a collection, so the size difference between them costs nothing.
-#[expect(
+#[allow(
 	clippy::large_enum_variant,
 	reason = "one parsed command, then dropped"
 )]
