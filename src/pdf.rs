@@ -113,6 +113,18 @@ pub(crate) fn export_with_services(
 		.context("the export produced no output")
 }
 
+/// Exports a host's text using the original path only for resources.
+pub(crate) fn export_text(
+	args: &PdfRequest,
+	text: &str,
+	services: Arc<crate::services::Services>,
+	before_write: impl Fn() -> Result<()>,
+) -> Result<ExportStats> {
+	Exporter::with_services(args, services)?
+		.export_source(text, true, before_write)?
+		.context("the export produced no output")
+}
+
 /// Rebuilds the PDF whenever the document changes, and whenever a local image
 /// it references changes under an unchanged document.
 fn watch(exporter: &mut Exporter, rx: mpsc::Receiver<()>) -> Result<()> {
@@ -227,17 +239,24 @@ impl Exporter {
 	/// Rebuilds the PDF, or returns `None` when the document is unchanged and
 	/// `force` did not ask for a rebuild anyway.
 	fn export(&mut self, force: bool) -> Result<Option<ExportStats>> {
-		let started = Instant::now();
 		let text = read_document(&self.path)?;
-		let unchanged =
-			!self.dirty && self.source.as_deref() == Some(text.as_str());
+		self.export_source(&text, force, || Ok(()))
+	}
+	fn export_source(
+		&mut self,
+		text: &str,
+		force: bool,
+		before_write: impl Fn() -> Result<()>,
+	) -> Result<Option<ExportStats>> {
+		let started = Instant::now();
+		let unchanged = !self.dirty && self.source.as_deref() == Some(text);
 		if unchanged && !force {
 			return Ok(None);
 		}
 		// A build that fails anywhere below leaves this set, so the next save
 		// of the same content is not mistaken for one already on the disk.
 		self.dirty = true;
-		let changed = self.source.as_deref() != Some(text.as_str());
+		let changed = self.source.as_deref() != Some(text);
 		if changed {
 			let source: Arc<str> = text.into();
 			let document = match &self.document {
@@ -298,6 +317,7 @@ impl Exporter {
 			links: self.links,
 			fonts: self.options.fonts.clone(),
 		})?;
+		before_write()?;
 		write_pdf(&self.output, &bytes)?;
 		// Only now is this build on the disk.
 		self.dirty = false;
