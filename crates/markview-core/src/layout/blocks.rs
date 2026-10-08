@@ -241,6 +241,10 @@ fn block_role(block: &Block) -> Condition {
 	}
 }
 
+pub(super) fn anchor_only(block: &Block) -> bool {
+	matches!(&block.kind, BlockKind::Paragraph(text) if text.iter().all(|i| matches!(i.kind, InlineKind::Anchor(_))))
+}
+
 /// The spacing a block reserves outside its box, given the appearance its
 /// parent established.
 fn outer_spacing(
@@ -248,6 +252,9 @@ fn outer_spacing(
 	parent: &TextAppearance,
 	opts: &LayoutOptions,
 ) -> (f32, f32) {
+	if anchor_only(block) {
+		return (0., 0.);
+	}
 	let role = block_role(block);
 	let appearance = opts.stylesheet.text(parent, role);
 	let rule = opts.stylesheet.element_rule(appearance.chain, role);
@@ -263,6 +270,7 @@ fn outer_spacing(
 fn starts_with_text(rich: &[Inline]) -> bool {
 	for inline in rich {
 		match &inline.kind {
+			InlineKind::Anchor(_) => {}
 			InlineKind::Text(text) if text.trim().is_empty() => {}
 			InlineKind::Text(_)
 			| InlineKind::Math { display: false, .. }
@@ -431,10 +439,18 @@ impl BlockContext<'_> {
 	) -> f32 {
 		let mut cursor = y;
 		let parent = self.shaper.appearance.clone();
-		for (index, block) in blocks.iter().enumerate() {
+		let count = blocks.iter().filter(|b| !anchor_only(b)).count();
+		let mut index = 0;
+		for block in blocks {
+			if anchor_only(block) {
+				self.shaper.appearance = parent.clone();
+				cursor += self.block(block, x, cursor, width, opts, out);
+				continue;
+			}
 			self.shaper.appearance =
-				opts.stylesheet.child(&parent, index, blocks.len());
+				opts.stylesheet.child(&parent, index, count);
 			cursor += self.block(block, x, cursor, width, opts, out);
+			index += 1;
 		}
 		self.shaper.appearance = parent;
 		cursor - y
@@ -454,7 +470,10 @@ impl BlockContext<'_> {
 		out: &mut BlockLayout,
 	) -> f32 {
 		let parent = self.shaper.appearance.clone();
-		let (lead, trail) = match (blocks.first(), blocks.last()) {
+		let (lead, trail) = match (
+			blocks.iter().find(|b| !anchor_only(b)),
+			blocks.iter().rfind(|b| !anchor_only(b)),
+		) {
 			(Some(first), Some(last)) => (
 				outer_spacing(first, &parent, opts).0,
 				outer_spacing(last, &parent, opts).1,
@@ -473,6 +492,24 @@ impl BlockContext<'_> {
 		opts: &LayoutOptions,
 		out: &mut BlockLayout,
 	) -> f32 {
+		if let BlockKind::Paragraph(text) = &block.kind
+			&& anchor_only(block)
+		{
+			for anchor in
+				block.anchors.iter().chain(text.iter().filter_map(|i| {
+					if let InlineKind::Anchor(a) = &i.kind {
+						Some(a)
+					} else {
+						None
+					}
+				})) {
+				out.anchors.push(HeadingAnchor {
+					anchor: anchor.clone(),
+					y,
+				});
+			}
+			return 0.;
+		}
 		// An export draws the document's text, and front matter is the reader's
 		// aid, so it takes no page there.
 		if opts.hide_front_matter
@@ -527,6 +564,26 @@ impl BlockContext<'_> {
 			left_only,
 			decoration,
 		});
+		for anchor in &block.anchors {
+			out.anchors.push(HeadingAnchor {
+				anchor: anchor.clone(),
+				y: y + before,
+			});
+		}
+		if let BlockKind::Heading { anchor, .. } = &block.kind {
+			// A link to this heading lands on the top of its box.
+			out.anchors.push(HeadingAnchor {
+				anchor: anchor.clone(),
+				y: y + before,
+			});
+		}
+		if let BlockKind::Footnote { label, .. } = &block.kind {
+			// A footnote reference lands on the top of the note's box.
+			out.anchors.push(HeadingAnchor {
+				anchor: footnote::anchor(label),
+				y: y + before,
+			});
+		}
 		let height = self.block_inner(
 			block,
 			x + pad[3] + marker_width,
@@ -581,20 +638,6 @@ impl BlockContext<'_> {
 			left_only,
 			decoration,
 		};
-		if let BlockKind::Heading { anchor, .. } = &block.kind {
-			// A link to this heading lands on the top of its box.
-			out.anchors.push(HeadingAnchor {
-				anchor: anchor.clone(),
-				y: y + before,
-			});
-		}
-		if let BlockKind::Footnote { label, .. } = &block.kind {
-			// A footnote reference lands on the top of the note's box.
-			out.anchors.push(HeadingAnchor {
-				anchor: footnote::anchor(label),
-				y: y + before,
-			});
-		}
 		self.shaper.appearance = previous;
 		let total = before + box_height + after;
 		out.height = out.height.max(y + total);
@@ -969,12 +1012,19 @@ impl BlockContext<'_> {
 					// The list owns its closing space; retain child spacing only
 					// between items, so nested tails do not accumulate.
 					let trailing = if i + 1 == items.len()
-						&& let Some(last) = item.blocks.last()
+						&& let Some(last) =
+							item.blocks.iter().rfind(|b| !anchor_only(b))
 					{
 						let parent = opts.stylesheet.child(
 							&item_appearance,
-							item.blocks.len() - 1,
-							item.blocks.len(),
+							item.blocks
+								.iter()
+								.filter(|b| !anchor_only(b))
+								.count() - 1,
+							item.blocks
+								.iter()
+								.filter(|b| !anchor_only(b))
+								.count(),
 						);
 						outer_spacing(last, &parent, opts).1
 					} else {

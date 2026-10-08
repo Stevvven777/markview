@@ -7,8 +7,8 @@ use comrak::{
 };
 use std::{
 	borrow::Cow,
-	cell::Cell,
-	collections::{HashMap, HashSet},
+	cell::{Cell, RefCell},
+	collections::{BTreeMap, HashMap, HashSet},
 	ops::Range,
 	rc::Rc,
 	sync::Arc,
@@ -21,6 +21,8 @@ use super::{
 };
 
 struct Reader<'s> {
+	/// Opaque HTML content intervals in this source, shared across blocks.
+	opaque: RefCell<BTreeMap<usize, usize>>,
 	source: &'s str,
 	lines: Vec<usize>,
 	footnotes: HashMap<String, u32>,
@@ -47,6 +49,65 @@ struct Reader<'s> {
 }
 
 impl Reader<'_> {
+	fn opaque_until(&self, at: usize) -> usize {
+		self.opaque
+			.borrow()
+			.range(..=at)
+			.next_back()
+			.map_or(0, |(_, &end)| if at < end { end } else { 0 })
+	}
+
+	fn open_opaque(&self, start: usize, tag_len: usize) -> Option<usize> {
+		let end = start + html::opaque_len(&self.source[start..])?;
+		self.opaque.borrow_mut().insert(start + tag_len, end);
+		Some(end)
+	}
+
+	/// Block HTML can open an opaque scope that outlives its Comrak node.
+	fn block_opaque(&self, range: Range<usize>) {
+		let mut at = range.start;
+		while at < range.end {
+			at = at.max(self.opaque_until(at));
+			if at >= range.end {
+				break;
+			}
+			let Some(open) = self.source[at..range.end].find('<') else {
+				break;
+			};
+			let open = at + open;
+			let rest = &self.source[open..];
+			if let Some(len) = html::non_element_len(rest) {
+				at = open + len;
+				continue;
+			}
+			let Some(len) = html::tag_len(rest) else {
+				at = open + 1;
+				continue;
+			};
+			at = self.open_opaque(open, len).unwrap_or(open + len);
+		}
+	}
+
+	/// Discover snippet scopes in original source coordinates.
+	fn snippet_opaque<'a>(&self, node: &'a AstNode<'a>, range: Range<usize>) {
+		if matches!(node.data.borrow().value, NodeValue::HtmlBlock(_)) {
+			self.block_opaque(range);
+			return;
+		}
+		for child in node.descendants() {
+			let at = self.range(child).start;
+			if range.contains(&at)
+				&& self.opaque_until(at) == 0
+				&& let NodeValue::HtmlInline(t) = &child.data.borrow().value
+				&& let Some(len) = html::tag_len(t)
+				&& !child.ancestors().any(|parent| {
+					matches!(parent.data.borrow().value, NodeValue::Image(_))
+				}) {
+				self.open_opaque(at, len);
+			}
+		}
+	}
+
 	fn range(&self, node: &AstNode<'_>) -> Range<usize> {
 		let data = node.data.borrow();
 		let p = data.sourcepos;
@@ -87,6 +148,7 @@ impl Reader<'_> {
 		out: &mut RichText,
 		depth: usize,
 		mut from: usize,
+		opaque_until: &mut usize,
 	) {
 		// Comrak builds the AST iteratively but produces recursion as deep as
 		// the input demands; past the budget the remaining text is kept flat
@@ -121,6 +183,16 @@ impl Reader<'_> {
 				let raw =
 					HtmlSource::new(&self.source[source.start..end], &markers);
 				let (_, image) = html::svg(&raw.text).unwrap();
+				for anchor in html::block_anchors(&raw.text)
+					.into_iter()
+					.filter(|_| source.start >= *opaque_until)
+				{
+					out.push(Inline {
+						kind: InlineKind::Anchor(anchor),
+						style: style.clone(),
+						source: source.clone(),
+					});
+				}
 				out.push(Inline {
 					kind: InlineKind::Image(image),
 					style: style.clone(),
@@ -128,6 +200,22 @@ impl Reader<'_> {
 				});
 				from = end;
 				continue;
+			}
+			if source.start >= *opaque_until
+				&& let NodeValue::HtmlInline(t) = &child.data.borrow().value
+			{
+				for anchor in html::anchors(t) {
+					out.push(Inline {
+						kind: InlineKind::Anchor(anchor),
+						style: style.clone(),
+						source: source.clone(),
+					});
+				}
+				if let Some(tag_len) = html::tag_len(t)
+					&& let Some(end) = self.open_opaque(source.start, tag_len)
+				{
+					*opaque_until = end;
+				}
 			}
 			let mut child_style = style.clone();
 			let value = child.data.borrow();
@@ -222,12 +310,15 @@ impl Reader<'_> {
 				}
 				NodeValue::Image(link) => {
 					let mut alt = Vec::new();
+					// Alt text contains no document elements or opaque scopes.
+					let mut alt_opaque_until = usize::MAX;
 					self.inlines(
 						child,
 						&TextStyle::default(),
 						&mut alt,
 						depth + 1,
 						from,
+						&mut alt_opaque_until,
 					);
 					let alt = plain_text(&alt);
 					Some(InlineKind::Image(crate::image::ImageSpec {
@@ -247,7 +338,14 @@ impl Reader<'_> {
 					source: source.start.max(from)..source.end,
 				});
 			} else {
-				self.inlines(child, &child_style, out, depth + 1, from);
+				self.inlines(
+					child,
+					&child_style,
+					out,
+					depth + 1,
+					from,
+					opaque_until,
+				);
 			}
 		}
 	}
@@ -312,7 +410,15 @@ impl Reader<'_> {
 
 	fn rich<'a>(&self, node: &'a AstNode<'a>) -> RichText {
 		let mut text = Vec::new();
-		self.inlines(node, &TextStyle::default(), &mut text, 0, 0);
+		let mut opaque_until = self.opaque_until(self.range(node).start);
+		self.inlines(
+			node,
+			&TextStyle::default(),
+			&mut text,
+			0,
+			0,
+			&mut opaque_until,
+		);
 		merge_text(text)
 	}
 
@@ -370,6 +476,7 @@ impl Reader<'_> {
 				&frame.raw,
 				frame.start..frame.start.saturating_add(frame.raw.len()),
 				self.limits.html_scopes,
+				self.opaque_until(frame.start),
 			) {
 				blocks.push(block);
 			}
@@ -389,6 +496,7 @@ impl Reader<'_> {
 	) {
 		let source = self.source;
 		let child_range = self.range(child);
+		self.block_opaque(child_range.clone());
 		let markers = container_markers(child);
 		let original = HtmlSource::new(&source[child_range.clone()], &markers);
 		for event in html::block_events(&original.text) {
@@ -400,6 +508,7 @@ impl Reader<'_> {
 						&text,
 						at,
 						self.limits.html_scopes,
+						self.opaque_until(child_range.start),
 					) {
 						push_block(stack, out, block);
 					}
@@ -409,20 +518,37 @@ impl Reader<'_> {
 						&& let FrameKind::Details { summary, .. } =
 							&mut frame.kind && summary.is_none()
 					{
-						*summary = Some(text.clone());
+						let fragment = &original.text[range.clone()];
+						let opener_len = html::tag_len(fragment).unwrap();
+						let body_start = range.start + opener_len;
+						let body_source = map_source(
+							&original,
+							&child_range,
+							body_start..body_start + text.len(),
+						);
+						*summary = Some((text.clone(), body_source));
+						let at =
+							map_source(&original, &child_range, range.clone())
+								.start;
+						if self.opaque_until(at) == 0 {
+							frame
+								.anchors
+								.extend(html::anchors(&fragment[..opener_len]));
+						}
 						frame.raw.push_str(&original.text[range.clone()]);
 						true
 					} else {
 						false
 					};
 					if !set {
+						let html = &original.text[range.clone()];
 						let at = map_source(&original, &child_range, range);
-						let html = format!("<summary>{text}</summary>");
 						if let Some(block) = html_leaf_block(
 							source,
-							&html,
+							html,
 							at,
 							self.limits.html_scopes,
+							self.opaque_until(child_range.start),
 						) {
 							push_block(stack, out, block);
 						}
@@ -437,6 +563,7 @@ impl Reader<'_> {
 							&original.text[range.clone()],
 							at,
 							self.limits.html_scopes,
+							self.opaque_until(child_range.start),
 						) {
 							push_block(stack, out, block);
 						}
@@ -454,6 +581,11 @@ impl Reader<'_> {
 						FrameKind::Transparent { name }
 					};
 					stack.push(Frame {
+						anchors: if self.opaque_until(at.start) == 0 {
+							html::anchors(&original.text[range.clone()])
+						} else {
+							Vec::new()
+						},
 						kind,
 						blocks: Vec::new(),
 						raw: original.text[range.clone()].to_string(),
@@ -469,6 +601,7 @@ impl Reader<'_> {
 							&original.text[range.clone()],
 							at,
 							self.limits.html_scopes,
+							self.opaque_until(child_range.start),
 						) {
 							push_block(stack, out, block);
 						}
@@ -507,7 +640,7 @@ impl Reader<'_> {
 	/// details frame becomes one block.
 	fn finish_frame(
 		&self,
-		frame: Frame,
+		mut frame: Frame,
 		end: usize,
 		stack: &mut [Frame],
 		out: &mut Vec<Block>,
@@ -515,6 +648,20 @@ impl Reader<'_> {
 	) {
 		match frame.kind {
 			FrameKind::Transparent { .. } => {
+				let anchors = frame.anchors;
+				if !anchors.is_empty() {
+					let mut block = block_of(
+						source,
+						BlockKind::Paragraph(Vec::new()),
+						frame.start..frame.start + frame.raw.len(),
+					);
+					block.anchors = anchors;
+					if let Some(first) = frame.blocks.first_mut() {
+						first.anchors.splice(0..0, block.anchors);
+					} else {
+						frame.blocks.push(block);
+					}
+				}
 				extend_blocks(stack, out, frame.blocks);
 			}
 			FrameKind::Details {
@@ -523,8 +670,12 @@ impl Reader<'_> {
 				summary,
 			} => {
 				let span = frame.start..end.max(frame.start);
-				let summary = self.summary_rich(summary.as_deref(), &span);
-				let block = details_block_of(
+				let summary = summary
+					.as_ref()
+					.map_or_else(RichText::new, |(text, source)| {
+						self.summary_rich(text, source)
+					});
+				let mut block = details_block_of(
 					source,
 					open,
 					ordinal,
@@ -532,6 +683,7 @@ impl Reader<'_> {
 					frame.blocks,
 					span,
 				);
+				block.anchors = frame.anchors;
 				push_block(stack, out, block);
 			}
 		}
@@ -570,6 +722,7 @@ impl Reader<'_> {
 			.find(|&i| self.range(children[i]).end >= end)?;
 		let markers = container_markers(node);
 		if begin > range.start {
+			self.snippet_opaque(node, range.start..begin);
 			let prefix =
 				HtmlSource::new(&self.source[range.start..begin], &markers);
 			out.extend(self.markdown_blocks_at(
@@ -589,6 +742,11 @@ impl Reader<'_> {
 				source: source.clone(),
 			}]);
 			out.push(Block {
+				anchors: html::block_anchors_from(
+					&self.source[source.clone()],
+					self.opaque_until(source.start)
+						.saturating_sub(source.start),
+				),
 				id: fingerprint(&(
 					std::mem::discriminant(&kind),
 					&self.source[source.clone()],
@@ -620,6 +778,7 @@ impl Reader<'_> {
 			}
 			let tail = HtmlSource::new(&self.source[end..tail_end], &markers);
 			if !tail.text.trim().is_empty() {
+				self.snippet_opaque(children[close], end..tail_end);
 				out.extend(self.markdown_blocks_at(
 					&tail.text,
 					depth,
@@ -662,6 +821,7 @@ impl Reader<'_> {
 							BlockKind::FrontMatter {
 								open: false,
 								blocks: vec![Block {
+									anchors: Vec::new(),
 									id,
 									content_key: semantic_key(&code),
 									source: source.clone(),
@@ -811,6 +971,7 @@ impl Reader<'_> {
 		));
 		let content_key = semantic_key(&kind);
 		let block = Block {
+			anchors: Vec::new(),
 			id,
 			content_key,
 			source,
@@ -832,8 +993,10 @@ impl Reader<'_> {
 		depth: usize,
 		source: Range<usize>,
 	) -> Vec<Block> {
-		let mut blocks = self.markdown_blocks(text, depth);
 		let offsets = source_offsets(text, self.source, source);
+		let opaque_until = offsets
+			.partition_point(|offset| *offset < self.opaque_until(offsets[0]));
+		let mut blocks = self.markdown_blocks(text, depth, opaque_until);
 		fn range(range: &mut Range<usize>, offsets: &[usize]) {
 			let start = offsets[range.start.min(offsets.len() - 1)];
 			let end = if range.end > range.start {
@@ -885,7 +1048,12 @@ impl Reader<'_> {
 
 	/// The block list `text` describes, parsed by the ordinary pipeline. The
 	/// shared anchors keep headings inside the snippet unique in the document.
-	fn markdown_blocks(&mut self, text: &str, depth: usize) -> Vec<Block> {
+	fn markdown_blocks(
+		&mut self,
+		text: &str,
+		depth: usize,
+		opaque_until: usize,
+	) -> Vec<Block> {
 		if text.trim().is_empty() {
 			return Vec::new();
 		}
@@ -895,13 +1063,13 @@ impl Reader<'_> {
 		// snippet itself covers are kept. Terminate it the same way even without
 		// definitions, so an unused definition cannot change its EOF ranges.
 		if !text.contains('[') {
-			return self.snippet(text, depth, None);
+			return self.snippet(text, depth, None, opaque_until);
 		}
 		let cost = text.len().saturating_add(self.definitions.len());
 		if self.reparse_used.get().saturating_add(cost) > self.reparse_limit {
 			// Over the document-wide ceiling: keep the snippet readable without
 			// the global definitions so repeated parses stay bounded.
-			return self.snippet(text, depth, None);
+			return self.snippet(text, depth, None, opaque_until);
 		}
 		self.reparse_used
 			.set(self.reparse_used.get().saturating_add(cost));
@@ -912,7 +1080,7 @@ impl Reader<'_> {
 		joined.push_str(text);
 		joined.push_str("\n\n");
 		joined.push_str(&definitions);
-		let blocks = self.snippet(&joined, depth, Some(text));
+		let blocks = self.snippet(&joined, depth, Some(text), opaque_until);
 		// An unclosed fence or HTML block can swallow the appended
 		// definitions; then the bare snippet parses to what the full document
 		// puts there.
@@ -920,7 +1088,7 @@ impl Reader<'_> {
 			.iter()
 			.any(|b| b.source.start < text.len() && b.source.end > text.len())
 		{
-			return self.snippet(text, depth, None);
+			return self.snippet(text, depth, None, opaque_until);
 		}
 		blocks
 			.into_iter()
@@ -935,6 +1103,7 @@ impl Reader<'_> {
 		text: &str,
 		depth: usize,
 		bare: Option<&str>,
+		opaque_until: usize,
 	) -> Vec<Block> {
 		let arena = Arena::new();
 		let mut options = markdown_options();
@@ -967,7 +1136,7 @@ impl Reader<'_> {
 					&& position(data.sourcepos.start).saturating_sub(1)
 						< bare.len() && position(data.sourcepos.end) > bare.len()
 			}) {
-			return self.snippet(bare, depth, None);
+			return self.snippet(bare, depth, None, opaque_until);
 		}
 		// A note keeps the number the document gave it, so a reference inside
 		// a snippet and the note block outside it still agree.
@@ -987,6 +1156,11 @@ impl Reader<'_> {
 			}
 		}
 		let mut reader = Reader {
+			opaque: RefCell::new(if opaque_until == 0 {
+				BTreeMap::new()
+			} else {
+				BTreeMap::from([(0, opaque_until)])
+			}),
 			source: text,
 			lines,
 			footnotes: std::mem::take(&mut self.footnotes),
@@ -1007,23 +1181,35 @@ impl Reader<'_> {
 		blocks
 	}
 
-	/// The summary's rich text: its Markdown inline content, or its plain text
-	/// when it is not phrasing content.
 	/// The summary's rich text. GFM keeps raw HTML inside `<summary>` and
 	/// does not parse Markdown, so `**Bold**` stays literal.
-	fn summary_rich(
-		&self,
-		text: Option<&str>,
-		source: &Range<usize>,
-	) -> RichText {
-		let Some(text) = text.filter(|text| !text.trim().is_empty()) else {
+	fn summary_rich(&self, text: &str, source: &Range<usize>) -> RichText {
+		if text.trim().is_empty() {
 			return RichText::new();
+		}
+		let opaque_until = self.opaque_until(source.start);
+		let anchor_from = if opaque_until > source.start {
+			source_offsets(text, self.source, source.clone())
+				.partition_point(|&at| at < opaque_until)
+		} else {
+			0
 		};
-		let mut out = match html::block(text, self.limits.html_scopes) {
+		let mut out = match html::block_from(
+			text,
+			self.limits.html_scopes,
+			anchor_from,
+		) {
 			html::Block::Paragraph(spans) => html_rich(spans, source),
 			_ => RichText::new(),
 		};
 		if out.is_empty() {
+			for anchor in html::block_anchors_from(text, anchor_from) {
+				out.push(Inline {
+					kind: InlineKind::Anchor(anchor),
+					style: TextStyle::default(),
+					source: source.clone(),
+				});
+			}
 			out.push(Inline {
 				kind: InlineKind::Text(text.trim().to_string()),
 				style: TextStyle::default(),
@@ -1036,6 +1222,7 @@ impl Reader<'_> {
 
 /// One open raw-HTML container while a sibling list is walked.
 struct Frame {
+	anchors: Vec<String>,
 	kind: FrameKind,
 	blocks: Vec<Block>,
 	/// The opener's HTML literal, used when the element never closes.
@@ -1051,7 +1238,7 @@ enum FrameKind {
 	Details {
 		open: bool,
 		ordinal: u32,
-		summary: Option<String>,
+		summary: Option<(String, Range<usize>)>,
 	},
 }
 
@@ -1103,9 +1290,16 @@ fn html_leaf_block(
 	text: &str,
 	range: Range<usize>,
 	scope_limit: usize,
+	opaque_until: usize,
 ) -> Option<Block> {
 	let range = clamp_range(source, range);
-	let kind = match html::block(text, scope_limit) {
+	let anchor_from = if opaque_until > range.start {
+		source_offsets(text, source, range.clone())
+			.partition_point(|&at| at < opaque_until)
+	} else {
+		0
+	};
+	let kind = match html::block_from(text, scope_limit, anchor_from) {
 		html::Block::Unsupported => BlockKind::Code {
 			language: "HTML source".into(),
 			text: text.to_string(),
@@ -1121,7 +1315,14 @@ fn html_leaf_block(
 			BlockKind::Paragraph(html_rich(text, &range))
 		}
 	};
-	Some(block_of(source, kind, range))
+	let anchors = if matches!(kind, BlockKind::Code { .. } | BlockKind::Rule) {
+		html::block_anchors_from(text, anchor_from)
+	} else {
+		Vec::new()
+	};
+	let mut block = block_of(source, kind, range);
+	block.anchors = anchors;
+	Some(block)
 }
 
 fn block_of(source: &str, kind: BlockKind, range: Range<usize>) -> Block {
@@ -1129,6 +1330,7 @@ fn block_of(source: &str, kind: BlockKind, range: Range<usize>) -> Block {
 	let id =
 		fingerprint(&(std::mem::discriminant(&kind), &source[range.clone()]));
 	Block {
+		anchors: Vec::new(),
 		id,
 		content_key: semantic_key(&kind),
 		source: range,
@@ -1157,6 +1359,7 @@ fn details_block_of(
 		ordinal,
 	));
 	Block {
+		anchors: Vec::new(),
 		id,
 		content_key: semantic_key(&kind),
 		source: range,
@@ -1352,6 +1555,7 @@ pub fn parse(source: impl Into<Arc<str>>) -> Document {
 		incremental::definitions(&source)
 	};
 	let mut reader = Reader {
+		opaque: RefCell::new(BTreeMap::new()),
 		source: &source,
 		lines,
 		footnotes,
@@ -1482,9 +1686,14 @@ fn html_rich(spans: Vec<html::Span>, source: &Range<usize>) -> RichText {
 	spans
 		.into_iter()
 		.map(|span| Inline {
-			kind: span
-				.image
-				.map_or_else(|| InlineKind::Text(span.text), InlineKind::Image),
+			kind: if let Some(anchor) = span.anchor {
+				InlineKind::Anchor(anchor)
+			} else {
+				span.image.map_or_else(
+					|| InlineKind::Text(span.text),
+					InlineKind::Image,
+				)
+			},
 			style: TextStyle {
 				bold: span.style.bold,
 				italic: span.style.italic,
@@ -1503,11 +1712,28 @@ fn html_rich(spans: Vec<html::Span>, source: &Range<usize>) -> RichText {
 /// not leave a double space behind.
 fn merge_text(text: RichText) -> RichText {
 	let mut out: RichText = Vec::with_capacity(text.len());
-	for span in text {
-		let InlineKind::Text(t) = &span.kind else {
+	let mut previous_text: Option<usize> = None;
+	for mut span in text {
+		let InlineKind::Text(t) = &mut span.kind else {
+			if !matches!(span.kind, InlineKind::Anchor(_)) {
+				previous_text = None;
+			}
 			out.push(span);
 			continue;
 		};
+		if let Some(index) = previous_text
+			&& index + 1 < out.len()
+			&& out[index].style == span.style
+			&& let InlineKind::Text(prev) = &out[index].kind
+			&& prev.ends_with(char::is_whitespace)
+			&& t.starts_with(char::is_whitespace)
+		{
+			let leading = t.len() - t.trim_start().len();
+			t.drain(..leading);
+			if t.is_empty() {
+				continue;
+			}
+		}
 		let mut merged = false;
 		if let Some(last) = out.last_mut()
 			&& last.style == span.style
@@ -1533,6 +1759,7 @@ fn merge_text(text: RichText) -> RichText {
 		if !merged {
 			out.push(span);
 		}
+		previous_text = Some(out.len() - 1);
 	}
 	out
 }

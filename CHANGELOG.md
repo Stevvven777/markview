@@ -31,6 +31,8 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Support HTML element `id` anchors and legacy `<a name="…">` targets, including inline positions and jumps into collapsed details.
+
 - Receive shared HTTP(S) links and Android Open with links in the native web reader, reusing existing page tabs.
 - Add localized clipboard guidance and a link input with Enter and an Open link button to the empty reader.
 
@@ -44,6 +46,24 @@ at the same level, without `[brackets]`.
 - Add a "Reveal" toolbar button and <kbd>Ctrl+Shift+O</kbd> that show the active document's folder in the file manager; the Open button becomes a file-plus icon and the minimum window width rises to 536 px to keep the tab strip's floor.
 
 ### Fixed
+
+- Map opaque HTML boundaries into summary body coordinates, preventing UTF-8 panics and retaining targets after opaque closers.
+
+- Preserve targets after literal `<` signs in opaque HTML, skip non-element regions, carry SVG snippet scopes into the document and resolve footnote anchors before descendant collisions.
+
+- Avoid panics on inline HTML comments and preserve copied paragraph separators around display math with invisible targets.
+
+- Track opaque HTML scopes across block boundaries and keep targets before discarded wrapping spaces on the preceding line.
+
+- Preserve opaque HTML state during reparsing, isolate image alt extraction, keep pre-break targets on their lines and ignore invisible targets in root child styling.
+
+- Keep invisible targets out of container spacing and empty heading outlines; preserve citation groups, summary fallback targets and opaque HTML boundaries across blocks.
+
+- Preserve styled text shaping and code padding across invisible anchors, and resolve heading slug collisions before descendant targets.
+
+- Register HTML anchors on empty lines and retain summary element targets when showing standalone or additional summaries as source.
+
+- Keep summary anchors at their inline positions, preserve whitespace around invisible targets, and exclude targets inside inline opaque HTML.
 
 - Preserve shared Markdown containing bare links, formatted titles, indented URL code blocks or prose after URLs; use native URL parsing without accepting internal whitespace.
 - Keep the Android keyboard and search bar stable when navigating between search results.

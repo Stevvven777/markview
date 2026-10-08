@@ -60,12 +60,22 @@ impl BlockContext<'_> {
 		let p = crate::profile::span(crate::profile::Stage::Prepare, || {
 			self.prepare(rich, size, out)
 		});
+		if p.text.is_empty() {
+			for (_, anchor) in p.anchors {
+				out.anchors.push(HeadingAnchor { anchor, y });
+			}
+			return if rich
+				.iter()
+				.all(|i| matches!(i.kind, InlineKind::Anchor(_)))
+			{
+				0.
+			} else {
+				size * self.shaper.appearance.line_height
+			};
+		}
 		let node = out.text.len();
 		out.text.push(TextNode::new(p.reading.clone(), ""));
 		out.text.last_mut().unwrap().search_ranges = p.search_ranges.clone();
-		if p.text.is_empty() {
-			return size * self.shaper.appearance.line_height;
-		}
 		// The indent consumes part of the first line's measure, and never enough
 		// to leave the opening line without room for a character.
 		let indent = if indent {
@@ -106,11 +116,26 @@ impl BlockContext<'_> {
 			});
 		out.degraded += usize::from(solution.degraded && !opts.greedy);
 		let mut y_cursor = y;
+		let mut anchor_index = 0;
+		let mut register_anchors =
+			|end: usize, last: bool, y: f32, out: &mut BlockLayout| {
+				let count = p.anchors[anchor_index..]
+					.partition_point(|(offset, _)| *offset < end || last);
+				for (_, anchor) in
+					&p.anchors[anchor_index..anchor_index + count]
+				{
+					out.anchors.push(HeadingAnchor {
+						anchor: anchor.clone(),
+						y,
+					});
+				}
+				anchor_index += count;
+			};
 		// An image alone in its block is a centered figure; mixed with text it
 		// is an ordinary atomic inline box in the line flow.
 		let only_images = !rich.is_empty()
 			&& rich.iter().all(|i| {
-				matches!(&i.kind, InlineKind::Image(_))
+				matches!(&i.kind, InlineKind::Image(_) | InlineKind::Anchor(_))
 					|| matches!(&i.kind, InlineKind::Text(t) if t.trim().is_empty())
 			});
 		let align = if only_images && align == CellAlign::Left {
@@ -127,6 +152,10 @@ impl BlockContext<'_> {
 		let mut drawn = 0;
 		while let Some(mut line) = lines.pop_front() {
 			if line.units.is_empty() {
+				let end = units
+					.get(line.units.start)
+					.map_or(p.text.len(), |unit| unit.source.start);
+				register_anchors(end, lines.is_empty(), y_cursor, out);
 				y_cursor += size * self.shaper.appearance.line_height;
 				drawn += 1;
 				continue;
@@ -297,6 +326,25 @@ impl BlockContext<'_> {
 				CellAlign::Center => ((target - actual) * 0.5).max(0.0),
 				CellAlign::Right => (target - actual).max(0.0),
 			};
+			let mut end = clusters
+				.iter()
+				.map(|c| c.range.end)
+				.max()
+				.unwrap_or(p.text.len());
+			// Consumed whitespace separates targets on either side of a break.
+			let consumed_end =
+				lines.front().map_or(units.len(), |l| l.units.start);
+			for unit in units[line.units.end..consumed_end]
+				.iter()
+				.take_while(|u| u.discard)
+			{
+				end = end.max(unit.source.end);
+				if &p.text[unit.source.clone()] == "\n" {
+					break;
+				}
+			}
+			let last = lines.is_empty();
+			register_anchors(end, last, y_cursor, out);
 			let start_draw = out.draws.len();
 			let mut cursor = line_x + offset;
 			let mut link: Option<(Arc<str>, f32)> = None;

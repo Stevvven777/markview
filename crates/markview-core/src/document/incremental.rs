@@ -368,7 +368,13 @@ pub(super) fn definition_free(source: &str) -> bool {
 /// so a marker hidden after a mid-line carriage return still counts as a
 /// list line and takes the document off the fast path.
 fn leaf_only(source: &str) -> bool {
-	if !definition_free(source) || source.contains('|') {
+	// Opaque inline HTML can carry anchor-discovery state across blocks.
+	if !definition_free(source)
+		|| source.contains('|')
+		|| source
+			.match_indices('<')
+			.any(|(at, _)| crate::html::opaque_len(&source[at..]).is_some())
+	{
 		return false;
 	}
 	line_ranges(source)
@@ -711,35 +717,30 @@ fn shift(block: &mut Block, delta: isize) {
 
 /// Assigns heading anchors in final reading order, updating affected caches.
 pub(super) fn relabel_headings(blocks: &mut [Block]) {
-	fn walk(blocks: &mut [Block], anchors: &mut Anchors) -> bool {
-		let mut changed = false;
+	fn walk(blocks: &mut [Block], anchors: &mut Anchors) {
 		for block in blocks {
-			let relabeled = match &mut block.kind {
+			match &mut block.kind {
 				BlockKind::Heading { text, anchor, .. } => {
-					let wanted = anchors.unique(&plain_text(text));
-					let relabeled = *anchor != wanted;
-					*anchor = wanted;
-					relabeled
+					*anchor = anchors.unique(&plain_text(text))
 				}
 				BlockKind::Quote { blocks, .. }
 				| BlockKind::Footnote { blocks, .. }
 				| BlockKind::Details { blocks, .. }
 				| BlockKind::FrontMatter { blocks, .. } => walk(blocks, anchors),
 				BlockKind::List { items, .. } => {
-					let mut relabeled = false;
 					for item in items {
-						relabeled |= walk(&mut item.blocks, anchors);
+						walk(&mut item.blocks, anchors);
 					}
-					relabeled
 				}
-				_ => false,
-			};
-			if relabeled {
-				block.content_key = semantic_key(&block.kind);
+				_ => {}
 			}
-			changed |= relabeled;
+			let key = semantic_key(&block.kind);
+			block.content_key = if block.anchors.is_empty() {
+				key
+			} else {
+				super::fingerprint(&(key, &block.anchors))
+			};
 		}
-		changed
 	}
 	walk(blocks, &mut Anchors::default());
 }

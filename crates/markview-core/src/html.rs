@@ -64,6 +64,7 @@ pub enum Inline {
 /// A styled run produced from a raw HTML block.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Span {
+	pub anchor: Option<String>,
 	pub image: Option<crate::image::ImageSpec>,
 	pub text: String,
 	/// The style in force for this run.
@@ -174,6 +175,21 @@ fn raw_end(source: &str, start: usize, name: &str) -> usize {
 	source.len()
 }
 
+/// Length of a non-element HTML region, including its closing delimiter.
+pub(crate) fn non_element_len(source: &str) -> Option<usize> {
+	for (open, close) in [("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>")] {
+		if let Some(body) = source.strip_prefix(open) {
+			return Some(
+				body.find(close)
+					.map_or(source.len(), |at| open.len() + at + close.len()),
+			);
+		}
+	}
+	source
+		.starts_with("<!")
+		.then(|| tag_len(source).unwrap_or(source.len()))
+}
+
 /// Every `<...>` tag in `source`, as `(start, length)`. A tag written
 /// inside an HTML comment is not markup and is skipped.
 fn tags(source: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
@@ -182,11 +198,8 @@ fn tags(source: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
 		while at < source.len() {
 			let open = source[at..].find('<')? + at;
 			let rest = &source[open..];
-			if let Some(body) = rest.strip_prefix("<!--") {
-				at = match body.find("-->") {
-					Some(end) => open + "<!--".len() + end + "-->".len(),
-					None => source.len(),
-				};
+			if let Some(len) = non_element_len(rest) {
+				at = open + len;
 				continue;
 			}
 			match tag_len(rest) {
@@ -407,9 +420,9 @@ enum Tag {
 
 enum Token {
 	Text(String),
-	Image(crate::image::ImageSpec),
+	Image(crate::image::ImageSpec, Vec<String>),
 	Comment,
-	Tag(String),
+	Tag(String, bool),
 }
 
 /// Interpret one inline HTML fragment as produced by the Markdown parser.
@@ -429,6 +442,14 @@ pub fn inline(fragment: &str) -> Inline {
 /// `scope_limit` bounds the tags that may stay open at once, so a run of
 /// unclosed tags cannot grow the scope stack without bound.
 pub fn block(source: &str, scope_limit: usize) -> Block {
+	block_from(source, scope_limit, 0)
+}
+
+pub(crate) fn block_from(
+	source: &str,
+	scope_limit: usize,
+	anchor_from: usize,
+) -> Block {
 	let mut spans: Vec<Span> = Vec::new();
 	let mut style = Style::default();
 	// Each open tag remembers the style its contents inherited, so closing it
@@ -437,10 +458,19 @@ pub fn block(source: &str, scope_limit: usize) -> Block {
 	let mut first_open: Option<String> = None;
 	let mut containers = 0;
 	let mut rule = false;
-	for token in tokenize(source) {
+	for token in tokenize(source, anchor_from) {
 		let fragment = match token {
-			Token::Image(image) => {
+			Token::Image(image, anchors) => {
+				for anchor in anchors {
+					spans.push(Span {
+						anchor: Some(anchor),
+						image: None,
+						text: String::new(),
+						style: style.clone(),
+					});
+				}
 				spans.push(Span {
+					anchor: None,
 					image: Some(image),
 					text: String::new(),
 					style: style.clone(),
@@ -452,10 +482,20 @@ pub fn block(source: &str, scope_limit: usize) -> Block {
 				continue;
 			}
 			Token::Comment => continue,
-			Token::Tag(t) => t,
+			Token::Tag(t, discover) => (t, discover),
 		};
+		let (fragment, discover) = fragment;
+		for anchor in anchors(&fragment).into_iter().filter(|_| discover) {
+			spans.push(Span {
+				anchor: Some(anchor),
+				image: None,
+				text: String::new(),
+				style: style.clone(),
+			});
+		}
 		match classify(&fragment) {
 			Tag::Image(image) => spans.push(Span {
+				anchor: None,
 				image: Some(image),
 				text: String::new(),
 				style: style.clone(),
@@ -495,8 +535,14 @@ pub fn block(source: &str, scope_limit: usize) -> Block {
 		}
 	}
 	let text = normalize(spans);
-	if text.is_empty() {
-		return if rule { Block::Rule } else { Block::Empty };
+	if text.iter().all(|s| s.anchor.is_some()) {
+		return if rule {
+			Block::Rule
+		} else if text.is_empty() {
+			Block::Empty
+		} else {
+			Block::Paragraph(text)
+		};
 	}
 	// Only a block whose single element is the heading becomes a heading; a
 	// run of elements is read as one paragraph instead.
@@ -603,6 +649,60 @@ fn tag_name(body: &str) -> &str {
 	&body[..end]
 }
 
+/// Fragment targets declared by one opening tag.
+pub(crate) fn anchors(fragment: &str) -> Vec<String> {
+	let Some((name, attrs, false)) = tag_parts(fragment) else {
+		return Vec::new();
+	};
+	attribute(attrs, "id")
+		.into_iter()
+		.chain((name == "a").then(|| attribute(attrs, "name")).flatten())
+		.filter(|a| !a.is_empty())
+		.collect()
+}
+
+/// The end of an opaque element starting at this opening tag.
+pub(crate) fn opaque_len(source: &str) -> Option<usize> {
+	let len = tag_len(source)?;
+	let (name, attrs, closing) = tag_parts(&source[..len])?;
+	if closing || attrs.trim_end().ends_with('/') {
+		return None;
+	}
+	opaque_end(source, len, &name)
+}
+
+/// Targets in raw HTML, excluding comments and opaque element contents.
+pub(crate) fn block_anchors(source: &str) -> Vec<String> {
+	block_anchors_from(source, 0)
+}
+
+pub(crate) fn block_anchors_from(source: &str, from: usize) -> Vec<String> {
+	let mut out = Vec::new();
+	let mut at = from.min(source.len());
+	while let Some(open) = source[at..].find('<').map(|i| at + i) {
+		let rest = &source[open..];
+		if let Some(len) = non_element_len(rest) {
+			at = open + len;
+			continue;
+		}
+		let Some(len) = tag_len(rest) else {
+			at = open + 1;
+			continue;
+		};
+		if open >= from {
+			out.extend(anchors(&rest[..len]));
+		}
+		at = open + len;
+		if let Some((name, attrs, false)) = tag_parts(&rest[..len])
+			&& !attrs.trim_end().ends_with('/')
+			&& let Some(end) = opaque_end(source, at, &name)
+		{
+			at = end;
+		}
+	}
+	out
+}
+
 /// Read one attribute value; `class`, `style` and the rest are simply ignored.
 fn attribute(attrs: &str, name: &str) -> Option<String> {
 	let mut rest = attrs;
@@ -647,19 +747,11 @@ fn attribute(attrs: &str, name: &str) -> Option<String> {
 		}
 	}
 }
-fn tokenize(source: &str) -> Vec<Token> {
+fn tokenize(source: &str, anchor_from: usize) -> Vec<Token> {
 	let mut tokens = Vec::new();
 	let mut i = 0;
 	while i < source.len() {
 		let rest = &source[i..];
-		if let Some(comment) = rest.strip_prefix("<!--") {
-			i += match comment.find("-->") {
-				Some(end) => 4 + end + 3,
-				None => rest.len(),
-			};
-			tokens.push(Token::Comment);
-			continue;
-		}
 		let Some(open) = rest.find('<') else {
 			tokens.push(Token::Text(rest.to_string()));
 			break;
@@ -668,14 +760,28 @@ fn tokenize(source: &str) -> Vec<Token> {
 			tokens.push(Token::Text(rest[..open].to_string()));
 		}
 		let candidate = &rest[open..];
+		if let Some(len) = non_element_len(candidate) {
+			i += open + len;
+			tokens.push(Token::Comment);
+			continue;
+		}
 		if let Some((len, image)) = svg(candidate) {
-			tokens.push(Token::Image(image));
+			tokens.push(Token::Image(
+				image,
+				block_anchors_from(
+					&candidate[..len],
+					anchor_from.saturating_sub(i + open),
+				),
+			));
 			i += open + len;
 			continue;
 		}
 		match tag_len(candidate) {
 			Some(len) => {
-				tokens.push(Token::Tag(candidate[..len].to_string()));
+				tokens.push(Token::Tag(
+					candidate[..len].to_string(),
+					i + open >= anchor_from,
+				));
 				i += open + len;
 			}
 			// A bare `<` is ordinary text, so keep scanning after it.
@@ -698,15 +804,15 @@ fn enclosed_end(source: &str, start: usize, name: &str) -> Option<usize> {
 	while depth > 0 {
 		let open = source[at..].find('<')? + at;
 		let rest = &source[open..];
-		if let Some(body) = rest.strip_prefix("<!--") {
-			at = open + "<!--".len() + body.find("-->")? + "-->".len();
+		if let Some(len) = non_element_len(rest) {
+			at = open + len;
 			continue;
 		}
-		if let Some(body) = rest.strip_prefix("<![CDATA[") {
-			at = open + "<![CDATA[".len() + body.find("]]>")? + "]]>".len();
+		let Some(len) = tag_len(rest) else {
+			at = open + 1;
 			continue;
-		}
-		let end = open + tag_len(rest)?;
+		};
+		let end = open + len;
 		if let Some((tag, attrs, closing)) = tag_parts(&source[open..end])
 			&& tag == name
 			&& !attrs.trim_end().ends_with('/')
@@ -815,12 +921,19 @@ fn push_span(spans: &mut Vec<Span>, text: String, style: &Style) {
 	}
 	if let Some(last) = spans.last_mut()
 		&& last.image.is_none()
+		&& last.anchor.is_none()
 		&& &last.style == style
 	{
-		last.text.push_str(&text);
+		let text = if last.text.ends_with(' ') {
+			text.trim_start_matches(' ')
+		} else {
+			&text
+		};
+		last.text.push_str(text);
 		return;
 	}
 	spans.push(Span {
+		anchor: None,
 		image: None,
 		text,
 		style: style.clone(),
@@ -830,22 +943,33 @@ fn push_span(spans: &mut Vec<Span>, text: String, style: &Style) {
 /// Collapse runs of whitespace and merge runs that share a style.
 fn normalize(spans: Vec<Span>) -> Vec<Span> {
 	let mut out: Vec<Span> = Vec::new();
+	let mut content = false;
+	let mut space = false;
 	for span in spans {
-		if span.image.is_some() {
+		if span.image.is_some() || span.anchor.is_some() {
+			content |= span.image.is_some();
+			if span.image.is_some() {
+				space = false;
+			}
 			out.push(span);
 			continue;
 		}
-		let text = if out.is_empty() {
+		let text = if !content {
 			span.text.trim_start()
+		} else if space {
+			span.text.trim_start_matches(' ')
 		} else {
 			span.text.as_str()
 		};
 		if text.is_empty() {
 			continue;
 		}
+		content = true;
+		space = text.ends_with(' ');
 		let mut merged = false;
 		if let Some(last) = out.last_mut()
 			&& last.image.is_none()
+			&& last.anchor.is_none()
 			&& last.style == span.style
 		{
 			last.text.push_str(text);
@@ -853,6 +977,7 @@ fn normalize(spans: Vec<Span>) -> Vec<Span> {
 		}
 		if !merged {
 			out.push(Span {
+				anchor: None,
 				image: None,
 				text: text.to_string(),
 				style: span.style,
@@ -863,12 +988,25 @@ fn normalize(spans: Vec<Span>) -> Vec<Span> {
 		.iter()
 		.enumerate()
 		.rev()
-		.find(|(_, span)| span.image.is_some() || !span.text.trim().is_empty())
+		.find(|(_, span)| {
+			span.image.is_some()
+				|| span.anchor.is_some()
+				|| !span.text.trim().is_empty()
+		})
 		.map_or(0, |(i, _)| i + 1);
 	out.truncate(keep);
-	if let Some(last) = out.last_mut() {
-		let len = last.text.trim_end().len();
-		last.text.truncate(len);
+	for span in out.iter_mut().rev() {
+		if span.anchor.is_some() {
+			continue;
+		}
+		if span.image.is_some() {
+			break;
+		}
+		let len = span.text.trim_end().len();
+		span.text.truncate(len);
+		if len > 0 {
+			break;
+		}
 	}
 	out
 }

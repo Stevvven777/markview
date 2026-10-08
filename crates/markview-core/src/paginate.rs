@@ -286,7 +286,8 @@ fn only_image(block: Option<&Block>) -> bool {
 					match &inline.kind {
 						InlineKind::Image(_) => images += 1,
 						InlineKind::Text(text) if text.trim().is_empty() => {}
-						InlineKind::LineBreak { .. } => {}
+						InlineKind::LineBreak { .. }
+						| InlineKind::Anchor(_) => {}
 						_ => return false,
 					}
 				}
@@ -517,6 +518,25 @@ fn collect_anchors(
 					prepared[index].bands.len().saturating_sub(1)
 				});
 			if prepared[index].bands.is_empty() {
+				let items = || {
+					pages.iter().enumerate().flat_map(|(page, items)| {
+						items.iter().map(move |item| (page, item))
+					})
+				};
+				let target = items()
+					.find(|(_, item)| item.block > index)
+					.map(|(page, item)| (page, item.y))
+					.or_else(|| {
+						items().last().map(|(page, item)| {
+							(
+								page,
+								item.y + (item.bottom - item.top) * item.scale,
+							)
+						})
+					});
+				if let Some(target) = target {
+					out.entry(anchor.anchor.clone()).or_insert(target);
+				}
 				continue;
 			}
 			for (page, items) in pages.iter().enumerate() {
@@ -529,7 +549,7 @@ fn collect_anchors(
 					+ (prepared[index].bands[band].top
 						- prepared[index].bands[item.bands.start].top)
 						* item.scale;
-				out.insert(anchor.anchor.clone(), (page, y));
+				out.entry(anchor.anchor.clone()).or_insert((page, y));
 				break;
 			}
 		}

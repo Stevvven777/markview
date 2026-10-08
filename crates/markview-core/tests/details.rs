@@ -92,7 +92,8 @@ fn adjacent_details_have_their_own_source_ranges_and_open_states() {
 					panic!("expected details");
 				};
 				assert!(
-					summary.iter().all(|inline| inline.source == block.source)
+					summary.iter().all(|inline| &source[inline.source.clone()]
+						== ["One", "Two"][i])
 				);
 			}
 			assert_ne!(blocks[0].id, blocks[1].id);

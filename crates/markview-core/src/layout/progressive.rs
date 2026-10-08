@@ -10,7 +10,7 @@
 
 use super::{
 	BlockContext, CacheEntry, CacheKey, LayoutEngine, LayoutOptions,
-	external_key,
+	blocks::anchor_only, external_key,
 };
 use crate::{
 	document::Document,
@@ -34,6 +34,9 @@ pub struct ProgressiveLayout {
 	index: usize,
 	/// How many blocks the document has, fixed when the pass began.
 	count: usize,
+	/// Positions used by child selectors exclude invisible target blocks.
+	visible_index: usize,
+	visible_count: usize,
 	/// The source of the document this pass belongs to. It is the same `Arc`
 	/// the document holds, so the two compare by identity on every call.
 	source: Arc<str>,
@@ -197,6 +200,12 @@ impl LayoutEngine {
 			pass,
 			index: 0,
 			count: document.blocks.len(),
+			visible_index: 0,
+			visible_count: document
+				.blocks
+				.iter()
+				.filter(|b| !anchor_only(b))
+				.count(),
 			source: document.source.clone(),
 		};
 		// An empty document has nothing to advance, so it closes here.
@@ -260,12 +269,18 @@ impl LayoutEngine {
 	fn block(&mut self, layout: &mut ProgressiveLayout, document: &Document) {
 		{
 			let index = layout.index;
+			let child_index = layout.visible_index;
+			let child_count = layout.visible_count;
+			let visible = !anchor_only(&document.blocks[index]);
+			layout.visible_index += usize::from(visible);
 			let ProgressiveLayout { result, pass, .. } = layout;
 			let block = &document.blocks[index];
 			let key = CacheKey {
-				position: if pass.options.stylesheet.has_child_rules() {
-					u8::from(index == 0)
-						| (u8::from(index + 1 == document.blocks.len()) << 1)
+				position: if visible
+					&& pass.options.stylesheet.has_child_rules()
+				{
+					u8::from(child_index == 0)
+						| (u8::from(child_index + 1 == child_count) << 1)
 				} else {
 					0
 				},
@@ -300,11 +315,15 @@ impl LayoutEngine {
 					crate::profile::Stage::Blocks,
 					|| {
 						let mut out = crate::scene::BlockLayout::default();
-						self.shaper.appearance = pass.options.stylesheet.child(
-							&pass.appearance,
-							index,
-							document.blocks.len(),
-						);
+						self.shaper.appearance = if visible {
+							pass.options.stylesheet.child(
+								&pass.appearance,
+								child_index,
+								child_count,
+							)
+						} else {
+							pass.appearance.clone()
+						};
 						BlockContext {
 							search_fields: crate::search::layout_fields(block),
 							shaper: &mut self.shaper,

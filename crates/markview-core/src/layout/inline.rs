@@ -40,6 +40,7 @@ impl BlockContext<'_> {
 		out: &mut BlockLayout,
 	) -> Prepared {
 		let mut p = Prepared {
+			anchors: Vec::new(),
 			images: BTreeMap::new(),
 			image_indices: BTreeMap::new(),
 			reading: String::new(),
@@ -53,9 +54,15 @@ impl BlockContext<'_> {
 			breaks: std::collections::BTreeSet::new(),
 		};
 		let mut semantic_offset = 0;
+		let mut previous_text = false;
 		let mut i = 0;
 		while i < rich.len() {
 			let inline = &rich[i];
+			if let InlineKind::Anchor(anchor) = &inline.kind {
+				p.anchors.push((p.text.len(), anchor.clone()));
+				i += 1;
+				continue;
+			}
 			let start = p.text.len();
 			let reading_start = p.reading.len();
 			// Consecutive references share one bracket pair and one comma, so
@@ -81,9 +88,11 @@ impl BlockContext<'_> {
 				));
 				semantic_offset += len;
 				i = run;
+				previous_text = false;
 				continue;
 			}
 			match &inline.kind {
+				InlineKind::Anchor(_) => unreachable!(),
 				// An image reads as its placeholder message while it loads or
 				// after it fails, and as its `alt` once it draws.
 				InlineKind::Image(image) => p.reading.push_str(
@@ -112,6 +121,7 @@ impl BlockContext<'_> {
 			semantic_offset += semantic.len();
 			let mut style = inline.style.clone();
 			match &inline.kind {
+				InlineKind::Anchor(_) => unreachable!(),
 				InlineKind::Image(image) => {
 					p.images.insert(start, image.clone());
 					p.image_indices.insert(start, i);
@@ -191,12 +201,23 @@ impl BlockContext<'_> {
 					InlineKind::Math { .. } | InlineKind::Image(_)
 				),
 			));
-			let padding = self.code_padding(&style, size);
-			p.spans.push(Span {
-				range: start..p.text.len(),
-				style,
-			});
-			p.padding.push(padding);
+			let text = matches!(inline.kind, InlineKind::Text(_));
+			// Invisible targets do not split a styled text run.
+			if text
+				&& previous_text
+				&& let Some(last) = p.spans.last_mut()
+				&& last.style == style
+			{
+				last.range.end = p.text.len();
+			} else {
+				let padding = self.code_padding(&style, size);
+				p.spans.push(Span {
+					range: start..p.text.len(),
+					style,
+				});
+				p.padding.push(padding);
+			}
+			previous_text = text;
 			i += 1;
 		}
 		p
@@ -556,26 +577,20 @@ fn footnote_run(rich: &[Inline], start: usize) -> usize {
 	let style = &rich[start].style;
 	let mut end = start + 1;
 	loop {
-		match rich.get(end) {
-			Some(next) if matches!(&next.kind, InlineKind::FootnoteRef(_)) => {
-				if !same_note_style(style, &next.style) {
-					break;
-				}
-				end += 1;
-			}
-			Some(next) if matches!(&next.kind, InlineKind::Text(t) if t.trim().is_empty()) =>
-			{
-				let Some(after) = rich.get(end + 1) else {
-					break;
-				};
-				if !matches!(&after.kind, InlineKind::FootnoteRef(_))
-					|| !same_note_style(style, &after.style)
-				{
-					break;
-				}
-				end += 2;
-			}
-			_ => break,
+		let mut next = end;
+		while rich.get(next).is_some_and(|i| {
+			matches!(&i.kind, InlineKind::Anchor(_))
+				|| matches!(&i.kind, InlineKind::Text(t) if t.trim().is_empty())
+		}) {
+			next += 1;
+		}
+		if let Some(note) = rich.get(next)
+			&& matches!(note.kind, InlineKind::FootnoteRef(_))
+			&& same_note_style(style, &note.style)
+		{
+			end = next + 1;
+		} else {
+			break;
 		}
 	}
 	end
@@ -599,10 +614,15 @@ fn footnote_group(p: &mut Prepared, run: &[Inline]) {
 	p.text.push('[');
 	p.reading.push('[');
 	let mut first = true;
-	for number in run.iter().filter_map(|inline| match &inline.kind {
-		InlineKind::FootnoteRef(number) => Some(*number),
-		_ => None,
-	}) {
+	for inline in run {
+		let number = match &inline.kind {
+			InlineKind::Anchor(anchor) => {
+				p.anchors.push((p.text.len(), anchor.clone()));
+				continue;
+			}
+			InlineKind::FootnoteRef(number) => *number,
+			_ => continue,
+		};
 		if !first {
 			p.text.push(',');
 			p.reading.push(',');

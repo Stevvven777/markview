@@ -107,6 +107,8 @@ impl TextStyle {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum InlineKind {
+	/// An invisible HTML fragment target at this reading position.
+	Anchor(String),
 	Text(String),
 	Image(crate::image::ImageSpec),
 	Math {
@@ -201,6 +203,8 @@ pub enum BlockKind {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Block {
+	/// HTML targets attached to the top of this block.
+	pub anchors: Vec<String>,
 	pub id: u64,
 	/// Semantic cache identity includes resolved references, excludes positions.
 	pub content_key: u64,
@@ -243,6 +247,25 @@ impl Document {
 	/// first, before its target can be found.
 	pub fn details_enclosing(&self, anchor: &str) -> Vec<u64> {
 		fn registers(block: &Block, anchor: &str) -> bool {
+			if block.anchors.iter().any(|a| a == anchor) {
+				return true;
+			}
+			let rich = |text: &RichText| {
+				text.iter().any(
+					|i| matches!(&i.kind, InlineKind::Anchor(a) if a == anchor),
+				)
+			};
+			if match &block.kind {
+				BlockKind::Paragraph(t)
+				| BlockKind::Heading { text: t, .. } => rich(t),
+				BlockKind::Details { summary, .. } => rich(summary),
+				BlockKind::Table { rows, .. } => {
+					rows.iter().flatten().any(rich)
+				}
+				_ => false,
+			} {
+				return true;
+			}
 			match &block.kind {
 				BlockKind::Heading { anchor: a, .. } => a == anchor,
 				BlockKind::Footnote { label, .. } => {
@@ -353,6 +376,7 @@ pub fn plain_text(text: &[Inline]) -> String {
 				out.push_str(&format!("[{n}]"));
 			}
 			InlineKind::LineBreak { .. } => out.push('\n'),
+			InlineKind::Anchor(_) => {}
 		}
 	}
 	out

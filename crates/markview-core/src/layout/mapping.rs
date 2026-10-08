@@ -5,6 +5,7 @@ use std::{
 	sync::Arc,
 };
 pub(super) struct Prepared {
+	pub(super) anchors: Vec<(usize, String)>,
 	pub(super) images: BTreeMap<usize, crate::image::ImageSpec>,
 	pub(super) image_indices: BTreeMap<usize, usize>,
 	pub(super) reading: String,

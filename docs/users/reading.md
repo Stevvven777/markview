@@ -51,8 +51,10 @@ pixels and the type to 18.
 Markview is deliberately read-only: it does not edit or save Markdown. Its
 multi-document workspace consists of reader tabs. Use the table of contents and
 search to navigate within a document. Printing uses the export panel or
-`markview pdf`. Links address headings by their GitHub slug; raw HTML `id` attributes are not
-interpreted, so an explicit anchor is not a link target.
+`markview pdf`. Links address headings by their GitHub slug and HTML elements by their `id`
+(or legacy `<a name="…">`). Empty anchors take no space; jumps into collapsed
+`<details>` expand the enclosing sections. Duplicate targets resolve to the
+first occurrence.
 
 ## Supported content
 

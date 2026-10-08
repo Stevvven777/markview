@@ -59,6 +59,7 @@ fn blocks_map_to_rule_heading_and_paragraph() {
 		Block::Heading {
 			level: 2,
 			text: vec![Span {
+				anchor: None,
 				image: None,
 				text: "Title".into(),
 				style: Style::default()
@@ -69,11 +70,13 @@ fn blocks_map_to_rule_heading_and_paragraph() {
 		block("<p>a <em>b</em> c</p>\n"),
 		Block::Paragraph(vec![
 			Span {
+				anchor: None,
 				image: None,
 				text: "a ".into(),
 				style: Style::default()
 			},
 			Span {
+				anchor: None,
 				image: None,
 				text: "b".into(),
 				style: Style {
@@ -82,6 +85,7 @@ fn blocks_map_to_rule_heading_and_paragraph() {
 				}
 			},
 			Span {
+				anchor: None,
 				image: None,
 				text: " c".into(),
 				style: Style::default()
@@ -106,6 +110,7 @@ fn block_text_collapses_whitespace_across_lines() {
 		Block::Heading {
 			level: 1,
 			text: vec![Span {
+				anchor: None,
 				image: None,
 				text: "Hello world".into(),
 				style: Style::default()
@@ -143,6 +148,7 @@ fn malformed_markup_is_readable_and_never_panics() {
 	assert_eq!(
 		block("<p>a < b</p>\n"),
 		Block::Paragraph(vec![Span {
+			anchor: None,
 			image: None,
 			text: "a < b".into(),
 			style: Style::default()
@@ -153,6 +159,7 @@ fn malformed_markup_is_readable_and_never_panics() {
 		Block::Heading {
 			level: 2,
 			text: vec![Span {
+				anchor: None,
 				image: None,
 				text: "中文".into(),
 				style: Style::default()
@@ -224,6 +231,7 @@ fn block_style_follows_the_open_tags() {
 		block("<b><i>x</i>y</b>\n"),
 		Block::Paragraph(vec![
 			Span {
+				anchor: None,
 				image: None,
 				text: "x".into(),
 				style: Style {
@@ -233,6 +241,7 @@ fn block_style_follows_the_open_tags() {
 				}
 			},
 			Span {
+				anchor: None,
 				image: None,
 				text: "y".into(),
 				style: bold.clone()
@@ -244,6 +253,7 @@ fn block_style_follows_the_open_tags() {
 		block("<b><i>x</b>y\n"),
 		Block::Paragraph(vec![
 			Span {
+				anchor: None,
 				image: None,
 				text: "x".into(),
 				style: Style {
@@ -253,6 +263,7 @@ fn block_style_follows_the_open_tags() {
 				}
 			},
 			Span {
+				anchor: None,
 				image: None,
 				text: "y".into(),
 				style: Style::default()
@@ -264,6 +275,7 @@ fn block_style_follows_the_open_tags() {
 	assert_eq!(
 		block("<b><b>x\n"),
 		Block::Paragraph(vec![Span {
+			anchor: None,
 			image: None,
 			text: "x".into(),
 			style: bold
@@ -272,6 +284,7 @@ fn block_style_follows_the_open_tags() {
 	assert_eq!(
 		block("<b><i>a</i></b><i><b>b\n"),
 		Block::Paragraph(vec![Span {
+			anchor: None,
 			image: None,
 			text: "ab".into(),
 			style: Style {
@@ -294,16 +307,19 @@ fn block_links_nest_and_images_carry_the_run_style() {
 		block("<a href=\"/a\">x<a href=\"/b\">y</a>z</a>\n"),
 		Block::Paragraph(vec![
 			Span {
+				anchor: None,
 				image: None,
 				text: "x".into(),
 				style: linked("/a")
 			},
 			Span {
+				anchor: None,
 				image: None,
 				text: "y".into(),
 				style: linked("/b")
 			},
 			Span {
+				anchor: None,
 				image: None,
 				text: "z".into(),
 				style: linked("/a")
@@ -313,11 +329,26 @@ fn block_links_nest_and_images_carry_the_run_style() {
 	// An anchor without `href` keeps the link its contents inherited.
 	assert_eq!(
 		block("<a href=\"/a\">x<a name=\"n\">y</a>z</a>\n"),
-		Block::Paragraph(vec![Span {
-			image: None,
-			text: "xyz".into(),
-			style: linked("/a")
-		}])
+		Block::Paragraph(vec![
+			Span {
+				anchor: None,
+				image: None,
+				text: "x".into(),
+				style: linked("/a")
+			},
+			Span {
+				anchor: Some("n".into()),
+				image: None,
+				text: String::new(),
+				style: linked("/a")
+			},
+			Span {
+				anchor: None,
+				image: None,
+				text: "yz".into(),
+				style: linked("/a")
+			},
+		])
 	);
 	// An image is its own run and keeps the style around it.
 	let parsed = block("<b><img src=\"a.png\"></b>\n");
