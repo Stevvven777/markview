@@ -1,0 +1,24 @@
+:root { color-scheme: light dark; }
+body { margin: 0 auto; padding: 28px; max-width: 1000px; box-sizing: border-box; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
+header, .tools, .heading, nav { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+header { margin-bottom: 24px; }
+h1 { font-size: 24px; margin: 0 0 8px; }
+h2 { font-size: 16px; margin-right: auto; }
+h3 { font-size: 14px; margin: 0; }
+p { line-height: 1.6; margin: 8px 0; overflow-wrap: anywhere; }
+nav { border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 12px; }
+button, select { font: inherit; border: 1px solid var(--vscode-button-border, transparent); border-radius: 4px; padding: 7px 12px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); cursor: pointer; }
+select { max-width: 100%; margin-right: 8px; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); }
+button:hover { background: var(--vscode-button-secondaryHoverBackground); }
+button[aria-pressed="true"], .primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+button:disabled, select:disabled { opacity: .55; cursor: default; }
+button:focus-visible, select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+#fonts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 14px; }
+article { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 16px; }
+.heading { justify-content: space-between; }
+.available { color: var(--vscode-testing-iconPassed, #388a34); }
+.missing { color: var(--vscode-editorWarning-foreground, #9e6a03); }
+.path, header p { color: var(--vscode-descriptionForeground); font-size: 12px; }
+.notice { min-height: 48px; margin-bottom: 12px; }
+progress { width: min(320px, 100%); margin-right: 12px; accent-color: var(--vscode-progressBar-background); }
+[hidden] { display: none !important; }

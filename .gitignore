@@ -29,3 +29,27 @@ web/.tsbuildinfo
 
 # Vendored tools
 .tools/
+
+# VS Code extensions
+editors/node_modules/
+editors/dist/
+editors/.vscode-test/
+editors/vscode-*/dist/
+editors/vscode-*/media/
+editors/vscode-*/bin/
+editors/vscode-*/icon.png
+editors/vscode-*/LICENSE
+
+/editors/vscode-export/resources/
+
+# Unified VS Code package and local trial outputs
+editors/vscode/dist/
+editors/vscode/media/
+editors/vscode/bin/
+editors/vscode/resources/
+editors/vscode/icon.png
+editors/vscode/LICENSE
+editors/vscode-export/
+editors/vscode-preview/
+/output/
+/tmp/

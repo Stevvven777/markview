@@ -1,0 +1,159 @@
+{
+  "version": "0.2.0",
+  "publisher": "szdytom",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/szdytom/markview"
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./dist/extension.cjs",
+  "icon": "icon.png",
+  "scripts": {
+    "vscode:prepublish": "node ../build.mjs"
+  },
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Markview reads local fonts and launches its packaged exporter."
+    }
+  },
+  "name": "markview",
+  "displayName": "Markview Preview & Export",
+  "description": "Markdown preview and PDF/PNG export powered by Markview.",
+  "contributes": {
+    "commands": [
+      {
+        "command": "markview.export.pdf",
+        "title": "导出 PDF",
+        "category": "Markview"
+      },
+      {
+        "command": "markview.export.png",
+        "title": "导出 PNG",
+        "category": "Markview"
+      },
+      {
+        "command": "markview.export.template",
+        "title": "使用模板导出…",
+        "category": "Markview"
+      },
+      {
+        "command": "markview.fonts",
+        "title": "字体管理…",
+        "category": "Markview"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "markview.export.pdf",
+          "when": "editorLangId == markdown",
+          "group": "markview@0"
+        },
+        {
+          "command": "markview.export.png",
+          "when": "editorLangId == markdown",
+          "group": "markview@1"
+        },
+        {
+          "command": "markview.export.template",
+          "when": "editorLangId == markdown",
+          "group": "markview@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Markview",
+      "properties": {
+        "markview.fontDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional local font directories."
+        },
+        "markview.exportFontSize": {
+          "type": "number",
+          "default": 16,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Base export font size in logical pixels."
+        },
+        "markview.exportScale": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0.1,
+          "maximum": 8,
+          "description": "PNG export scale."
+        },
+        "markview.exportTemplate": {
+          "type": "string",
+          "default": "default",
+          "enum": [
+            "default",
+            "print",
+            "monochrome",
+            "qibaishi",
+            "vangogh",
+            "mondrian"
+          ],
+          "description": "Template used by direct PDF and PNG export."
+        },
+        "markview.fontSize": {
+          "type": "number",
+          "default": 18,
+          "description": "Preview font size in logical pixels.",
+          "minimum": 1
+        },
+        "markview.width": {
+          "type": "number",
+          "default": 760,
+          "description": "Maximum reading column width.",
+          "minimum": 1
+        },
+        "markview.justify": {
+          "type": "boolean",
+          "default": true,
+          "description": "Justify paragraph lines."
+        },
+        "markview.hyphenate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hyphenate paragraph lines."
+        },
+        "markview.paragraphIndent": {
+          "type": "number",
+          "default": 0,
+          "description": "Paragraph indent in font-size units.",
+          "minimum": 0
+        },
+        "markview.codeWrap": {
+          "type": "boolean",
+          "default": false,
+          "description": "Wrap code blocks."
+        },
+        "markview.scrollSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Follow source positions in both directions."
+        },
+        "markview.previewStyleFile": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to a custom MVSS stylesheet supporting the ui destination."
+        }
+      }
+    }
+  }
+}
