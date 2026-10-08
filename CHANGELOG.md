@@ -48,6 +48,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Expand a collapsed `<details>` when jumping to a footnote reference inside it, whose `fnref:` anchor the disclosure lookup missed.
+
 - Drop empty HTML text runs after trimming trailing whitespace, preventing panics on images followed by invisible anchors.
 
 - Map opaque HTML boundaries into summary body coordinates, preventing UTF-8 panics and retaining targets after opaque closers.

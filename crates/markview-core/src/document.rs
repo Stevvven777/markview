@@ -241,19 +241,25 @@ impl Document {
 	/// The `<details>` elements enclosing the block that registers `anchor`,
 	/// outermost first.
 	///
-	/// A heading and a footnote definition both register a layout anchor, and
-	/// either can sit inside a collapsed body that is never laid out. A jump
-	/// to such an anchor must expand the disclosures framing it, outermost
-	/// first, before its target can be found.
+	/// A heading, a footnote definition, and a footnote reference all register
+	/// a layout anchor, and any of them can sit inside a collapsed body that
+	/// is never laid out. A jump to such an anchor must expand the disclosures
+	/// framing it, outermost first, before its target can be found.
 	pub fn details_enclosing(&self, anchor: &str) -> Vec<u64> {
 		fn registers(block: &Block, anchor: &str) -> bool {
 			if block.anchors.iter().any(|a| a == anchor) {
 				return true;
 			}
 			let rich = |text: &RichText| {
-				text.iter().any(
-					|i| matches!(&i.kind, InlineKind::Anchor(a) if a == anchor),
-				)
+				text.iter().any(|i| match &i.kind {
+					InlineKind::Anchor(a) => a == anchor,
+					// Layout names a reference by its index, not its source
+					// label, so the anchor is a number.
+					InlineKind::FootnoteRef(n) => {
+						footnote::reference(&n.to_string()) == anchor
+					}
+					_ => false,
+				})
 			};
 			if match &block.kind {
 				BlockKind::Paragraph(t)

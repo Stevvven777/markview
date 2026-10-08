@@ -123,6 +123,28 @@ fn targets_inside_nested_details_report_the_disclosures_to_expand() {
 }
 
 #[test]
+fn a_footnote_reference_hidden_by_details_reports_its_disclosure() {
+	// The definition is hoisted out of the body, so only the reference sits
+	// under the disclosure and only `fnref:<number>` names it.
+	let doc = document::parse(
+		"<details><summary>S</summary>\n\nText[^f]\n\n</details>\n\n[^f]: note\n",
+	);
+	let enclosing = doc.details_enclosing("fnref:1");
+	assert_eq!(enclosing.len(), 1);
+	assert!(doc.details_enclosing("fn:1").is_empty());
+	let mut engine = LayoutEngine::new();
+	let collapsed = engine.layout(&doc, &LayoutOptions::default());
+	assert!(collapsed.anchor_y("fnref:1").is_none());
+	let options = LayoutOptions {
+		details_open: Arc::new(
+			enclosing.into_iter().map(|id| (id, true)).collect(),
+		),
+		..Default::default()
+	};
+	assert!(engine.layout(&doc, &options).anchor_y("fnref:1").is_some());
+}
+
+#[test]
 fn only_real_html_registers_targets_and_anchor_changes_invalidate_cached_layouts()
  {
 	let source = "`<a id='code'></a>`\n\n```html\n<div id='fence'>\n```\n\n<!-- <a id='comment'></a> -->\n\n<script id='script'><a id='script-body'></a></script>\n\nText <b ID='中文&amp;目标'>bold</b> <a id='' name='legacy'></a>\n\n<a name='duplicate'></a>first\n\n<a name='duplicate'></a>second";
