@@ -51,6 +51,37 @@
         "command": "markview.fonts",
         "title": "字体管理…",
         "category": "Markview"
+      },
+      {
+        "command": "markview.preview.open",
+        "title": "打开并排预览",
+        "category": "Markview",
+        "icon": {
+          "light": "media/preview-light.svg",
+          "dark": "media/preview-dark.svg"
+        }
+      },
+      {
+        "command": "markview.preview.close",
+        "title": "关闭预览",
+        "category": "Markview",
+        "icon": "media/eye-off.svg"
+      },
+      {
+        "command": "markview.preview.sync",
+        "title": "切换滚动同步",
+        "category": "Markview"
+      },
+      {
+        "command": "markview.preview.settings",
+        "title": "阅读设置",
+        "category": "Markview",
+        "icon": "media/settings.svg"
+      },
+      {
+        "command": "markview.preview.fonts",
+        "title": "阅读字体管理…",
+        "category": "Markview"
       }
     ],
     "menus": {
@@ -69,6 +100,23 @@
           "command": "markview.export.template",
           "when": "editorLangId == markdown",
           "group": "markview@2"
+        },
+        {
+          "command": "markview.preview.open",
+          "when": "editorLangId == markdown",
+          "group": "markview@0"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "markview.preview.open",
+          "when": "editorLangId == markdown",
+          "group": "navigation"
+        },
+        {
+          "command": "markview.preview.fonts",
+          "when": "activeWebviewPanelId == markview.preview",
+          "group": "markview@1"
         }
       ]
     },
@@ -155,5 +203,8 @@
         }
       }
     }
-  }
+  },
+  "activationEvents": [
+    "onWebviewPanel:markview.preview"
+  ]
 }

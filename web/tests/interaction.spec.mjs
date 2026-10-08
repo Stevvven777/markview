@@ -111,6 +111,24 @@ test("scroll modes take over cleanly and held selection auto-scrolls", async ({ 
   await page.evaluate(() => window.mv.cancelPointer());
 });
 
+test("pixel wheel events consume their full distance immediately without a second easing tail", async ({ page }) => {
+  await ready(page);
+  const result = await page.evaluate(() => {
+    window.mv.setMarkdown("A scrolling paragraph.\n\n".repeat(200));
+    window.mv.setScroll(100);
+    const canvas = document.querySelector("#view");
+    const positions = [];
+    for (const deltaY of [0.5, 3.25, 80, -15.75, 1200, -1000]) {
+      canvas.dispatchEvent(new WheelEvent("wheel", { deltaY, deltaMode: 0, bubbles: true, cancelable: true }));
+      positions.push(window.mv.scroll());
+    }
+    return positions;
+  });
+  expect(result).toEqual([100.5, 103.75, 183.75, 168, 1368, 368]);
+  await page.waitForTimeout(250);
+  expect(await page.evaluate(() => window.mv.scroll())).toBe(368);
+});
+
 test("wide blocks pan and their scrollbars can be dragged", async ({ page }) => {
   await ready(page);
   await page.evaluate(() => {

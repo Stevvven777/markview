@@ -260,7 +260,8 @@ export class CanvasReader {
 			event.preventDefault();
 			const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.getBoundingClientRect().height : 1;
 			const dx = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
-			this.markview.scrollInput(dx * factor,event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY * factor,"step");
+			// Pixel streams already include the platform's touchpad momentum.
+			this.markview.scrollInput(dx * factor,event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY * factor,event.deltaMode === 0 ? "external" : "step");
 		}, { passive: false, signal });
 		canvas.addEventListener("keydown", (event) => {
 			if (!(event.ctrlKey || event.metaKey)) {
