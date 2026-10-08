@@ -48,6 +48,8 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Drop empty HTML text runs after trimming trailing whitespace, preventing panics on images followed by invisible anchors.
+
 - Map opaque HTML boundaries into summary body coordinates, preventing UTF-8 panics and retaining targets after opaque closers.
 
 - Preserve targets after literal `<` signs in opaque HTML, skip non-element regions, carry SVG snippet scopes into the document and resolve footnote anchors before descendant collisions.

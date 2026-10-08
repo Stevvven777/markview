@@ -5,6 +5,52 @@ use markview_core::{
 use std::sync::Arc;
 
 #[test]
+fn target_after_an_image_and_newline_resolves() {
+	use markview_core::{
+		document::{BlockKind, InlineKind},
+		image::{ImageInfo, ImageSnapshot},
+	};
+
+	let options = LayoutOptions::default();
+	let mut engine = LayoutEngine::new();
+	for source in [
+		"<img>\n<em id='a'>",
+		"<img>\n<em id='a'>\n",
+		"<img>\n<em id='a'></em>\n",
+		"<p><img>\n<em id='a'></em></p>",
+		"<p><img> <b> </b><em id='a'></em></p>",
+		"<p>Text <b> </b><em id='a'></em></p>",
+	] {
+		let doc = document::parse(source);
+		let baseline = document::parse(source.replace(" id='a'", ""));
+		let BlockKind::Paragraph(rich) = &doc.blocks[0].kind else {
+			panic!("expected a paragraph");
+		};
+		assert!(rich.iter().all(|inline| {
+			!matches!(&inline.kind, InlineKind::Text(text) if text.is_empty())
+		}));
+		for loaded in [false, true] {
+			let mut images = ImageSnapshot::default();
+			if loaded {
+				images.entries.insert(
+					String::new(),
+					ImageInfo {
+						version: 1,
+						size: Some((100, 140)),
+						error: None,
+					},
+				);
+			}
+			let layout = engine.layout_with_images(&doc, &options, &images);
+			let plain = engine.layout_with_images(&baseline, &options, &images);
+			assert!(layout.anchor_y("a").is_some(), "{source}");
+			assert_eq!(layout.height, plain.height, "{source}");
+			assert!(layout.same_reading_text(&plain), "{source}");
+		}
+	}
+}
+
+#[test]
 fn html_targets_resolve_across_elements_and_preserve_heading_slugs() {
 	let source = "<h2 id='custom'>Heading</h2>\n\n<div id='wrapper'>\n\nText <b id='bold'>bold</b> <a id='new' name='old'></a>end.\n\n</div>\n\n<hr id='rule'>\n\n<img id='image' src='missing.png'>\n\n<svg id='vector' width='10' height='10'></svg>\n\n<widget id='unsupported'>text</widget>\n\n<a name='last'></a>";
 	let doc = document::parse(source);

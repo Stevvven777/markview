@@ -984,17 +984,6 @@ fn normalize(spans: Vec<Span>) -> Vec<Span> {
 			});
 		}
 	}
-	let keep = out
-		.iter()
-		.enumerate()
-		.rev()
-		.find(|(_, span)| {
-			span.image.is_some()
-				|| span.anchor.is_some()
-				|| !span.text.trim().is_empty()
-		})
-		.map_or(0, |(i, _)| i + 1);
-	out.truncate(keep);
 	for span in out.iter_mut().rev() {
 		if span.anchor.is_some() {
 			continue;
@@ -1008,6 +997,9 @@ fn normalize(spans: Vec<Span>) -> Vec<Span> {
 			break;
 		}
 	}
+	out.retain(|span| {
+		span.anchor.is_some() || span.image.is_some() || !span.text.is_empty()
+	});
 	out
 }
 
