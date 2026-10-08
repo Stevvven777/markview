@@ -82,6 +82,9 @@ await runTests({
     "--disable-workspace-trust",
     "--disable-renderer-backgrounding",
     "--disable-backgrounding-occluded-windows",
+    ...(process.env.CI
+      ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+      : []),
     ...profileArgs,
   ],
 });

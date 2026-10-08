@@ -5,8 +5,8 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "npm run typecheck && prettier --check '**/*.ts' '*.mjs' 'tests/**/*.mjs' '*.json'",
-    "format": "prettier --write '**/*.ts' '*.mjs' 'tests/**/*.mjs' '*.json'",
+    "lint": "npm run typecheck && prettier --check \"**/*.ts\" \"*.mjs\" \"tests/**/*.mjs\" \"*.json\"",
+    "format": "prettier --write \"**/*.ts\" \"*.mjs\" \"tests/**/*.mjs\" \"*.json\"",
     "test": "node --test tests/*.test.mjs",
     "test:host": "node tests/run-host.mjs",
     "package": "node package.mjs",

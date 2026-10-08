@@ -35,7 +35,7 @@ const missing = {
   ],
 };
 
-async function manager(page, extraRows = []) {
+async function manager(page, extraRows = [], holdDownload = false) {
   const downloaded = new Set();
   const ids = [];
   let receive,
@@ -130,7 +130,7 @@ async function manager(page, extraRows = []) {
       controller = signal;
       progress({ fraction: 0.4, message: "下载 40%" });
       await new Promise((resolve, reject) => {
-        const timer = setTimeout(resolve, 100);
+        const timer = holdDownload ? undefined : setTimeout(resolve, 100);
         signal.addEventListener(
           "abort",
           () => {
@@ -236,7 +236,7 @@ test("font manager uses production host and UI for status, progress, retry, temp
 test("font manager cancels downloads and aborts them when closed", async ({
   page,
 }) => {
-  const app = await manager(page);
+  const app = await manager(page, [], true);
   await page.getByRole("button", { name: "下载", exact: true }).click();
   await page.getByRole("button", { name: "取消下载", exact: true }).click();
   await expect(page.locator("#status")).toHaveText("下载已取消");
@@ -286,13 +286,17 @@ test("bulk downloads deduplicate families, continue after failure and retry only
 test("cancelling a bulk download does not start the next family", async ({
   page,
 }) => {
-  const app = await manager(page, [
-    {
-      ...missing,
-      definition: { id: "mono", lookfor: ["Second"] },
-      families: [{ id: "second", lookfor: ["Second"], sources: 1 }],
-    },
-  ]);
+  const app = await manager(
+    page,
+    [
+      {
+        ...missing,
+        definition: { id: "mono", lookfor: ["Second"] },
+        families: [{ id: "second", lookfor: ["Second"], sources: 1 }],
+      },
+    ],
+    true,
+  );
   await page
     .getByRole("button", { name: "下载全部缺失字体", exact: true })
     .click();
