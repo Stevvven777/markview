@@ -23,6 +23,10 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Balance VS Code preview margins against injected Webview padding and expose reading-font management in the command palette.
+- Remove the VS Code preview bottom-edge source jump, overlap WASM/font initialization, and add startup and slow-update diagnostics.
+- Simplify the VS Code preview to its reading surface with responsive side margins and load large emoji fonts only when the document needs them.
+
 - Refresh README imagery and source credits for the Cyberspace Independence Declaration, Open Access Manifesto and revised Rust excerpts.
 - Add localized four-panel README previews from the Open Access Manifesto, the Rust Book, OpenStax's Stokes' theorem and Wikipedia web extraction, with source and license credits.
 - Refine README typography comparison styling and load its replaceable sample from a plain-text file.
@@ -30,6 +34,11 @@ at the same level, without `[brackets]`.
 - Add the Markview QQ group to the Chinese README navigation and community section.
 
 ### Added
+
+- Add bulk missing-font downloads with deduplication, progress, cancellation and retry; remove the VS Code preview canvas focus outline.
+- Support a custom MVSS reader stylesheet and a default export template in the VS Code extension.
+- Add a shared graphical font manager for reading and export templates, with downloads, cancellation, retry and font-directory setup, accessible from the preview menu.
+- Add a unified Markview Preview & Export extension with PDF/full-document PNG export, with shared font status, downloads and platform VSIX packaging.
 
 - Receive shared HTTP(S) links and Android Open with links in the native web reader, reusing existing page tabs.
 - Add localized clipboard guidance and a link input with Enter and an Open link button to the empty reader.
@@ -43,6 +52,16 @@ at the same level, without `[brackets]`.
 - Open URL and file tabs immediately, show loading and persistent errors in the reader, and keep background web completions attached to their original tabs.
 
 ### Fixed
+
+- Restore VS Code preview panels and reading positions across window reloads, reconnecting to unsaved documents.
+
+- Preserve edit-follow animation progress during continuous typing so wrapped code lines remain visible.
+
+- Keep new VS Code input visible after layout with minimal, cancellable scrolling, including paragraphs after long code blocks.
+
+- Fix touchpad wheel smoothing and excessive VS Code scroll synchronization; add a draggable preview scrollbar and restore the original M preview button.
+- Fix VSIX prepublish builds using the plugin directory as esbuild's output root, which could package stale or missing preview bundles.
+- Fix VS Code preview scroll following across pane focus changes, wrapped lines and images, and restore its Markview toolbar icon.
 
 - Preserve shared Markdown containing bare links, formatted titles, indented URL code blocks or prose after URLs; use native URL parsing without accepting internal whitespace.
 - Keep the Android keyboard and search bar stable when navigating between search results.

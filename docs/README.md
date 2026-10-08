@@ -15,3 +15,5 @@ link to it rather than repeating them. Historical design contracts live under
 
 Examples remain under `examples/`; screenshots and their source documents remain
 under `docs/screenshots/`; test fixtures stay beside the tests that use them.
+
+- [VS Code implementation goal](vscode-implementation-goal.md) defines the desktop preview/export scope, font management and acceptance criteria; [validation results](vscode-validation.md) record the implementation checks and platform limits.
