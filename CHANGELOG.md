@@ -31,7 +31,7 @@ at the same level, without `[brackets]`.
 
 ### Added
 
-- Add composable GPU color fields with normalized WGSL fragment functions, cached pipelines and an isolated native Amber tab preview.
+- Add composable GPU color fields with normalized WGSL fragment functions, cached pipelines, fuzz-oracle coverage and an isolated native Amber tab preview.
 - Receive shared HTTP(S) links and Android Open with links in the native web reader, reusing existing page tabs.
 - Add localized clipboard guidance and a link input with Enter and an Open link button to the empty reader.
 

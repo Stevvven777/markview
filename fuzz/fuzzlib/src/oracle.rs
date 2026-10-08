@@ -285,6 +285,9 @@ pub fn block_layout(block: &BlockLayout, h: &mut Hashers) {
 
 fn hash_draw(draw: &Draw, h: &mut Hashers) {
 	match draw {
+		Draw::ColorField { rect, shader } => {
+			hash3(h, &(8u8, hash_rect(*rect), shader.as_ref()));
+		}
 		Draw::Clipped { rect, draws } => {
 			hash3(h, &(0u8, hash_rect(*rect)));
 			for d in draws {
@@ -448,6 +451,7 @@ fn assert_draw_finite(draw: &Draw) {
 			}
 		}
 		Draw::Image { rect, .. } => assert_rect4("image", *rect),
+		Draw::ColorField { rect, .. } => assert_rect4("color field", *rect),
 		Draw::Glyph(g) => {
 			assert_bounded("glyph.x", g.x);
 			assert_bounded("glyph.y", g.y);

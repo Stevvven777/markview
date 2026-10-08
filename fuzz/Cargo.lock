@@ -1286,7 +1286,7 @@ dependencies = [
 
 [[package]]
 name = "markview-core"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "codex",
@@ -1305,6 +1305,7 @@ dependencies = [
  "regex",
  "regex-automata",
  "serde",
+ "skrifa 0.42.1",
  "swash",
  "syntect",
  "toml_edit",
@@ -1329,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "markview-pdf"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "krilla",
@@ -1340,13 +1341,14 @@ dependencies = [
  "ratex-font",
  "ratex-katex-fonts",
  "ratex-types",
+ "rust-embed",
  "skrifa 0.42.1",
  "swash",
 ]
 
 [[package]]
 name = "markview-render"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1355,6 +1357,7 @@ dependencies = [
  "ratex-font",
  "ratex-katex-fonts",
  "ratex-types",
+ "rust-embed",
  "serde",
  "swash",
  "tiny-skia",
@@ -2842,6 +2845,7 @@ dependencies = [
  "smallvec",
  "thiserror 2.0.21",
  "wgpu-core-deps-apple",
+ "wgpu-core-deps-emscripten",
  "wgpu-core-deps-wasm",
  "wgpu-core-deps-windows-linux-android",
  "wgpu-hal",
@@ -2854,6 +2858,15 @@ name = "wgpu-core-deps-apple"
 version = "29.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5e39e26c4c0e07589e67d18546cf79ff45383659fc72fca4dd293358a0347f3"
+dependencies = [
+ "wgpu-hal",
+]
+
+[[package]]
+name = "wgpu-core-deps-emscripten"
+version = "29.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01e09be551dc939498bdd5f6b2c66e55ab275dad25825267a08605a80fc9f0af"
 dependencies = [
  "wgpu-hal",
 ]
