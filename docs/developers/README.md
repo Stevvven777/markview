@@ -6,6 +6,7 @@ Start with [contributing](../../CONTRIBUTING.md) and the development guide.
 ## Build and change
 
 - [Development guide](development.md): build, test, choose a layer and change behavior.
+- [Changelog conventions](changelog.md): entry format, release headings and automated checks.
 - [Architecture](architecture.md): pipeline, ownership, snapshots, versions and resource boundaries.
 - [Web component development](web.md): WASM/TypeScript workspace, demo, builds and verification.
 - [Android development](android.md): platform implementation, APK builds and headless emulator tests.

@@ -41,7 +41,7 @@ To AI Agents: NO editing of this file is allowed. This file is for human editing
 
 ## Changelog
 
-Update the [changelog](CHANGELOG.md) as you go. Never be too detailed. Fit every item in 1-2 lines.
+Update the [changelog](CHANGELOG.md) as you go. Never be too detailed. Fit every item in 1-2 lines. Follow [changelog conventions](docs/developers/changelog.md).
 
 ## Runtime Specific Instructions
 

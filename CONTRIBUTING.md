@@ -8,7 +8,8 @@ change belongs in, and the workflow for a new document node are in the
 [development guide](docs/developers/development.md). The boundaries a change should
 preserve are in the [architecture](docs/developers/architecture.md). The local conventions
 are in [AGENTS.md](AGENTS.md) — they apply to human contributors too. Add a
-one-line [changelog](CHANGELOG.md) entry as you go.
+one-line [changelog](CHANGELOG.md) entry as you go, following the
+[changelog conventions](docs/developers/changelog.md).
 
 ## Optimistic merging
 

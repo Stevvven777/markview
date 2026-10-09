@@ -44,6 +44,10 @@ jobs:
           dist plan
       - name: Documentation links and audience indexes
         run: python3 scripts/test_documentation.py
+      - name: Changelog conventions
+        run: |
+          python3 scripts/check_changelog.py
+          python3 -m unittest discover -s scripts -p 'test_check_changelog.py'
       - name: Release notes use the installable packages
         run: python3 -m unittest discover -s scripts -p 'test_render_release_notes.py'
       - name: Android build orchestration

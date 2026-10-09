@@ -34,13 +34,11 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Check changelog conventions in CI, enforcing dense single-line Unreleased entries and valid release headings; document the rules in a developer guide.
 - Support HTML element `id` anchors and legacy `<a name="…">` targets, including inline positions and jumps into collapsed details.
-
 - Receive shared HTTP(S) links and Android Open with links in the native web reader, reusing existing page tabs.
 - Add localized clipboard guidance and a link input with Enter and an Open link button to the empty reader.
-
 - Add a + button after the file tabs, a drawer + button and Ctrl-N to show the empty reader without creating a tab, preserving open documents.
-
 - Animate the Tabs and Contents drawers with nonlinear sliding transitions, including desktop Contents and smooth reversals.
 - Add experimental `web URL` and clipboard HTTP(S) article loading with `dom_smoothie` Markdown extraction, native rendering, localized status and reuse of open pages.
 - Send browser-style web/image headers with configurable `user-agent` and `accept-language`, HTML acceptance for articles and a separate capitalized font UA.
@@ -54,31 +52,18 @@ at the same level, without `[brackets]`.
 - Fix security regression tests on Windows and macOS and avoid misclicks on Android system sharing controls in CI.
 - Preserve non-UTF-8 filesystem grants in image cache partitions and keep live exports when closing another origin's tab.
 - Keep Android CI device logs alive across web-fixture setup by restarting adb before starting logcat.
-
 - Use committed font subsets in anchor integration tests, fixing Linux CI with system fonts disabled.
-
 - Expand a collapsed `<details>` when jumping to a footnote reference inside it, whose `fnref:` anchor the disclosure lookup missed.
-
 - Drop empty HTML text runs after trimming trailing whitespace, preventing panics on images followed by invisible anchors.
-
 - Map opaque HTML boundaries into summary body coordinates, preventing UTF-8 panics and retaining targets after opaque closers.
-
 - Preserve targets after literal `<` signs in opaque HTML, skip non-element regions, carry SVG snippet scopes into the document and resolve footnote anchors before descendant collisions.
-
 - Avoid panics on inline HTML comments and preserve copied paragraph separators around display math with invisible targets.
-
 - Track opaque HTML scopes across block boundaries and keep targets before discarded wrapping spaces on the preceding line.
-
 - Preserve opaque HTML state during reparsing, isolate image alt extraction, keep pre-break targets on their lines and ignore invisible targets in root child styling.
-
 - Keep invisible targets out of container spacing and empty heading outlines; preserve citation groups, summary fallback targets and opaque HTML boundaries across blocks.
-
 - Preserve styled text shaping and code padding across invisible anchors, and resolve heading slug collisions before descendant targets.
-
 - Register HTML anchors on empty lines and retain summary element targets when showing standalone or additional summaries as source.
-
 - Keep summary anchors at their inline positions, preserve whitespace around invisible targets, and exclude targets inside inline opaque HTML.
-
 - Preserve shared Markdown containing bare links, formatted titles, indented URL code blocks or prose after URLs; use native URL parsing without accepting internal whitespace.
 - Keep the Android keyboard and search bar stable when navigating between search results.
 - Keep search keyboard visibility checks compatible with Android 9 and 10.
