@@ -72,6 +72,7 @@ def capture(binary):
             destination = OUTPUT / f"{language}-{name}.png"
             command = [
                 str(binary),
+                "--foreground",
                 str(source),
                 "--offline",
                 "--style",

@@ -43,7 +43,8 @@ yay -S markview
 ```
 
 Linux builds need glibc 2.35 or newer, `libfontconfig1`, a working Vulkan
-driver, and a desktop portal for file dialogs. The macOS bundle is unsigned, so
+driver, a desktop portal for file dialogs, and Zenity for error dialogs.
+The macOS bundle is unsigned, so
 clear the quarantine flag once after downloading it:
 
 ```sh
@@ -70,7 +71,7 @@ cannot be shipped meaningfully.
 
 | Platform | Required |
 | --- | --- |
-| Linux | glibc 2.35+, `libfontconfig1`, `libvulkan1` (loader plus any working Vulkan driver), X11 or Wayland client libraries, `xdg-desktop-portal` with a backend, and system fonts |
+| Linux | glibc 2.35+, `libfontconfig1`, `libvulkan1` (loader plus any working Vulkan driver), X11 or Wayland client libraries, `xdg-desktop-portal` with a backend, `zenity` for error dialogs, and system fonts |
 | Windows | Windows 10 or newer with a Direct3D 12 driver; the MSVC runtime is linked statically |
 | macOS | macOS 11 or newer on Apple Silicon |
 

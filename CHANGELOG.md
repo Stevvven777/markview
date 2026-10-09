@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Launch desktop reader windows in the background by default for `markview`, `markview FILE` and `markview web URL`; add `--foreground` to wait for the window and retain terminal logs.
 - Change the Reveal folder shortcut from Ctrl+Shift+O to Ctrl+Alt+R.
 - Redesign the Reveal toolbar icon with a simple location pin at the folder's lower-left corner.
 - Share PNG rendering and encoding across callers, and accept in-memory Markdown for PDF and PNG export.
@@ -51,6 +52,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Show fatal desktop reader startup errors in a native dialog, including stylesheet and GPU failures; keep `--foreground` and diagnostic errors in the terminal.
 - Fix security regression tests on Windows and macOS and avoid misclicks on Android system sharing controls in CI.
 - Preserve non-UTF-8 filesystem grants in image cache partitions and keep live exports when closing another origin's tab.
 - Keep Android CI device logs alive across web-fixture setup by restarting adb before starting logcat.

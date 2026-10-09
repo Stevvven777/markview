@@ -151,6 +151,10 @@ default their own targets to `debug` so the diagnostics below are visible. Set
 `RUST_LOG` to override either, for example `RUST_LOG=info` for the display metrics
 or `RUST_LOG=debug` to include dependency logs.
 
+Window launches detach from the terminal by default. Add `--foreground` when
+debugging or supervising the reader, for example
+`RUST_LOG=debug target/debug/markview --foreground examples/welcome.md`.
+
 The render and benchmark modes use the GPU offscreen and do not load personal settings. The watch smoke test writes only temporary documents and closes the window it starts.
 
 Window layout publishes a readable prefix before completion. Native `smoke-test`

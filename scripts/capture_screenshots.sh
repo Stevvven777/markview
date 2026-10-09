@@ -40,7 +40,7 @@ shot() {
 	echo "capturing $name from $source"
 	stop_reader
 	sleep 0.5
-	RUST_LOG=info "$binary" --width "$width" --height "$height" "$@" \
+	RUST_LOG=info "$binary" --foreground --width "$width" --height "$height" "$@" \
 		"$source_dir/$source" >"$work/$name.log" 2>&1 &
 	reader_pid=$!
 	for _ in $(seq 1 60); do

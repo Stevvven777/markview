@@ -1,6 +1,8 @@
 mod anchor;
 #[cfg(target_os = "android")]
 pub(crate) mod android;
+#[cfg(not(target_os = "android"))]
+mod background;
 mod chrome;
 mod dm;
 mod document;

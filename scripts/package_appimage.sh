@@ -4,7 +4,7 @@
 # Usage: scripts/package_appimage.sh BINARY VERSION OUTDIR
 #
 # Only the application is bundled. The Vulkan loader and driver, system fonts,
-# the X11/Wayland client libraries, and the desktop portal all come from the
+# the X11/Wayland client libraries, the desktop portal and Zenity come from the
 # host, so no glibc and no GTK stack is embedded. This keeps the image small
 # and avoids the classic AppImage glibc mismatch.
 set -euo pipefail

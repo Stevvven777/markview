@@ -44,7 +44,7 @@ yay -S markview-bin
 yay -S markview
 ```
 
-Linux 版本需要 glibc 2.35 或更新、`libfontconfig1`、可用的 Vulkan 驱动，以及用于文件对话框的桌面 portal。macOS 的 `.app` 未签名，下载后需要清除一次隔离标记：
+Linux 版本需要 glibc 2.35 或更新、`libfontconfig1`、可用的 Vulkan 驱动、用于文件对话框的桌面 portal，以及用于错误弹窗的 Zenity。macOS 的 `.app` 未签名，下载后需要清除一次隔离标记：
 
 ```sh
 xattr -d com.apple.quarantine /Applications/Markview.app
@@ -60,6 +60,10 @@ Android 子项目 **MV4A** 的应用名称仍为 **Markview**，复用桌面阅�
 APK 安装、导入文档与移动端操作见 [Android 使用指南](android.md)。
 
 ## 阅读操作
+
+`markview`、`markview <file>` 和 `markview web <url>` 默认在后台打开阅读器，立即把控制权交还 shell。需要查看日志或让终端等待窗口关闭时，加上 `--foreground`，例如 `markview --foreground notes.md` 或 `markview web <url> --foreground`。导出、样式表、字体和诊断命令仍同步运行。
+
+后台阅读器启动失败时，会用系统错误弹窗显示具体原因，包括样式表加载、窗口创建和 GPU 初始化错误。`--foreground` 模式则在终端报告这些错误。
 
 | 按键 | 操作 |
 |:--|:--|

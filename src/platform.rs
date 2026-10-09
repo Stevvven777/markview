@@ -12,6 +12,17 @@ pub(crate) mod touch_frame;
 #[cfg(target_os = "linux")]
 pub(crate) mod appearance;
 
+/// Show fatal reader errors without relying on a terminal or a working GPU.
+#[cfg(not(target_os = "android"))]
+pub(crate) fn show_error(message: &str) {
+	rfd::MessageDialog::new()
+		.set_title("Markview")
+		.set_description(message)
+		.set_level(rfd::MessageLevel::Error)
+		.set_buttons(rfd::MessageButtons::Ok)
+		.show();
+}
+
 /// Move native traffic lights without replacing their system behavior.
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]

@@ -38,8 +38,8 @@ if [[ -n "$notices" ]]; then
 fi
 
 # `libvulkan1` is the loader wgpu needs; the X11 and Wayland libraries come
-# from winit's runtime dlopen. `rfd` uses the desktop portal for file dialogs,
-# so no GTK toolkit is required.
+# from winit's runtime dlopen. `rfd` uses the desktop portal for file dialogs
+# and `zenity` for fatal reader errors.
 mkdir -p "$pkg/DEBIAN"
 cat >"$pkg/DEBIAN/control" <<EOF
 Package: markview
@@ -50,7 +50,7 @@ Installed-Size: $(du -sk "$pkg" | cut -f1)
 Homepage: https://github.com/szdytom/markview
 Section: editors
 Priority: optional
-Depends: libc6 (>= 2.35), libfontconfig1, libvulkan1, libx11-6, libxcursor1, libxi6, libxkbcommon0, libwayland-client0, xdg-desktop-portal
+Depends: libc6 (>= 2.35), libfontconfig1, libvulkan1, libx11-6, libxcursor1, libxi6, libxkbcommon0, libwayland-client0, xdg-desktop-portal, zenity
 Recommends: fonts-noto-cjk
 Description: Fast, native Markdown reader with publication-quality typography
  Markview renders Markdown, math, code, tables, links, and images in a

@@ -381,7 +381,7 @@ def analyze(frames, marks, tasks):
 
 def applications(display):
     def markview(document):
-        return [str(BINARY), str(document)]
+        return [str(BINARY), "--foreground", str(document)]
 
     def marktext(document):
         return ["marktext", "--no-sandbox", "--ozone-platform=x11", str(document)]

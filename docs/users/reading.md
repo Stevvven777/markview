@@ -23,6 +23,15 @@
 macOS uses Command in place of Ctrl. The reading column defaults to 760 logical
 pixels and the type to 18.
 
+`markview`, `markview FILE`, and `markview web URL` open the reader in the
+background and return control to the shell immediately. Use `--foreground`
+to keep the reader attached to the terminal and see its logs, for example
+`markview --foreground notes.md` or `markview web URL --foreground`.
+Export, stylesheet, font and diagnostic commands run synchronously.
+If the background reader fails to start, a native error dialog shows the cause,
+including stylesheet, window and GPU initialization failures. `--foreground`
+reports these errors in the terminal instead.
+
 - **Opening is flexible.** Launch with no file for an empty window, drop a
   Markdown file onto it, or paste Markdown from the clipboard; the file is read
   as UTF-8, a BOM included.

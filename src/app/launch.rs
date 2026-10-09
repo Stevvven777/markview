@@ -1,5 +1,5 @@
 //! Window and deterministic diagnostic entry points.
-use crate::cli::{Mode, arguments};
+use crate::cli::{LaunchOptions, Mode, arguments};
 use crate::{
 	benchmark, document,
 	file::read_document,
@@ -17,10 +17,13 @@ use super::{App, Event};
 pub(super) fn run() -> Result<()> {
 	// Only a run with a command line reports on the console it came from. The
 	// reader window keeps no console, so closing a shell cannot end it.
-	if std::env::args_os().len() > 1 {
+	if std::env::args_os().len() > 1
+		&& std::env::args_os().nth(1).as_deref()
+			!= Some(std::ffi::OsStr::new("--background-child"))
+	{
 		crate::platform::attach_parent_console();
 	}
-	let Some(mut args) = arguments()? else {
+	let Some(args) = arguments()? else {
 		return Ok(());
 	};
 	crate::logging::init(&args.mode);
@@ -64,6 +67,21 @@ pub(super) fn run() -> Result<()> {
 			"Installed {id}: {}",
 			path.display()
 		));
+		return Ok(());
+	}
+	#[cfg(not(target_os = "android"))]
+	let report_error = args.mode == Mode::Window && !args.foreground;
+	let result = run_with_options(args);
+	#[cfg(not(target_os = "android"))]
+	if report_error && let Err(error) = &result {
+		crate::platform::show_error(&format!("{error:#}"));
+	}
+	result
+}
+
+fn run_with_options(mut args: LaunchOptions) -> Result<()> {
+	#[cfg(not(target_os = "android"))]
+	if super::background::launch(&args)? {
 		return Ok(());
 	}
 	let ids = args.style.clone().or_else(|| {

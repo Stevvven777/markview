@@ -70,6 +70,10 @@ pub(crate) enum FontsCommand {
 pub(crate) struct LaunchOptions {
 	pub(crate) security: crate::security::Security,
 	pub(crate) offline: bool,
+	#[cfg(not(target_os = "android"))]
+	pub(crate) foreground: bool,
+	#[cfg(not(target_os = "android"))]
+	pub(crate) background_child: bool,
 	pub(crate) mode: Mode,
 	pub(crate) path: Option<PathBuf>,
 	pub(crate) web_url: Option<String>,
@@ -100,6 +104,10 @@ impl Default for LaunchOptions {
 				crate::security::Trust::Trusted,
 			),
 			offline: false,
+			#[cfg(not(target_os = "android"))]
+			foreground: false,
+			#[cfg(not(target_os = "android"))]
+			background_child: false,
 			mode: Mode::Window,
 			path: None,
 			web_url: None,
@@ -143,6 +151,13 @@ struct Cli {
 	/// Never touch the network.
 	#[arg(long, global = true)]
 	offline: bool,
+	/// Keep the reader attached to the terminal until its window closes.
+	#[cfg(not(target_os = "android"))]
+	#[arg(long, global = true)]
+	foreground: bool,
+	#[cfg(not(target_os = "android"))]
+	#[arg(long, global = true, hide = true)]
+	background_child: bool,
 	#[command(subcommand)]
 	command: Option<Command>,
 }
@@ -507,6 +522,10 @@ fn parse_arguments(
 	let cli = Cli::from_arg_matches(&matches)?;
 	let mut out = LaunchOptions {
 		offline: cli.offline,
+		#[cfg(not(target_os = "android"))]
+		foreground: cli.foreground,
+		#[cfg(not(target_os = "android"))]
+		background_child: cli.background_child,
 		..LaunchOptions::default()
 	};
 	out.path = cli.file;
@@ -969,6 +988,29 @@ mod tests {
 		parse_arguments(args.iter().map(OsString::from))
 			.unwrap()
 			.expect("a command")
+	}
+
+	#[test]
+	#[cfg(not(target_os = "android"))]
+	fn reader_foreground_flag_works_for_empty_files_and_web_launches() {
+		for command in [
+			vec![],
+			vec!["notes.md"],
+			vec!["web", "https://example.org/article"],
+		] {
+			let args = parse(&command);
+			assert!(args.mode == Mode::Window);
+			assert!(!args.foreground && !args.background_child);
+			let mut foreground = command.clone();
+			foreground.push("--foreground");
+			assert!(parse(&foreground).foreground);
+			let mut child = vec!["--background-child"];
+			child.extend(command);
+			assert!(parse(&child).background_child);
+		}
+		assert!(
+			parse(&["--foreground", "web", "https://example.org"]).foreground
+		);
 	}
 
 	#[test]

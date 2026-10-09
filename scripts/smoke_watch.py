@@ -50,7 +50,7 @@ def main():
         path.write_text(text, encoding="utf-8")
         env = {**os.environ, "RUST_LOG": "markview=debug"}
         process = subprocess.Popen(
-            [str(Path(args.binary).resolve()), str(path)],
+            [str(Path(args.binary).resolve()), "--foreground", str(path)],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
             env=env,
         )
