@@ -21,6 +21,17 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+## 0.3.0 - 2026-10-09
+
+**Highlights**:
+
+- Experimental native web reading from an HTTP(S) link on the command line, the clipboard or an Android share, with clean Markdown extraction and no browser.
+- A redesigned empty reader with local-file and web entry points, a + button and Ctrl-N that leave open documents untouched.
+- A Reveal button and Ctrl+Alt+R that show the active document's folder in the file manager.
+- Desktop readers that launch in the background, with --foreground to wait for the window and keep terminal logs.
+- HTML `id` and legacy `<a name="…">` anchors as jump targets, including into collapsed disclosures.
+- Stricter document trust and resource grants for local files, clipboard and web content, plus robustness and security hardening.
+
 ### Changed
 
 - Replace the Open file-plus icon with simple open reading pages in the toolbar and tab drawer.

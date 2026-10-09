@@ -2558,7 +2558,7 @@ dependencies = [
 
 [[package]]
 name = "markview"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -2625,7 +2625,7 @@ dependencies = [
 
 [[package]]
 name = "markview-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "codex",
@@ -2658,7 +2658,7 @@ dependencies = [
 
 [[package]]
 name = "markview-i18n"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2668,7 +2668,7 @@ dependencies = [
 
 [[package]]
 name = "markview-icon"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "quote",
  "syn 2.0.119",
@@ -2677,7 +2677,7 @@ dependencies = [
 
 [[package]]
 name = "markview-pdf"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "krilla",
@@ -2697,7 +2697,7 @@ dependencies = [
 
 [[package]]
 name = "markview-render"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2718,7 +2718,7 @@ dependencies = [
 
 [[package]]
 name = "markview-selection"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "markview-core",
  "web-time",
@@ -2726,7 +2726,7 @@ dependencies = [
 
 [[package]]
 name = "markview-web"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -6472,7 +6472,7 @@ checksum = "9440ea3e5aeabb0ac63af70daf835274065238cdd0cec83418f417eae38bacee"
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "ico",
