@@ -306,33 +306,7 @@ impl<P: super::SendEvent> App<P> {
 			Event::Changed(path)
 				if self.readers.session.path.as_ref() == Some(&path) =>
 			{
-				self.cancel_gestures();
-				self.abandon_dm();
-				self.readers.session.content_version += 1;
-				self.readers.session.security.revoke();
-				self.readers.session.blocked_images.clear();
-				self.interaction.modal = None;
-				self.readers.session.load_error = None;
-				self.readers.session.parse_complete = false;
-				self.readers.session.search.retained = self
-					.readers
-					.session
-					.search
-					.current
-					.and_then(|i| self.readers.session.search.matches.get(i))
-					.cloned();
-				self.readers.session.search.document = None;
-				self.readers.session.search.matches = Arc::default();
-				self.search_changed();
-				// New content asks again before fetching every remote image,
-				// and `<details>` start from what the new source declares.
-				self.readers.session.load_all_images = false;
-				self.readers.session.remote_notice_dismissed = false;
-				self.readers.session.details_open = Default::default();
-				self.readers.session.cancel_scroll_animation();
-				self.request(true);
-				// A watched export rebuilds from the same save.
-				self.schedule_watch_export(&path);
+				self.reload_document(&path, true);
 			}
 			Event::Ready(mut update)
 				if update.version == self.readers.session.version

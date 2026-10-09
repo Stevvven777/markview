@@ -83,6 +83,12 @@ impl<P: super::SendEvent> App<P> {
 
 	/// Applies a queued anchor, reporting a heading the finished layout lacks.
 	pub(super) fn apply_anchor(&mut self) {
+		// A reload keeps the previous revision visible until new content arrives.
+		if self.readers.session.accepted_revision
+			!= self.readers.session.content_version
+		{
+			return;
+		}
 		// A heading or footnote inside a collapsed `<details>` is never laid
 		// out, so the jump first expands the disclosures framing it and lets
 		// the next layout resolve the anchor, exactly as clicking each summary

@@ -470,6 +470,8 @@ pub(crate) struct ReaderSession {
 	pub(crate) export_title: markview_core::text_input::TextInput,
 	pub(crate) counts: TextCounts,
 	pub(crate) path: Option<PathBuf>,
+	/// Metadata sampled before the last content reload, including missing files.
+	pub(crate) source_stamp: Option<crate::watch::FileStamp>,
 	pub(crate) snapshot: LayoutSnapshot,
 	pub(crate) accepted_revision: u64,
 	pub(crate) accepted_content_id: u64,

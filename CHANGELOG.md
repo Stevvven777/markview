@@ -21,6 +21,11 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Fixed
+
+- Refresh cached tabs when their source files change, disappear or are recreated while inactive, including tabs restored by closing the current one.
+- Preserve fragment navigation during cached-tab refreshes by waiting for the current content revision before resolving anchors.
+
 ## 0.3.0 - 2026-10-09
 
 **Highlights**:

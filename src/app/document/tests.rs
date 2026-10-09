@@ -250,6 +250,187 @@ fn failed_tabs_keep_their_errors_and_closed_web_tabs_ignore_completions() {
 }
 
 #[test]
+fn cached_tab_refresh_defers_fragment_links_until_new_content_arrives() {
+	for background in [false, true] {
+		for anchor in ["new-heading", "existing", "missing"] {
+			let mut h = Harness::new();
+			let path = h.dir.path().join("target.md");
+			fs::write(&path, "# Existing\n\nOriginal text.\n").unwrap();
+			h.open("target.md", 0);
+			h.open("README.zh-cn.md", 1);
+			fs::write(
+				&path,
+				format!(
+					"{}\n\n# New heading\n\nNew text.\n\n# Existing\n\nUpdated text.\n",
+					"Paragraph.\n\n".repeat(30),
+				),
+			)
+			.unwrap();
+			h.app.open_link(&format!("target.md#{anchor}"), background);
+			if background {
+				h.app.select_tab(0);
+			}
+			let session = &h.app.readers.session;
+			assert!(session.layout_pending);
+			assert!(session.snapshot_complete);
+			assert_ne!(session.accepted_revision, session.content_version);
+			assert_eq!(session.pending_anchor.as_deref(), Some(anchor));
+			assert!(!h.app.error);
+			let deadline = Instant::now() + Duration::from_secs(10);
+			while h.app.readers.session.layout_pending {
+				let event = h
+					.events
+					.recv_timeout(
+						deadline.saturating_duration_since(Instant::now()),
+					)
+					.unwrap();
+				h.app.handle_user_event(&StubLoop, event);
+			}
+			assert!(h.app.readers.session.pending_anchor.is_none());
+			if anchor == "missing" {
+				assert!(h.app.error);
+			} else {
+				assert!(!h.app.error);
+				let viewport = h.app.viewport();
+				let session = &mut h.app.readers.session;
+				let y = session.snapshot.anchor_y(anchor).unwrap().clamp(
+					0.0,
+					crate::state::scroll_limit(
+						session.snapshot.height,
+						viewport,
+					),
+				);
+				session.advance_scroll(
+					Instant::now() + Duration::from_secs(1),
+					viewport,
+				);
+				assert!((session.scrolling.offset - y).abs() < 0.01);
+			}
+		}
+	}
+}
+
+#[test]
+fn cached_text_tabs_refresh_background_edits_on_every_activation_path() {
+	for activation in 0..4 {
+		let mut h = Harness::new();
+		let path = h.dir.path().join("text.md");
+		let before = "# Before\n\nOriginal text.\n";
+		let after = "# After!\n\nModified text.\n";
+		assert_eq!(before.len(), after.len());
+		fs::write(&path, before).unwrap();
+		h.open("text.md", 0);
+		let document = h.app.readers.session.document.clone().unwrap();
+		let revision = h.app.readers.session.content_version;
+		h.open("README.zh-cn.md", 1);
+		h.app.select_tab(0);
+		assert!(!h.app.readers.session.layout_pending);
+		assert_eq!(h.app.readers.session.content_version, revision);
+		assert!(std::sync::Arc::ptr_eq(
+			h.app.readers.session.document.as_ref().unwrap(),
+			&document,
+		));
+		h.app.readers.session.load_all_images = true;
+		h.app.readers.session.remote_notice_dismissed = true;
+		h.app.readers.session.details_open =
+			std::sync::Arc::new([(1, true)].into());
+		h.app.readers.session.security.grant(
+			crate::security::Resource::SelectedImage {
+				source: "chosen.png".into(),
+				path: h.dir.path().join("first.png"),
+			},
+		);
+		if activation == 3 {
+			h.app.new_page();
+		} else {
+			h.app.select_tab(1);
+		}
+		if activation % 2 == 0 {
+			fs::write(&path, after).unwrap();
+			let modified = fs::metadata(&path).unwrap().modified().unwrap();
+			fs::File::open(&path)
+				.unwrap()
+				.set_times(
+					fs::FileTimes::new()
+						.set_modified(modified + Duration::from_secs(2)),
+				)
+				.unwrap();
+		} else {
+			let replacement = h.dir.path().join("replacement.md");
+			fs::write(&replacement, format!("{after}\nNew paragraph.\n"))
+				.unwrap();
+			fs::rename(replacement, &path).unwrap();
+		}
+		match activation {
+			0 | 3 => h.app.select_tab(0),
+			1 => h.app.open(path.clone()),
+			2 => h.app.close_tab(1),
+			_ => unreachable!(),
+		}
+		assert!(h.app.readers.session.layout_pending);
+		assert_eq!(h.app.readers.session.content_version, revision + 1);
+		assert!(!h.app.readers.session.load_all_images);
+		assert!(!h.app.readers.session.remote_notice_dismissed);
+		assert!(h.app.readers.session.details_open.is_empty());
+		assert!(
+			h.app
+				.readers
+				.session
+				.security
+				.selected_image("chosen.png")
+				.is_none()
+		);
+		h.wait_images(0);
+		assert_eq!(
+			h.app
+				.readers
+				.session
+				.document
+				.as_ref()
+				.unwrap()
+				.source
+				.as_ref(),
+			fs::read_to_string(&path).unwrap(),
+		);
+	}
+}
+
+#[test]
+fn cached_text_tabs_notice_background_deletion_and_recreation() {
+	let mut h = Harness::new();
+	let path = h.dir.path().join("text.md");
+	fs::write(&path, "Original text.").unwrap();
+	h.open("text.md", 0);
+	h.open("README.zh-cn.md", 1);
+	fs::remove_file(&path).unwrap();
+	h.app.select_tab(0);
+	let deadline = Instant::now() + Duration::from_secs(10);
+	while h.app.readers.session.load_error.is_none() {
+		let event = h
+			.events
+			.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+			.unwrap();
+		h.app.handle_user_event(&StubLoop, event);
+	}
+	h.app.select_tab(1);
+	fs::write(&path, "Recreated text.").unwrap();
+	h.app.select_tab(0);
+	assert!(h.app.readers.session.load_error.is_none());
+	h.wait_images(0);
+	assert_eq!(
+		h.app
+			.readers
+			.session
+			.document
+			.as_ref()
+			.unwrap()
+			.source
+			.as_ref(),
+		"Recreated text.",
+	);
+}
+
+#[test]
 fn returning_to_cached_tabs_reloads_images_after_switching_or_closing() {
 	for close in [false, true] {
 		let mut h = Harness::new();

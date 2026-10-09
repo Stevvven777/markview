@@ -1,6 +1,9 @@
 use super::tabs;
-use crate::watch::FileWatch;
-use std::{path::PathBuf, time::Instant};
+use crate::watch::{FileWatch, file_stamp};
+use std::{
+	path::{Path, PathBuf},
+	time::Instant,
+};
 
 use super::{App, Event};
 use crate::state::Selection;
@@ -9,6 +12,11 @@ impl<P: super::SendEvent> App<P> {
 		self.update_media();
 		if let Some(mut request) = self.readers.request(self.options(), follow)
 		{
+			if self.readers.session.accepted_revision != request.content_version
+			{
+				self.readers.session.source_stamp =
+					Some(file_stamp(&request.path));
+			}
 			request.coverage = if follow
 				&& self.readers.session.scrolling.offset
 					>= (self.readers.session.snapshot.height
@@ -42,6 +50,53 @@ impl<P: super::SendEvent> App<P> {
 					proxy.send(Event::Changed(observed.clone()));
 				})
 			});
+	}
+	pub(super) fn reload_document(&mut self, path: &Path, follow: bool) {
+		self.cancel_gestures();
+		self.abandon_dm();
+		let session = &mut self.readers.session;
+		session.content_version += 1;
+		session.security.revoke();
+		session.blocked_images.clear();
+		self.interaction.modal = None;
+		session.load_error = None;
+		session.parse_complete = false;
+		session.search.retained = session
+			.search
+			.current
+			.and_then(|i| session.search.matches.get(i))
+			.cloned();
+		session.search.document = None;
+		session.search.matches = Default::default();
+		// New content resets remote-image choices and `<details>` overrides.
+		session.load_all_images = false;
+		session.remote_notice_dismissed = false;
+		session.details_open = Default::default();
+		session.cancel_scroll_animation();
+		self.search_changed();
+		self.request(follow);
+		self.schedule_watch_export(path);
+	}
+	fn resume_document(&mut self) {
+		self.observe_document();
+		let session = &self.readers.session;
+		if !session.web_loading
+			&& let Some(path) = session.path.clone()
+			&& session
+				.source_stamp
+				.is_some_and(|stamp| stamp != file_stamp(&path))
+		{
+			self.reload_document(&path, false);
+			return;
+		}
+		// The worker releases inactive pixels, so image tabs must resume loading.
+		if session.document.is_none()
+			|| session.layout_pending
+			|| !session.snapshot.images.entries.is_empty()
+			|| session.requested_options.as_ref() != Some(&self.options())
+		{
+			self.request(false);
+		}
 	}
 	pub(super) fn open(&mut self, path: PathBuf) {
 		self.open_document(
@@ -144,7 +199,6 @@ impl<P: super::SendEvent> App<P> {
 			self.redraw();
 			return;
 		}
-		self.observe_document();
 		self.interaction.clear_selection();
 		self.worker.cancel();
 		self.close_search();
@@ -152,15 +206,7 @@ impl<P: super::SendEvent> App<P> {
 		self.error = false;
 		self.status.clear();
 		self.status_until = None;
-		// The worker releases inactive pixels, so image tabs must resume loading.
-		if self.readers.session.document.is_none()
-			|| self.readers.session.layout_pending
-			|| !self.readers.session.snapshot.images.entries.is_empty()
-			|| self.readers.session.requested_options.as_ref()
-				!= Some(&self.options())
-		{
-			self.request(false);
-		}
+		self.resume_document();
 		self.apply_anchor();
 		self.redraw();
 	}
@@ -219,15 +265,7 @@ impl<P: super::SendEvent> App<P> {
 		if !self.readers.entries().is_empty()
 			&& self.readers.session.path.is_some()
 		{
-			self.observe_document();
-			if self.readers.session.document.is_none()
-				|| self.readers.session.layout_pending
-				|| !self.readers.session.snapshot.images.entries.is_empty()
-				|| self.readers.session.requested_options.as_ref()
-					!= Some(&self.options())
-			{
-				self.request(false);
-			}
+			self.resume_document();
 		}
 		self.redraw();
 	}

@@ -102,10 +102,10 @@ impl FileWatch {
 			watcher = None;
 		}
 		let polling = watcher.is_none();
+		let mut stamp = observed_stamp(&path, directory);
 		let flag = stop.clone();
 		let handle = thread::spawn(move || {
 			let mut pending = Debounce::default();
-			let mut stamp = observed_stamp(&path, directory);
 			let mut poll_at = Instant::now() + Duration::from_millis(500);
 			while !flag.load(Ordering::Relaxed) {
 				let now = Instant::now();
@@ -158,7 +158,7 @@ impl Drop for FileWatch {
 	}
 }
 
-type FileStamp = Option<(u64, Option<SystemTime>)>;
+pub(crate) type FileStamp = Option<(u64, Option<SystemTime>)>;
 fn observed_stamp(path: &Path, directory: bool) -> Vec<(PathBuf, FileStamp)> {
 	if !directory {
 		return vec![(path.into(), file_stamp(path))];
@@ -178,7 +178,7 @@ fn observed_stamp(path: &Path, directory: bool) -> Vec<(PathBuf, FileStamp)> {
 	values
 }
 
-fn file_stamp(path: &Path) -> Option<(u64, Option<SystemTime>)> {
+pub(crate) fn file_stamp(path: &Path) -> FileStamp {
 	fs::metadata(path)
 		.ok()
 		.map(|m| (m.len(), m.modified().ok()))
