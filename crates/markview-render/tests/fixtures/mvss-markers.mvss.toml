@@ -1,0 +1,32 @@
+format_version = 2
+version = 1
+
+[[rule]]
+when = ["list"]
+indent = 0.1
+marker_width = 1.4
+space_after = 0.5
+
+[[rule]]
+when = ["enum"]
+indent = 0.2
+marker_width = 2.0
+numbering = "1.a.I."
+align = "right"
+
+[[rule]]
+when = ["marker"]
+shape = ["disc", "square", "triangle", "diamond", "plus", "minus"]
+align = "left"
+size = 0.7
+color = "#315D86"
+
+[[rule]]
+when = ["task_marker"]
+align = "center"
+color = "#FFFFFF"
+background = "#E4EBF2"
+accent = "#267454"
+border_color = "#163E52"
+border_width = 2.0
+radius = 5.0

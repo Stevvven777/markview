@@ -6,6 +6,8 @@ mod export;
 use super::font_panel::view as fonts;
 mod footer;
 mod frame;
+#[cfg(all(test, target_os = "linux"))]
+mod golden;
 #[cfg(test)]
 mod gpu_tests;
 pub(super) mod icons;

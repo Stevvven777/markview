@@ -51,11 +51,12 @@ Lavapipe and compares decoded RGBA pixels with a tolerance of one level per
 channel for cross-driver rounding. Every pixel must meet that limit; there is
 no permitted percentage of larger differences. Image dimensions must match
 exactly.
-The six Markdown fixtures cover prose, lists and quotations, tables, highlighted
-code, math, and images; prose also runs at a narrow width and at 1.25× in dark
-mode. Fonts and image pixels are loaded before rendering, and highlighting is
-settled before the capture. Windows and macOS run the existing rendering tests
-without comparing to the Linux baselines.
+The [rendering coverage guide](rendering-tests.md) lists the Markdown syntax,
+combinations, all bundled themes, MVSS fields, Chinese/English typography,
+PDF pages, diagrams, UI and search states exercised by the suite. It needs
+`pdftoppm` for the PDF captures. Fonts and images are loaded before rendering,
+and highlighting is settled before the capture. Windows and macOS run the
+existing rendering tests without comparing to the Linux baselines.
 
 Run just the baseline comparisons, or explicitly update them after an intended
 visual change:
@@ -72,7 +73,7 @@ the difference image mark every changed pixel. The failure reports the pixel
 count, bounding coordinates and dimensions, and CI uploads these files even on
 failure. Missing baselines fail with the actual frame available for inspection.
 Review the updated PNGs before committing them alongside the visual change.
-CI pins Ubuntu 24.04, Mesa 25.2.8 and LLVM 20.1.2 in `checks.yml`; when changing
+CI pins Ubuntu 24.04, Mesa 25.2.8, LLVM 20.1.2 and Poppler 24.02 in `checks.yml`; when changing
 these versions, verify comparisons before considering a baseline update rather
 than widening the tolerance.
 

@@ -1,0 +1,85 @@
+format_version = 2
+version = 1
+
+[[rule]]
+when = ["body"]
+padding = [0.3, 0.4, 0.5, 0.6]
+border_color = "#254A69"
+border_edges = [2, 3, 4, 5]
+corner_radii = [8, 16, 24, 0]
+
+[[rule]]
+when = ["h1"]
+heading_marker = [0.5, 1.6, 0.4]
+marker_color = "#B94137"
+border_color = "#315D86"
+border_edges = [0, 0, 2, 0]
+padding = 0.3
+space_before = 0.4
+space_after = 0.6
+
+[[rule]]
+when = ["blockquote"]
+background = "#DDECE780"
+border_color = "#166D50"
+border_width = 2.0
+radius = 12.0
+padding = [0.4, 0.6, 0.4, 0.6]
+
+[[rule]]
+when = ["blockquote", "p", "first_child", "strong"]
+letter_spacing = 0.08
+color = "#166D50"
+
+[[rule]]
+when = ["blockquote", "p", "last_child"]
+background = "#EFDEBF80"
+padding = 0.2
+
+[[rule]]
+when = ["table"]
+border_collapse = "separate"
+
+[[rule]]
+when = ["table", "cell"]
+border_edges = [1, 2, 3, 4]
+corner_radii = [8, 0, 8, 0]
+padding = [0.4, 0.6, 0.5, 0.7]
+border_color = "#315D86"
+
+[[rule]]
+when = ["table", "cell", "last_child"]
+background = "#E1EBCF"
+
+[[rule]]
+when = ["code_block"]
+theme = "none"
+color = "#163E52"
+border_color = "#315D86"
+border_width = 2.0
+radius = 8.0
+wrap = true
+
+[[rule]]
+when = ["code_block", "label"]
+show = false
+
+[[rule]]
+when = ["details"]
+background = "#DFE8F3"
+border_color = "#315D86"
+border_width = 1.0
+radius = 8.0
+
+[[rule]]
+when = ["img"]
+align = "left"
+padding = 0.3
+border_width = 2.0
+border_color = "#315D86"
+background = "#F6E7C8"
+
+[[rule]]
+when = ["img", "caption"]
+source = "alt"
+align = "right"

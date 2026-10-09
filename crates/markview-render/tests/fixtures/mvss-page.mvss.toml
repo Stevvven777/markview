@@ -1,0 +1,63 @@
+format_version = 2
+version = 1
+targets = ["pdf"]
+
+[page]
+size = "130x180"
+landscape = true
+margin = [12, 14, 16, 18]
+header_left = "{title}"
+header_center = "Header"
+header_right = "{path}"
+footer_left = "Footer"
+footer_center = "{page} / {pages}"
+footer_right = "阅读"
+
+[page.header]
+rule_width = 1.5
+rule_color = "#763735"
+
+[page.footer]
+rule_width = 2.0
+rule_color = "#315D86"
+
+[[rule]]
+when = ["page"]
+background = "#F7F1DF"
+
+[[rule]]
+when = ["page_header"]
+color = "#763735"
+font = [{ family = "serif" }, { family = "serif[cjk]" }]
+weight = 700
+size = 0.65
+decoration = ["underline"]
+
+[[rule]]
+when = ["page_footer"]
+color = "#315D86"
+size = 0.7
+
+[[rule]]
+when = ["page_number"]
+color = "#166D50"
+size = 0.8
+
+[[rule]]
+when = ["p"]
+orphans = 3
+widows = 3
+
+[[rule]]
+when = ["blockquote"]
+keep_together = true
+
+[[rule]]
+when = ["table"]
+keep_together = false
+border_collapse = "separate"
+
+[[rule]]
+when = ["table", "cell"]
+border_edges = [2, 1, 3, 4]
+corner_radii = [6, 0, 6, 0]

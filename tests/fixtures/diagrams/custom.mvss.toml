@@ -1,0 +1,52 @@
+format_version = 2
+version = 1
+
+[svg.generic_font_family]
+serif = ["Unavailable Test Font", "monospace"]
+sans-serif = ["serif"]
+monospace = ["sans-serif"]
+cursive = ["serif"]
+fantasy = ["sans-serif"]
+
+[mermaid]
+theme = "forest"
+font_family = ["serif", "serif[cjk]"]
+font_size = 17.0
+background = "#F1EAD9"
+text_color = "#143626"
+primary_color = "#CDE4C3"
+primary_text_color = "#143626"
+primary_border_color = "#2B6A46"
+line_color = "#763735"
+secondary_color = "#E9CFAD"
+tertiary_color = "#CADDE6"
+edge_label_background = "#EFE4BD"
+cluster_background = "#DEE8D6"
+cluster_border = "#43734A"
+sequence_actor_fill = "#CADDE6"
+sequence_actor_border = "#315D86"
+sequence_actor_line = "#315D86"
+sequence_note_fill = "#EFE4BD"
+sequence_note_border = "#976C21"
+sequence_activation_fill = "#CDE4C3"
+sequence_activation_border = "#2B6A46"
+git_colors = ["#315D86", "#763735", "#2B6A46", "#976C21", "#735080", "#437A80", "#856449", "#444444"]
+git_inv_colors = ["#E8EEF4", "#EFE0DC", "#E0EFE2", "#F4EDD6", "#EDE5F4", "#E0F0F0", "#EFE5D9", "#EEEEEE"]
+git_branch_label_colors = ["#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"]
+git_commit_label_color = "#143626"
+git_commit_label_background = "#CDE4C3"
+git_tag_label_color = "#763735"
+git_tag_label_background = "#EFE4BD"
+git_tag_label_border = "#976C21"
+pie_colors = ["#315D86", "#763735", "#2B6A46", "#976C21", "#735080", "#437A80", "#856449", "#444444", "#A47465", "#789F86", "#879EB6", "#CCB17D"]
+pie_title_text_size = 22.0
+pie_title_text_color = "#143626"
+pie_section_text_size = 16.0
+pie_section_text_color = "#FFFFFF"
+pie_legend_text_size = 15.0
+pie_legend_text_color = "#143626"
+pie_stroke_color = "#F1EAD9"
+pie_stroke_width = 2.0
+pie_outer_stroke_color = "#976C21"
+pie_outer_stroke_width = 3.0
+pie_opacity = 0.9

@@ -23,7 +23,7 @@ import re
 import sys
 
 from fontTools import subset
-from fontTools.ttLib import TTCollection, TTFont
+from fontTools.ttLib import TTFont
 
 # Rust spells characters outside the source as `\u{XXXX}`; those never appear
 # literally, so the scan has to decode them too.
@@ -65,7 +65,9 @@ def test_text():
         glob.glob("crates/**/*.rs", recursive=True)
         + glob.glob("src/**/*.rs", recursive=True)
         + glob.glob("tests/**/*.rs", recursive=True)
-        + glob.glob("tests/fixtures/*.md")
+        + glob.glob("tests/fixtures/**/*.md", recursive=True)
+        + glob.glob("crates/markview-render/tests/fixtures/*.md")
+        + glob.glob("assets/locales/*.toml")
     )
     chars = {chr(c) for c in range(0x20, 0x7F)} | {"\t", "\n"}
     for path in sources:
@@ -91,7 +93,7 @@ def main():
         if not os.path.exists(source):
             sys.exit(f"missing source font {source}")
         font = (
-            TTCollection(source).fonts[index]
+            TTFont(source, fontNumber=index)
             if source.endswith(".ttc")
             else TTFont(source)
         )
@@ -103,6 +105,28 @@ def main():
         total += os.path.getsize(path)
         print(f"{name:42} {os.path.getsize(path) / 1024:8.1f} KiB")
     print(f"{'total':42} {total / 1024:8.1f} KiB")
+    render_regional_fonts(options)
+
+
+def render_regional_fonts(options):
+    """Pin TC and JP faces for regional punctuation and glyph comparisons."""
+    out = "crates/markview-render/tests/fonts"
+    os.makedirs(out, exist_ok=True)
+    text = "".join(
+        open(path, encoding="utf-8").read()
+        for path in glob.glob("crates/markview-render/tests/fixtures/*.md")
+    ) + "".join(chr(c) for c in range(0x20, 0x7F))
+    for region, index in [("tc", 3), ("jp", 0)]:
+        for family in ["Serif", "Sans", "SansMono"]:
+            for weight in ["Regular", "Bold"]:
+                source = f"{NOTO_CJK}/Noto{'Sans' if family == 'SansMono' else family}CJK-{weight}.ttc"
+                font = TTFont(source, fontNumber=index + (5 if family == "SansMono" else 0))
+                subsetter = subset.Subsetter(options=options)
+                subsetter.populate(text=text)
+                subsetter.subset(font)
+                name = f"Noto{family}CJK{region}-{weight}-subset.otf"
+                font.save(os.path.join(out, name))
+                print(f"{name:42} {os.path.getsize(os.path.join(out, name)) / 1024:8.1f} KiB")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,47 @@
+format_version = 2
+version = 1
+
+[[rule]]
+when = ["ui"]
+color = "#183D32"
+background = "#E5EBDF"
+muted = "#687264"
+accent = "#216D51"
+warning = "#9F5C10"
+error = "#AA3049"
+shadow = "#10251A40"
+scrim = "#10251A60"
+border_color = "#9DAC98"
+font = [{ family = "serif" }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
+letter_spacing = 0.01
+
+[[rule]]
+when = ["ui", "panel"]
+background = "#F7F1DF"
+
+[[rule]]
+when = ["ui", "toolbar"]
+background = "#CBDDCA"
+
+[[rule]]
+when = ["ui", "statusbar"]
+background = "#E5EBDF"
+
+[[rule]]
+when = ["ui", "button"]
+background = "#FFFFFF"
+hover_background = "#D5E8D6"
+active_background = "#BBDBC3"
+disabled_color = "#8A9686"
+focus_color = "#BB3850"
+
+[[rule]]
+when = ["scrollbar"]
+track = "#B4C4AF"
+thumb = "#527760"
+thumb_hover = "#BB3850"
+thickness = 5.0
+thickness_hover = 11.0
+overflow_thickness = 4.0
+overflow_thickness_hover = 10.0
+gutter = 15.0

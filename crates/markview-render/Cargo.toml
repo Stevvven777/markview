@@ -58,6 +58,7 @@ workspace = true
 [dev-dependencies]
 image = { version = "0.25.9", default-features = false, features = ["png"] }
 tempfile.workspace = true
+markview-pdf = { path = "../markview-pdf" }
 # `Renderer::new` is async, and a test has no runtime to drive it. The library
 # never blocks: a host that has a loop drives it from there.
 pollster.workspace = true

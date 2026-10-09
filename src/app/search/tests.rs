@@ -572,7 +572,7 @@ fn worker_latest_request_wins_after_cancellation() {
 }
 
 #[test]
-fn search_bar_and_highlight_gpu_frames() -> anyhow::Result<()> {
+fn search_states_match_rendering_baselines() -> anyhow::Result<()> {
 	use crate::{
 		lang::Lang,
 		render::{Renderer, Theme, View},
@@ -586,7 +586,10 @@ fn search_bar_and_highlight_gpu_frames() -> anyhow::Result<()> {
 		let mut h = Harness::new(
 			"# Find in this document\n\nSearch for **needle** in this paragraph. Another needle is here.\n\n```rust\nlet needle = 42;\n```\n\n| Name | Value |\n|---|---|\n| needle | 42 |\n\n<details>\n<summary>Collapsed content</summary>\n\nneedle\n\n</details>\n",
 		);
-		let stylesheet = markview_core::style::Stylesheet::bundled(dark);
+		let mut stylesheet =
+			(*markview_core::style::Stylesheet::bundled(dark)).clone();
+		stylesheet.merge(&markview_core::style::Stylesheet::parse("format_version=2\nversion=1\n[[rule]]\nwhen=['search']\nbackground='#E9BA4550'\n[[rule]]\nwhen=['search_current']\nbackground='#E49B2390'\n[[rule]]\nwhen=['selection']\nbackground='#315D8650'")?);
+		let stylesheet = Arc::new(stylesheet);
 		h.app.preferences.values.stylesheet = stylesheet.clone();
 		h.app.preferences.values.lang = Some(lang);
 		h.app.ui.stylesheet = stylesheet.clone();
@@ -599,6 +602,7 @@ fn search_bar_and_highlight_gpu_frames() -> anyhow::Result<()> {
 			.snapshot
 			.search_selection(&h.app.readers.session.search.matches[1], 1);
 		h.app.interaction.selection = selection;
+		h.app.interaction.focus = None;
 		let overlay = h.app.overlay();
 		let session = &h.app.readers.session;
 		let view = View {
@@ -631,6 +635,31 @@ fn search_bar_and_highlight_gpu_frames() -> anyhow::Result<()> {
 			.join(format!("artifacts/search/{name}.png"));
 		std::fs::create_dir_all(path.parent().unwrap())?;
 		renderer.save_png(&texture, &path)?;
+		#[cfg(target_os = "linux")]
+		{
+			anyhow::ensure!(
+				renderer.adapter_name.starts_with("llvmpipe")
+					&& renderer.adapter_name.ends_with("(Vulkan, Cpu)"),
+				"Search baselines require Lavapipe"
+			);
+			crate::test_support::render_goldens::assert_glyphs(&overlay)?;
+			let actual = image::open(&path)?.into_rgba8();
+			let baseline = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+				.join(format!("tests/goldens/search/{name}.png"));
+			if std::env::var("MARKVIEW_UPDATE_RENDER_GOLDENS").as_deref()
+				== Ok("1")
+			{
+				std::fs::create_dir_all(baseline.parent().unwrap())?;
+				actual.save(&baseline)?;
+			} else {
+				crate::test_support::render_goldens::compare(
+					&baseline,
+					&actual,
+					path.parent().unwrap(),
+					name,
+				)?;
+			}
+		}
 	}
 	Ok(())
 }

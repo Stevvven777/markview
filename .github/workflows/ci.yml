@@ -44,6 +44,8 @@ jobs:
           dist plan
       - name: Documentation links and audience indexes
         run: python3 scripts/test_documentation.py
+      - name: Rendering configuration coverage
+        run: python3 scripts/check_render_coverage.py
       - name: Changelog conventions
         run: |
           python3 scripts/check_changelog.py

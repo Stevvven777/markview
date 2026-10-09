@@ -2703,6 +2703,7 @@ dependencies = [
  "bytemuck",
  "image",
  "markview-core",
+ "markview-pdf",
  "markview-render",
  "parley",
  "pollster",

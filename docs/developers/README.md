@@ -21,6 +21,7 @@ Start with [contributing](../../CONTRIBUTING.md) and the development guide.
 - [Security reference](security-reference.md): threats, controls, budgets and historical findings.
 - [Security verification](security-verification.md): evidence, coverage and outstanding work.
 - [Document search verification](search-verification.md): automated checks and GUI checklist.
+- [Rendering regression tests](rendering-tests.md): visual fixtures, MVSS coverage, pinned fonts and baseline review.
 - [Web font codec measurements](mvaac-font-measurements.md): format coverage and size/startup measurements.
 - [Fuzzing](../../fuzz/README.md): targets, oracles and campaigns.
 - [Test fonts](../../tests/fixtures/fonts/README.md) and [Web test fonts](../../crates/markview-web/tests/fonts/README.md): fixture provenance and regeneration.

@@ -1,0 +1,52 @@
+format_version = 2
+version = 1
+
+[[fontdef]]
+id = "reading"
+lookfor = ["Unavailable Test Font", "Noto Serif"]
+
+[[rule]]
+when = ["body"]
+font = [{ family = "reading", weight = 400 }, { family = "serif[cjk]", min_weight = 500 }, { family = "emoji", weight = 400 }]
+top_edge = "bounds"
+bottom_edge = "bounds"
+line_height = 1.8
+letter_spacing = 0.015
+
+[[rule]]
+when = ["em"]
+font = [{ family = "Noto Serif", variant = "italic" }, { family = "serif[cjk]", variant = "oblique", synthetic_italic = true }]
+color = "#7B2945"
+
+[[rule]]
+when = ["strong"]
+weight = 700
+size = 1.1
+decoration = ["underline"]
+
+[[rule]]
+when = ["strong", "em"]
+color = "#156747"
+decoration = ["underline", "line-through"]
+
+[[rule]]
+when = ["code"]
+background_top_edge = "bounds"
+background_bottom_edge = "bounds"
+top_edge = 0.8
+bottom_edge = -0.2
+baseline = 0.08
+padding = [0.1, 0.5, 0.1, 0.5]
+background = "#B6D8EA80"
+
+[[rule]]
+when = ["link"]
+decoration = ["underline"]
+
+[[rule]]
+when = ["link", "code"]
+color = "#8B4000"
+
+[[rule]]
+when = ["del"]
+decoration = ["line-through"]

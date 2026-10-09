@@ -24,6 +24,7 @@ at the same level, without `[brackets]`.
 ### Added
 
 - Compare document rendering with committed PNG baselines on Lavapipe, with explicit updates and CI difference images.
+- Expand rendering baselines across Markdown combinations, all bundled themes, MVSS drawing properties, PDF pages, diagrams, UI states and Chinese/English typography.
 
 ### Changed
 
@@ -31,6 +32,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Pin regional monospace fonts in TC and JP rendering baselines to avoid nondeterministic fallback selection.
 - Use the Noto Sans CJK SC face consistently for Chinese README image captions, credits and charts instead of the collection's Japanese default.
 - Allow cached-tab refresh tests to update file timestamps on Windows.
 - Keep saves made while a watched export is still writing from being dropped, including before the first export has chosen its output.

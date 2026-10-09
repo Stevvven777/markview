@@ -1,0 +1,74 @@
+format_version = 2
+version = 1
+
+[[rule]]
+when = ["h1"]
+media = ["ui"]
+color = "#315D86"
+
+[[rule]]
+when = ["h1"]
+media = ["pdf"]
+color = "#763735"
+
+[[rule]]
+when = ["p"]
+media = ["desktop"]
+letter_spacing = 0.01
+
+[[rule]]
+when = ["p"]
+media = ["mobile"]
+letter_spacing = -0.01
+
+[[rule]]
+when = ["blockquote"]
+media = ["phone"]
+padding = 0.1
+
+[[rule]]
+when = ["blockquote"]
+media = ["tablet"]
+padding = 0.6
+
+[[rule]]
+when = ["h2"]
+media = ["landscape"]
+heading_marker = [0.4, 0.8, 0.4]
+marker_color = "#315D86"
+
+[[rule]]
+when = ["h2"]
+media = ["portrait"]
+heading_marker = [0.8, 0.4, 0.4]
+marker_color = "#763735"
+
+[[rule]]
+when = ["code"]
+media = ["android"]
+background = "#D7EAD6"
+
+[[rule]]
+when = ["code"]
+media = ["ios"]
+background = "#F0DDE9"
+
+[[rule]]
+when = ["code"]
+media = ["web"]
+background = "#EFE4BD"
+
+[[rule]]
+when = ["code"]
+media = ["windows"]
+background = "#DCE6F4"
+
+[[rule]]
+when = ["code"]
+media = ["macos"]
+background = "#E5DCF4"
+
+[[rule]]
+when = ["code"]
+media = ["linux"]
+background = "#CBE6E4"
