@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Upgrade `comrak` to the crates.io 0.56 release and remove its Git patches from the application, fuzz harness and README preview generator.
 - Launch desktop reader windows in the background by default for `markview`, `markview FILE` and `markview web URL`; add `--foreground` to wait for the window and retain terminal logs.
 - Change the Reveal folder shortcut from Ctrl+Shift+O to Ctrl+Alt+R.
 - Redesign the Reveal toolbar icon with a simple location pin at the folder's lower-left corner.

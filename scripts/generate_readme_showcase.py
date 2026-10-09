@@ -41,9 +41,7 @@ edition = "2024"
 anyhow = "1"
 dom_smoothie = "0.18.2"
 dom_query = "0.28"
-comrak = { version = "0.55", default-features = false }
-[patch.crates-io]
-comrak = { git = "https://github.com/kivikakk/comrak", rev = "4127507465ee41e0a6298fd4b217b685a499af79" }
+comrak = { version = "0.56", default-features = false }
 """)
         main = "use anyhow::{Result, bail};\nuse dom_smoothie::{Config, Readability, TextMode};\n"
         main += f"mod file {{ {limit} }}\nmod paste {{ {paste} }}\n" + source
