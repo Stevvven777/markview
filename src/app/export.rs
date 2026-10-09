@@ -213,15 +213,25 @@ impl<P: super::SendEvent> App<P> {
 		self.spawn_export(path, Destination::Path(output), settings);
 	}
 
-	/// Remembers a document change while its export is being watched.
+	/// Remembers a document change for an active or in-flight watch export.
 	pub(super) fn schedule_watch_export(&mut self, path: &Path) {
-		if self
-			.watch_export
-			.as_ref()
-			.is_some_and(|watch| watch.source == path)
-		{
+		if self.watches_source(path) {
 			self.watch_at = Some(Instant::now() + Duration::from_millis(250));
 		}
+	}
+
+	/// Whether a pending or in-flight export follows `path`.
+	fn watches_source(&self, path: &Path) -> bool {
+		self.watch_export
+			.as_ref()
+			.is_some_and(|watch| watch.source == path)
+			|| (self.export_running
+				&& self
+					.export_source
+					.as_ref()
+					.is_some_and(|(source, _)| source == path)
+				&& (self.export_watch_request
+					|| self.png_export.as_ref().is_some_and(|job| job.watch)))
 	}
 
 	/// Spawns the export thread. It owns everything the job needs, including
@@ -356,7 +366,8 @@ impl<P: super::SendEvent> App<P> {
 			source,
 			output: output.to_path_buf(),
 		});
-		self.watch_at = None;
+		// Keep a rebuild queued by a save that arrived while this export was
+		// in flight; it still needs to run after the watch is armed.
 	}
 
 	/// Hands a written export to the operating system, so the reader sees the
@@ -766,6 +777,53 @@ mod tests {
 		started.recv_timeout(Duration::from_secs(5)).unwrap();
 		drop(app);
 		released.recv_timeout(Duration::from_secs(5)).unwrap();
+	}
+
+	#[test]
+	fn saves_while_a_watch_export_is_in_flight_are_queued() {
+		#[derive(Clone)]
+		struct Proxy;
+		impl super::super::SendEvent for Proxy {
+			fn try_send(&self, _: Event) -> bool {
+				true
+			}
+		}
+		let mut app = App::new(
+			crate::cli::LaunchOptions {
+				mode: crate::cli::Mode::Smoke,
+				options: crate::test_support::options(),
+				..Default::default()
+			},
+			Proxy,
+		);
+		let source = PathBuf::from("document.md");
+		let output = PathBuf::from("document.pdf");
+		let origin =
+			crate::security::Origin::Local(crate::security::Trust::Trusted);
+		app.export_running = true;
+		app.export_watch_request = true;
+		app.export_source = Some((source.clone(), origin.clone()));
+		app.schedule_watch_export(&source);
+		let first = app
+			.watch_at
+			.expect("a save during the first export must queue a rebuild");
+		app.arm_watch(&output);
+		assert_eq!(
+			app.watch_at,
+			Some(first),
+			"arming the watch must not drop a save seen during the export"
+		);
+		app.watch_at = None;
+		app.schedule_watch_export(&source);
+		let rebuild = app
+			.watch_at
+			.expect("a save during a watch rebuild must queue another");
+		app.arm_watch(&output);
+		assert_eq!(
+			app.watch_at,
+			Some(rebuild),
+			"arming the watch must not drop a save seen during a rebuild"
+		);
 	}
 
 	#[test]
