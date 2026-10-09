@@ -708,6 +708,7 @@ fn search_navigation_cancels_restoration_before_later_layouts_arrive() {
 		let viewport = h.app.viewport();
 		h.app.readers.session.accept(
 			crate::worker::ReaderSnapshot {
+				blocked_images: Default::default(),
 				document: document.clone(),
 				layout: full.clone(),
 				content_version: 1,

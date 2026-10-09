@@ -168,6 +168,7 @@ pub(crate) struct ExportStats {
 /// The retained engine, images and previous parse are the incremental
 /// machinery the reader's worker uses, so a watch session pays for them once.
 struct Exporter {
+	security: crate::security::Security,
 	path: PathBuf,
 	output: PathBuf,
 	options: LayoutOptions,
@@ -215,6 +216,7 @@ impl Exporter {
 		);
 		engine.validate_stylesheet(&options.stylesheet)?;
 		Ok(Self {
+			security: args.security.clone(),
 			path: args.path.clone(),
 			output,
 			options,
@@ -257,6 +259,9 @@ impl Exporter {
 		self.dirty = true;
 		let changed = self.source.as_deref() != Some(text);
 		if changed {
+			if self.source.is_some() {
+				self.security.revoke();
+			}
 			let source: Arc<str> = text.into();
 			let document = match &self.document {
 				Some(previous) => {
@@ -273,6 +278,8 @@ impl Exporter {
 			.as_ref()
 			.expect("a document is parsed before a layout")
 			.clone();
+		self.images
+			.set_security(self.security.for_content(&document.source));
 		self.images.prepare(
 			&document,
 			&self.path,
@@ -412,6 +419,9 @@ mod tests {
 
 	fn options(path: &Path, output: &Path) -> PdfRequest {
 		PdfRequest {
+			security: crate::security::Security::local(
+				crate::security::Trust::Trusted,
+			),
 			path: path.into(),
 			output: output.into(),
 			options: LayoutOptions {

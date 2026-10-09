@@ -18,7 +18,20 @@ pub(super) enum Source {
 	Diagram(String),
 }
 
+#[cfg(test)]
 pub(super) fn source(src: &str, document: &Path) -> Result<Source> {
+	resolve(
+		src,
+		document,
+		&crate::security::Security::local(crate::security::Trust::Trusted),
+	)
+}
+
+pub(super) fn resolve(
+	src: &str,
+	document: &Path,
+	security: &crate::security::Security,
+) -> Result<Source> {
 	if src.is_empty() {
 		bail!("Missing image source");
 	}
@@ -35,6 +48,31 @@ pub(super) fn source(src: &str, document: &Path) -> Result<Source> {
 			_ => anyhow::bail!("Unsupported image URL scheme"),
 		};
 	}
+	match &security.origin {
+		crate::security::Origin::Web(base) => {
+			let url = url::Url::parse(base)?.join(src)?;
+			if !matches!(url.scheme(), "http" | "https") {
+				bail!("Unsupported image URL scheme");
+			}
+			return Ok(Source::Http(url.to_string()));
+		}
+		crate::security::Origin::Clipboard => {
+			let decoded = percent_encoding::percent_decode_str(src)
+				.decode_utf8()
+				.context("Invalid path encoding")?;
+			if rooted(Path::new(decoded.as_ref())) {
+				bail!("Absolute image paths are not allowed");
+			}
+			return match security.selected_image(src) {
+				Some(path) => Ok(Source::File(path.to_owned())),
+				None => Err(crate::security::PermissionRequired(
+					crate::security::Resource::SelectImage(src.to_owned()),
+				)
+				.into()),
+			};
+		}
+		crate::security::Origin::Local(_) => {}
+	}
 	let decoded = percent_encoding::percent_decode_str(src)
 		.decode_utf8()
 		.context("Invalid path encoding")?;
@@ -46,7 +84,9 @@ pub(super) fn source(src: &str, document: &Path) -> Result<Source> {
 		bail!("Absolute image paths are not allowed");
 	}
 	let path = document.parent().unwrap_or(Path::new(".")).join(path);
-	Ok(Source::File(fs::canonicalize(&path).unwrap_or(path)))
+	let path = fs::canonicalize(&path).unwrap_or(path);
+	security.check_file(&path)?;
+	Ok(Source::File(path))
 }
 
 /// Whether a path names an absolute location, including the Windows forms

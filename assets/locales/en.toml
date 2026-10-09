@@ -280,3 +280,12 @@ status_web_offline = "Offline: cannot load web pages"
 empty_paste_hint = "Paste a Markdown document or an HTTP(S) link ({shortcut})"
 empty_url_placeholder = "Enter an HTTP(S) link"
 empty_open_url = "Open link"
+
+# Document resource permissions.
+permission_title = "Allow this resource?"
+permission_file = "Read this file in Markview."
+permission_network = "Allow requests to this network destination."
+permission_scope = "Permission ends when this document\nchanges or closes."
+permission_allow = "Allow"
+permission_cancel = "Cancel"
+permission_select_image = "Choose the image file to read.\nPasted text has no local directory."

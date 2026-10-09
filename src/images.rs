@@ -17,7 +17,7 @@ use markview_core::{
 	style::Stylesheet,
 };
 use pixels::cache_pixels;
-use source::{Source, fetch, source, stamp};
+use source::{Source, fetch, stamp};
 use std::{
 	collections::{HashMap, HashSet},
 	path::{Path, PathBuf},
@@ -159,6 +159,8 @@ type Intrinsic = (Source, Option<(u64, Option<SystemTime>)>, (u32, u32));
 
 pub struct Images {
 	pub snapshot: ImageSnapshot,
+	pub(crate) blocked: HashMap<String, crate::security::Resource>,
+	security: crate::security::Security,
 	/// Compress PDF resources on the workers instead of caching raw pixels.
 	pdf: bool,
 	entries: HashMap<Source, Entry>,
@@ -235,7 +237,11 @@ impl Images {
 		root: Option<PathBuf>,
 		fonts: FontConfig,
 	) -> Self {
-		Self::build(offline, root, fonts)
+		let mut images = Self::build(offline, root, fonts);
+		images.set_security(crate::security::Security::local(
+			crate::security::Trust::Trusted,
+		));
+		images
 	}
 
 	#[cfg(test)]
@@ -266,6 +272,8 @@ impl Images {
 		let (done, recv) = mpsc::channel();
 		Self {
 			snapshot: ImageSnapshot::default(),
+			blocked: HashMap::new(),
+			security: crate::security::Security::default(),
 			pdf: false,
 			entries: HashMap::new(),
 			intrinsic: Vec::new(),
@@ -289,6 +297,13 @@ impl Images {
 			theme: Arc::new(diagram::resolve(&Stylesheet::default(), None)),
 			diagram: None,
 			fonts,
+		}
+	}
+
+	pub(crate) fn set_security(&mut self, security: crate::security::Security) {
+		if self.security != security {
+			self.release();
+			self.security = security;
 		}
 	}
 
@@ -347,6 +362,7 @@ impl Images {
 		}
 		let theme = self.theme_key;
 		if self.document != path {
+			self.blocked.clear();
 			for (source, entry) in self.entries.drain() {
 				if let Some(size) = entry.info.size
 					&& matches!(source, Source::File(_) | Source::Http(_))
@@ -369,6 +385,9 @@ impl Images {
 			.pixels
 			.set_wake((!specs.is_empty()).then(|| self.wake.clone()));
 		let reload = self.revision != revision;
+		if reload {
+			self.blocked.clear();
+		}
 		self.revision = revision;
 		if load_all {
 			// Clear a cap error recorded by an earlier pass of this revision,
@@ -401,7 +420,7 @@ impl Images {
 		}
 		self.snapshot.entries.clear();
 		for spec in specs {
-			match source(&spec.src, path) {
+			match source::resolve(&spec.src, path, &self.security) {
 				Ok(source) => {
 					let first = wanted.insert(source.clone());
 					let remote = matches!(source, Source::Http(_));
@@ -458,6 +477,12 @@ impl Images {
 						.insert(spec.src.clone(), e.info.clone());
 				}
 				Err(e) => {
+					if let Some(required) =
+						e.downcast_ref::<crate::security::PermissionRequired>()
+					{
+						self.blocked
+							.insert(spec.src.clone(), required.0.clone());
+					}
 					self.snapshot.entries.insert(
 						spec.src.clone(),
 						ImageInfo {
@@ -469,6 +494,8 @@ impl Images {
 			}
 		}
 		self.entries.retain(|s, _| wanted.contains(s));
+		self.blocked
+			.retain(|src, _| self.snapshot.entries.contains_key(src));
 		// A new spelling of a retained source shares its pixels immediately.
 		// Remove aliases no longer present so old snapshots cannot pin them.
 		{
@@ -591,6 +618,7 @@ impl Images {
 		let wake = self.wake.clone();
 		let cache = self.cache.clone();
 		let offline = self.offline;
+		let security = self.security.clone();
 		let pipelines = self.pipelines.clone();
 		let ticket = job.ticket;
 		let generation = job.generation;
@@ -614,6 +642,7 @@ impl Images {
 							cache.as_ref(),
 							&services,
 							&job.cancel,
+							&security,
 						)
 						.await?,
 					),
@@ -734,6 +763,9 @@ impl Images {
 			e.info.version = VERSION.fetch_add(1, Ordering::Relaxed);
 			match done.result {
 				Ok(decoded) => {
+					for alias in &e.aliases {
+						self.blocked.remove(alias);
+					}
 					e.info.size = Some(decoded.intrinsic);
 					e.info.error = None;
 					e.svg = decoded.svg;
@@ -748,6 +780,14 @@ impl Images {
 					}
 				}
 				Err(error) => {
+					if let Some(required) = error
+						.downcast_ref::<crate::security::PermissionRequired>(
+					) {
+						for alias in &e.aliases {
+							self.blocked
+								.insert(alias.clone(), required.0.clone());
+						}
+					}
 					e.pdf = None;
 					e.info.error = Some(error.to_string());
 					self.resident.retain(|s, _| !e.aliases.contains(s));
@@ -898,6 +938,7 @@ impl Images {
 	/// Drops every decoded result of the closed document. `generation` moves so
 	/// a load already in flight for it cannot reappear as a current entry.
 	pub fn release(&mut self) {
+		self.blocked.clear();
 		self.entries.clear();
 		self.intrinsic.clear();
 		self.snapshot.pixels.replace(HashMap::new());

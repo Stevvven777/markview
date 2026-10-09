@@ -193,7 +193,9 @@ impl<P: super::SendEvent> App<P> {
 			return;
 		};
 		let (path, output) = (watch.source.clone(), watch.output.clone());
-		if self.readers.session.path.as_ref() != Some(&path) {
+		if self.readers.session.path.as_ref() != Some(&path)
+			|| self.readers.session.security.origin != watch.origin
+		{
 			return;
 		}
 		let settings = self.preferences.export.clone();
@@ -232,6 +234,8 @@ impl<P: super::SendEvent> App<P> {
 	) {
 		let proxy = self.proxy.clone();
 		let offline = self.args.offline;
+		let security = self.readers.session.security.clone();
+		self.export_source = Some((path.clone(), security.origin.clone()));
 		// The reader's own font set, so the export shapes with the personal
 		// download directory exactly like the display does.
 		let fonts = self.fonts_config.clone();
@@ -262,14 +266,14 @@ impl<P: super::SendEvent> App<P> {
 					match output.unwrap().recv().ok().flatten() {
 						Some(output) => run(
 							&path, &output, &settings, metadata, fonts, cjk,
-							&overrides, offline, services,
+							&overrides, offline, services, security,
 						),
 						None => ExportOutcome::Cancelled,
 					}
 				}
 				Destination::Path(output) => run(
 					&path, &output, &settings, metadata, fonts, cjk,
-					&overrides, offline, services,
+					&overrides, offline, services, security,
 				),
 			};
 			proxy.send(Event::Exported(Box::new(outcome)));
@@ -344,10 +348,11 @@ impl<P: super::SendEvent> App<P> {
 
 	/// Points the live export at a file that was just written.
 	fn arm_watch(&mut self, output: &Path) {
-		let Some(source) = self.readers.session.path.clone() else {
+		let Some((source, origin)) = self.export_source.clone() else {
 			return;
 		};
 		self.watch_export = Some(super::WatchExport {
+			origin,
 			source,
 			output: output.to_path_buf(),
 		});
@@ -625,6 +630,7 @@ fn run(
 	overrides: &[FontDefOverride],
 	offline: bool,
 	services: Arc<crate::services::Services>,
+	security: crate::security::Security,
 ) -> ExportOutcome {
 	match settings.format {
 		ExportFormat::Pdf => {
@@ -643,6 +649,7 @@ fn run(
 				}
 			};
 			args.metadata = metadata;
+			args.security = security;
 			match crate::pdf::export_with_services(&args, services) {
 				Ok(stats) => ExportOutcome::Written {
 					path: output.to_path_buf(),
@@ -690,7 +697,7 @@ fn run(
 				fonts,
 			);
 			match export::png_snapshot_with_services(
-				path, options, offline, services,
+				path, options, offline, services, security,
 			) {
 				Ok(snapshot) => ExportOutcome::PngReady {
 					snapshot: Box::new(snapshot),
@@ -781,6 +788,9 @@ mod tests {
 				&[],
 				false,
 				Arc::new(crate::services::Services::new(4)),
+				crate::security::Security::local(
+					crate::security::Trust::Trusted,
+				),
 			);
 			assert!(matches!(result, ExportOutcome::Written { .. }));
 			let bytes = std::fs::read(&output).unwrap();
@@ -792,5 +802,170 @@ mod tests {
 					.map(|i| &pdf[i..(i + 140).min(pdf.len())])
 			);
 		}
+	}
+}
+
+#[cfg(test)]
+mod security_tests {
+	use super::*;
+	use crate::security::{Resource, Security, Trust};
+
+	#[test]
+	fn desktop_exports_preserve_untrusted_resource_permissions() {
+		let dir = tempfile::tempdir().unwrap();
+		let source = dir.path().join("document.md");
+		let image_path = dir.path().join("picture.png");
+		image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]))
+			.save(&image_path)
+			.unwrap();
+		std::fs::write(&source, "# Document\n\n![image](picture.png)").unwrap();
+		for (security, expected_images) in [
+			(Security::local(Trust::Trusted), 1),
+			(Security::local(Trust::Untrusted), 0),
+			(
+				{
+					let mut security = Security::local(Trust::Untrusted);
+					security.grant(Resource::File(
+						std::fs::canonicalize(&image_path).unwrap(),
+					));
+					security
+				},
+				1,
+			),
+		] {
+			let output = dir.path().join("document.pdf");
+			let outcome = run(
+				&source,
+				&output,
+				&ExportSettings::default(),
+				Default::default(),
+				crate::test_support::fonts(),
+				CjkType::Sc,
+				&[],
+				true,
+				Arc::new(crate::services::Services::new(4)),
+				security.clone(),
+			);
+			if expected_images == 0 {
+				assert!(
+					matches!(outcome, ExportOutcome::Failed(ref error) if error.contains("Permission required"))
+				);
+			} else {
+				assert!(matches!(outcome, ExportOutcome::Written { .. }));
+			}
+			let pdf = lopdf::Document::load(&output).unwrap();
+			let images = pdf
+				.objects
+				.values()
+				.filter(|object| {
+					object
+						.as_dict()
+						.ok()
+						.or_else(|| {
+							object.as_stream().ok().map(|stream| &stream.dict)
+						})
+						.is_some_and(|dict| {
+							dict.get(b"Subtype").is_ok_and(|value| {
+								value
+									.as_name()
+									.is_ok_and(|name| name == b"Image")
+							})
+						})
+				})
+				.count();
+			if expected_images != 0 {
+				assert_eq!(images, expected_images);
+			}
+			let snapshot = export::png_snapshot_with_services(
+				&source,
+				crate::test_support::options(),
+				true,
+				Arc::new(crate::services::Services::new(4)),
+				security,
+			)
+			.unwrap();
+			assert_eq!(snapshot.images.decoded().len(), expected_images);
+		}
+	}
+	#[test]
+	fn live_exports_keep_the_initiating_origin_when_tabs_change() {
+		#[derive(Clone)]
+		struct Proxy(std::sync::mpsc::Sender<Event>);
+		impl super::super::SendEvent for Proxy {
+			fn try_send(&self, event: Event) -> bool {
+				self.0.send(event).is_ok()
+			}
+		}
+		let dir = tempfile::tempdir().unwrap();
+		let source = dir.path().join("document.md");
+		std::fs::write(&source, "# Document").unwrap();
+		let (send, receive) = std::sync::mpsc::channel();
+		let mut app = App::new(
+			crate::cli::LaunchOptions {
+				mode: crate::cli::Mode::Smoke,
+				options: crate::test_support::options(),
+				..Default::default()
+			},
+			Proxy(send),
+		);
+		app.open_document(source.clone(), Security::local(Trust::Untrusted));
+		app.export_rebuild = true;
+		app.export_watch_request = true;
+		app.export_running = true;
+		app.spawn_export(
+			source.clone(),
+			Destination::Path(dir.path().join("document.pdf")),
+			ExportSettings::default(),
+		);
+		app.open(source.clone());
+		loop {
+			if let Event::Exported(outcome) =
+				receive.recv_timeout(Duration::from_secs(10)).unwrap()
+			{
+				assert!(matches!(*outcome, ExportOutcome::Written { .. }));
+				app.export_finished(*outcome);
+				break;
+			}
+		}
+		assert_eq!(
+			app.watch_export.as_ref().unwrap().origin,
+			crate::security::Origin::Local(Trust::Untrusted)
+		);
+		app.start_watch_export();
+		assert!(!app.export_running);
+		app.close_tab(app.readers.active());
+		assert!(app.watch_export.is_some());
+		assert_eq!(
+			app.readers.session.security.origin.trust(),
+			Trust::Untrusted
+		);
+		let owner = app.readers.active();
+		app.open(source.clone());
+		let counterpart = app.readers.active();
+		app.select_tab(owner);
+		app.close_tab(counterpart);
+		assert!(app.watch_export.is_some());
+		let output = dir.path().join("document.pdf");
+		let original = std::fs::read(&output).unwrap();
+		std::fs::write(&source, "# Revised document").unwrap();
+		app.schedule_watch_export(&source);
+		assert!(app.watch_at.is_some());
+		app.start_watch_export();
+		assert!(app.export_running);
+		loop {
+			if let Event::Exported(outcome) =
+				receive.recv_timeout(Duration::from_secs(10)).unwrap()
+			{
+				assert!(matches!(*outcome, ExportOutcome::Written { .. }));
+				app.export_finished(*outcome);
+				break;
+			}
+		}
+		assert_ne!(std::fs::read(output).unwrap(), original);
+		let owner = app.readers.active();
+		app.open(source);
+		app.close_tab(owner);
+		assert!(app.watch_export.is_none());
+		assert!(app.watch_at.is_none());
 	}
 }

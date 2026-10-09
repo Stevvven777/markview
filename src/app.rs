@@ -20,6 +20,7 @@ mod painting;
 mod pointer;
 mod preferences;
 pub(crate) mod search;
+mod security;
 pub(crate) mod session;
 mod settings_load;
 mod single_instance;
@@ -78,10 +79,16 @@ enum Event {
 	#[cfg(target_os = "linux")]
 	SystemThemeChanged(Theme),
 	SettingsLoaded(Box<settings_load::Completion>),
+	ImageSelected {
+		document: Option<PathBuf>,
+		revision: u64,
+		source: String,
+		file: Option<PathBuf>,
+	},
 	WebLoaded {
 		url: String,
 		path: PathBuf,
-		result: anyhow::Result<String>,
+		result: anyhow::Result<crate::web_page::Article>,
 	},
 	#[cfg(windows)]
 	FrameFeedback,
@@ -104,6 +111,8 @@ enum Event {
 	AndroidConfiguration,
 	#[cfg(target_os = "android")]
 	AndroidOpenUrl(String),
+	#[cfg(target_os = "android")]
+	AndroidShared(PathBuf),
 	#[cfg(all(target_os = "android", debug_assertions))]
 	AndroidInspect(std::sync::mpsc::Sender<String>),
 	Exported(Box<ExportOutcome>),
@@ -131,6 +140,7 @@ enum ExportOutcome {
 
 /// One live export: the document it follows and the file it rewrites.
 pub(super) struct WatchExport {
+	pub(super) origin: crate::security::Origin,
 	pub(super) source: PathBuf,
 	pub(super) output: PathBuf,
 }
@@ -273,6 +283,7 @@ struct App<P = EventLoopProxy<Event>> {
 	/// An export is being prepared or written; one at a time.
 	export_running: bool,
 	export_thread: Option<std::thread::JoinHandle<()>>,
+	export_source: Option<(PathBuf, crate::security::Origin)>,
 	/// A PNG layout waiting to be drawn, one strip per frame.
 	png_export: Option<export::PngExport>,
 	/// The file a live export keeps rewriting, while the watch toggle is on.
@@ -422,6 +433,7 @@ impl<P: SendEvent> App<P> {
 			fatal: None,
 			export_running: false,
 			export_thread: None,
+			export_source: None,
 			png_export: None,
 			watch_export: None,
 			watch_at: None,

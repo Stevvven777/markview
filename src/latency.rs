@@ -178,6 +178,9 @@ fn submit(
 	requested: Instant,
 ) {
 	worker.submit(Request {
+		security: crate::security::Security::local(
+			crate::security::Trust::Trusted,
+		),
 		version,
 		content_version,
 		path: path.to_path_buf(),

@@ -17,6 +17,8 @@ const PREFIX_BYTES: usize = 64 * 1024;
 /// Text and geometry are accepted together by the UI.
 #[derive(Clone, Debug)]
 pub struct ReaderSnapshot {
+	pub blocked_images:
+		std::collections::HashMap<String, crate::security::Resource>,
 	pub document: Arc<document::Document>,
 	pub layout: LayoutSnapshot,
 	pub content_version: u64,
@@ -27,6 +29,7 @@ pub struct ReaderSnapshot {
 }
 #[derive(Clone)]
 pub struct Request {
+	pub security: crate::security::Security,
 	pub version: u64,
 	pub content_version: u64,
 	pub path: PathBuf,
@@ -242,6 +245,7 @@ impl Worker {
 						}
 						continue;
 					};
+					let mut request = request;
 					last = Some(request.clone());
 					let mut update = Update {
 						version: request.version,
@@ -259,11 +263,15 @@ impl Worker {
 								&cached && path == &request.path
 								&& *revision == request.content_version
 							{
+								request.security =
+									request.security.for_content(&doc.source);
 								doc.clone()
 							} else {
 								let start = Instant::now();
 								let text = read_document(&request.path)
 									.map_err(|e| format!("{e:#}"))?;
+								request.security =
+									request.security.for_content(&text);
 								update.read_ms =
 									start.elapsed().as_secs_f64() * 1000.0;
 								let start = Instant::now();
@@ -307,6 +315,9 @@ impl Worker {
 												.map_err(|e| {
 													format!("Fonts: {e:#}")
 												})?;
+											images.set_security(
+												request.security.clone(),
+											);
 											images.prepare(
 												&prefix,
 												&request.path,
@@ -355,6 +366,9 @@ impl Worker {
 													* 1000.0;
 												partial.result =
 													Some(Ok(ReaderSnapshot {
+														blocked_images: images
+															.blocked
+															.clone(),
 														document: Arc::new(
 															prefix,
 														),
@@ -405,6 +419,7 @@ impl Worker {
 									&request.options.stylesheet,
 								)
 								.map_err(|e| format!("Fonts: {e:#}"))?;
+							images.set_security(request.security.clone());
 							images.prepare(
 								&document,
 								&request.path,
@@ -446,6 +461,9 @@ impl Worker {
 													* 1000.;
 											partial.result =
 												Some(Ok(ReaderSnapshot {
+													blocked_images: images
+														.blocked
+														.clone(),
 													document: document.clone(),
 													layout: prefix.clone(),
 													content_version: request
@@ -464,6 +482,7 @@ impl Worker {
 							update.layout_ms =
 								start.elapsed().as_secs_f64() * 1000.0;
 							Ok(ReaderSnapshot {
+								blocked_images: images.blocked.clone(),
 								document,
 								layout,
 								content_version: request.content_version,
@@ -615,6 +634,9 @@ mod tests {
 		});
 		crate::test_support::poison(&worker.inbox.0);
 		worker.submit(Request {
+			security: crate::security::Security::local(
+				crate::security::Trust::Trusted,
+			),
 			version: 1,
 			content_version: 1,
 			path,
@@ -675,6 +697,9 @@ mod tests {
 			}
 		});
 		let request = Request {
+			security: crate::security::Security::local(
+				crate::security::Trust::Trusted,
+			),
 			version: 1,
 			content_version: 1,
 			path: path.clone(),
@@ -709,6 +734,9 @@ mod tests {
 		));
 		fs::write(&path, "Replacement").unwrap();
 		worker.submit(Request {
+			security: crate::security::Security::local(
+				crate::security::Trust::Trusted,
+			),
 			version: 2,
 			content_version: 2,
 			..request
@@ -736,6 +764,9 @@ mod tests {
 			tx.send(u).unwrap();
 		});
 		worker.submit(Request {
+			security: crate::security::Security::local(
+				crate::security::Trust::Trusted,
+			),
 			version: 1,
 			content_version: 1,
 			path,
@@ -779,6 +810,9 @@ mod tests {
 		});
 		for version in 1..=20 {
 			worker.submit(Request {
+				security: crate::security::Security::local(
+					crate::security::Trust::Trusted,
+				),
 				version,
 				content_version: 1,
 				path: path.clone(),
@@ -818,6 +852,9 @@ mod reflow_tests {
 		});
 		let submit = |version, content_version| {
 			worker.submit(Request {
+				security: crate::security::Security::local(
+					crate::security::Trust::Trusted,
+				),
 				version,
 				content_version,
 				path: path.clone(),
@@ -877,6 +914,9 @@ mod reflow_tests {
 			let _ = tx.send(u);
 		});
 		let request = |version| Request {
+			security: crate::security::Security::local(
+				crate::security::Trust::Trusted,
+			),
 			version,
 			content_version: 1,
 			path: path.clone(),
@@ -930,6 +970,9 @@ mod reflow_tests {
 		});
 		let submit = |version, path: &PathBuf| {
 			worker.submit(Request {
+				security: crate::security::Security::local(
+					crate::security::Trust::Trusted,
+				),
 				version,
 				content_version: 1,
 				path: path.clone(),

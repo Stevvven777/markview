@@ -210,12 +210,16 @@ impl<P: super::SendEvent> App<P> {
 				return;
 			}
 			Command::ModalConfirm => {
-				if let Some(Modal::OpenLocal { path, .. }) =
-					self.interaction.modal.clone()
-				{
-					self.interaction.modal = None;
+				if let Some(modal) = self.interaction.modal.take() {
 					self.interaction.focus = None;
-					self.launch(&path.display().to_string());
+					match modal {
+						Modal::OpenLocal { path, .. } => {
+							self.launch(&path.display().to_string())
+						}
+						Modal::Permission { resource, resume } => {
+							self.confirm_permission(resource, resume)
+						}
+					}
 				}
 				return;
 			}
@@ -904,7 +908,7 @@ impl<P: super::SendEvent> App<P> {
 			self.redraw();
 			return None;
 		}
-		self.open(path);
+		self.open_document(path, crate::security::Security::default());
 		self.readers.session.path.clone()
 	}
 

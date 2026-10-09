@@ -56,6 +56,14 @@ search to navigate within a document. Printing uses the export panel or
 `<details>` expand the enclosing sections. Duplicate targets resolve to the
 first occurrence.
 
+## Resource permissions
+
+Local files you open directly use Trusted resource permissions: supported relative images and ordinary intranet, VPN, or localhost images load automatically. Clipboard text and web articles use Untrusted permissions. Public images load in either mode; click a blocked image to approve its specific file or network destination. A relative image in pasted text asks you to choose the actual image file, because pasted text has no local directory.
+
+Opening a local Markdown link from Untrusted content asks for that document and keeps its Untrusted permissions. Authorizing a resource never changes the document's mode. Grants end when its content changes or its tab closes and are not saved in restored sessions. Load all lifts the image count limit and does not grant resource access.
+
+Opening a local web URL authorizes that origin for the page and its images; other local origins need separate approval. HTTP requests use direct connections and ignore system proxies. Both modes retain the same processing limits and OS-handler confirmations.
+
 ## Supported content
 
 Tables keep their alignment, fenced code is highlighted, footnotes are numbered

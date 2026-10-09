@@ -54,15 +54,23 @@ fn plain_share_title(title: &str) -> bool {
 		})
 }
 
+#[derive(Debug)]
+pub(crate) struct Article {
+	pub(crate) markdown: String,
+	pub(crate) security: crate::security::Security,
+}
+
 pub(crate) async fn load(
 	url: &str,
 	offline: bool,
 	headers: &reqwest::header::HeaderMap,
-) -> Result<String> {
+	mut security: crate::security::Security,
+) -> Result<Article> {
 	if offline {
 		bail!("Web pages are unavailable with --offline");
 	}
 	validate_url(url)?;
+	crate::net::grant_target(url, &mut security).await?;
 	let fetched = tokio::time::timeout(
 		Duration::from_secs(30),
 		crate::net::get(
@@ -71,14 +79,19 @@ pub(crate) async fn load(
 			crate::file::MAX_FILE_BYTES,
 			"Web page",
 			headers,
+			&security,
 		),
 	)
 	.await
 	.context("Web page download timed out")??;
 	let html = String::from_utf8(fetched.body)
 		.context("Experimental web reading currently requires UTF-8 HTML")?;
-	tokio::task::spawn_blocking(move || extract(&html, &fetched.final_url))
-		.await?
+	security.origin = crate::security::Origin::Web(fetched.final_url.clone());
+	let markdown =
+		tokio::task::spawn_blocking(move || extract(&html, &fetched.final_url))
+			.await??;
+	security.bind(&markdown);
+	Ok(Article { markdown, security })
 }
 
 fn extract(html: &str, url: &str) -> Result<String> {
@@ -496,7 +509,8 @@ mod tests {
 			load(
 				"https://example.org/",
 				true,
-				&reqwest::header::HeaderMap::new()
+				&reqwest::header::HeaderMap::new(),
+				crate::security::Security::default(),
 			)
 			.await
 			.unwrap_err()
@@ -507,13 +521,66 @@ mod tests {
 			load(
 				"file:///tmp/article.html",
 				false,
-				&reqwest::header::HeaderMap::new()
+				&reqwest::header::HeaderMap::new(),
+				crate::security::Security::default(),
 			)
 			.await
 			.is_err()
 		);
 		assert!(
 			extract("<html><body></body></html>", "https://example.org/")
+				.is_err()
+		);
+	}
+	#[tokio::test]
+	async fn explicit_local_page_grants_its_origin_and_stays_untrusted() {
+		use crate::security::{Origin, Security, Trust};
+		use tokio::io::{AsyncReadExt, AsyncWriteExt};
+		let listener =
+			tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+		let url = format!("http://{}/article", listener.local_addr().unwrap());
+		let response = tokio::spawn(async move {
+			let (mut socket, _) = listener.accept().await.unwrap();
+			let mut request = [0; 4096];
+			let n = socket.read(&mut request).await.unwrap();
+			assert!(n > 0);
+			let html = include_str!("../tests/fixtures/web-article.html");
+			socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len()).as_bytes()).await.unwrap();
+		});
+		let article = load(
+			&url,
+			false,
+			&reqwest::header::HeaderMap::new(),
+			Security::web(url.clone()),
+		)
+		.await
+		.unwrap();
+		response.await.unwrap();
+		assert!(article.markdown.contains("Native web reading"));
+		assert_eq!(article.security.origin, Origin::Web(url.clone()));
+		assert_eq!(article.security.origin.trust(), Trust::Untrusted);
+		assert!(
+			article
+				.security
+				.check_address(
+					&url::Url::parse(&url).unwrap(),
+					"127.0.0.1".parse().unwrap()
+				)
+				.is_ok()
+		);
+		assert!(
+			article
+				.security
+				.check_address(
+					&url::Url::parse("http://127.0.0.1:12345/image").unwrap(),
+					"127.0.0.1".parse().unwrap()
+				)
+				.is_err()
+		);
+		assert!(
+			article
+				.security
+				.check_file(std::path::Path::new("/tmp/image.png"))
 				.is_err()
 		);
 	}

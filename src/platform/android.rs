@@ -194,6 +194,11 @@ pub extern "system" fn Java_io_github_szdytom_markview_MarkviewActivity_nativeRe
 				crate::app::android::open_url(url);
 			}
 		}
+		6 => {
+			if let Some(path) = path {
+				crate::app::android::shared(PathBuf::from(path));
+			}
+		}
 		_ => unreachable!(),
 	}
 }

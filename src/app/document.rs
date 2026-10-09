@@ -44,13 +44,33 @@ impl<P: super::SendEvent> App<P> {
 			});
 	}
 	pub(super) fn open(&mut self, path: PathBuf) {
-		self.open_path(path, false);
+		self.open_document(
+			path,
+			crate::security::Security::local(crate::security::Trust::Trusted),
+		);
 	}
-	pub(super) fn open_pending(&mut self, path: PathBuf) {
-		self.open_path(path, true);
+	pub(super) fn open_document(
+		&mut self,
+		path: PathBuf,
+		security: crate::security::Security,
+	) {
+		self.open_path(path, false, security);
 	}
-	fn open_path(&mut self, path: PathBuf, web_loading: bool) {
+	pub(super) fn open_pending(
+		&mut self,
+		path: PathBuf,
+		security: crate::security::Security,
+	) {
+		self.open_path(path, true, security);
+	}
+	fn open_path(
+		&mut self,
+		path: PathBuf,
+		web_loading: bool,
+		security: crate::security::Security,
+	) {
 		self.restore_session();
+		self.interaction.modal = None;
 		self.clear_input_focus();
 		self.cancel_gestures();
 		self.abandon_dm();
@@ -62,7 +82,7 @@ impl<P: super::SendEvent> App<P> {
 			std::env::current_dir().unwrap_or_default().join(path)
 		};
 		let path = std::fs::canonicalize(&path).unwrap_or(path);
-		if let Some(index) = self.readers.find(&path) {
+		if let Some(index) = self.readers.find_origin(&path, &security.origin) {
 			self.select_tab(index);
 			if self.readers.session.load_error.take().is_some() {
 				self.request(false);
@@ -72,6 +92,7 @@ impl<P: super::SendEvent> App<P> {
 		self.close_search();
 		self.worker.cancel();
 		self.readers.open(path, Instant::now());
+		self.readers.session.security = security;
 		self.readers.session.web_loading = web_loading;
 		self.readers.session.layout_pending = true;
 		self.error = false;
@@ -87,6 +108,7 @@ impl<P: super::SendEvent> App<P> {
 	}
 	pub(super) fn new_page(&mut self) {
 		self.restore_session();
+		self.interaction.modal = None;
 		self.clear_input_focus();
 		self.cancel_gestures();
 		self.abandon_dm();
@@ -111,6 +133,7 @@ impl<P: super::SendEvent> App<P> {
 		self.redraw();
 	}
 	pub(super) fn select_tab(&mut self, index: usize) {
+		self.interaction.modal = None;
 		self.clear_input_focus();
 		self.cancel_gestures();
 		self.abandon_dm();
@@ -142,13 +165,30 @@ impl<P: super::SendEvent> App<P> {
 		self.redraw();
 	}
 	pub(super) fn close_tab(&mut self, index: usize) {
+		self.interaction.modal = None;
 		self.clear_input_focus();
 		self.cancel_gestures();
 		self.abandon_dm();
 		self.tab_strip.cancel_drag();
 		self.tab_strip.reveal_active = true;
-		let closed = self.readers.session.path.clone();
-		match self.readers.close(index, Instant::now()) {
+		let Some(closed) = self
+			.readers
+			.entries()
+			.get(index)
+			.map(|tab| tab.path.clone())
+		else {
+			return;
+		};
+		let origin = self.readers.session_mut(index).security.origin.clone();
+		let result = self.readers.close(index, Instant::now());
+		// A watched export belongs to the document and origin that chose it.
+		if self.watch_export.as_ref().is_some_and(|watch| {
+			watch.source == closed && watch.origin == origin
+		}) {
+			self.watch_export = None;
+			self.watch_at = None;
+		}
+		match result {
 			tabs::Closed::Missing => return,
 			tabs::Closed::Inactive if !self.readers.entries().is_empty() => {
 				self.redraw();
@@ -157,15 +197,6 @@ impl<P: super::SendEvent> App<P> {
 			tabs::Closed::Active | tabs::Closed::Inactive => {}
 		}
 		self.watch = None;
-		// A watched export belongs to the document that chose it.
-		if self
-			.watch_export
-			.as_ref()
-			.is_some_and(|watch| Some(&watch.source) == closed.as_ref())
-		{
-			self.watch_export = None;
-			self.watch_at = None;
-		}
 		if self.readers.entries().is_empty() {
 			// No tab is left, so the worker can drop the document it kept for
 			// the closed one instead of holding it until the next open. The

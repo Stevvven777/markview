@@ -35,6 +35,8 @@ const TEMP_AGE: Duration = Duration::from_secs(3600);
 /// What a stored response must remember to be reused or revalidated.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(super) struct Meta {
+	#[serde(default)]
+	security: Option<String>,
 	url: String,
 	/// The absolute URL that supplied `body` after redirects. Validators are
 	/// only reused for this resource; a missing field predates redirects
@@ -98,6 +100,7 @@ fn metadata(
 	// `Age` is ignored: this is a private cache, not a shared proxy chain.
 	let reference = headers.date.unwrap_or(now);
 	Meta {
+		security: None,
 		url: url.to_owned(),
 		final_url: final_url.to_owned(),
 		etag: headers.etag.clone(),
@@ -175,6 +178,7 @@ pub(super) fn directory() -> Option<PathBuf> {
 /// so a document without network images pays nothing.
 #[derive(Clone)]
 pub(super) struct Cache {
+	security: Option<String>,
 	root: PathBuf,
 	limit: u64,
 }
@@ -182,14 +186,27 @@ pub(super) struct Cache {
 impl Cache {
 	pub(super) fn new(root: PathBuf) -> Self {
 		Self {
+			security: None,
 			root,
 			limit: MAX_BYTES,
 		}
 	}
 
+	pub(super) fn with_security(
+		mut self,
+		security: &crate::security::Security,
+	) -> Self {
+		self.security = Some(security.cache_key());
+		self
+	}
+
 	#[cfg(test)]
 	fn with_limit(root: PathBuf, limit: u64) -> Self {
-		Self { root, limit }
+		Self {
+			root,
+			limit,
+			security: None,
+		}
 	}
 
 	/// Hashes the key to a file name. A collision would store another URL's
@@ -197,13 +214,14 @@ impl Cache {
 	fn path(&self, key: &str) -> PathBuf {
 		let mut hasher = DefaultHasher::new();
 		key.hash(&mut hasher);
+		self.security.hash(&mut hasher);
 		self.root.join(format!("{:016x}.img", hasher.finish()))
 	}
 
 	/// Reads only the header; a stale entry revalidates without its body.
 	fn load_meta(&self, key: &str) -> Option<Meta> {
 		let (_, meta) = open(&self.path(key)).ok()?;
-		(meta.url == key).then_some(meta)
+		(meta.url == key && meta.security == self.security).then_some(meta)
 	}
 
 	/// Reads a whole entry. The metadata and the body come from one open file,
@@ -211,7 +229,7 @@ impl Cache {
 	/// this entry's validators.
 	fn load_entry(&self, key: &str) -> Option<(Meta, Vec<u8>)> {
 		let (mut file, meta) = open(&self.path(key)).ok()?;
-		if meta.url != key {
+		if meta.url != key || meta.security != self.security {
 			return None;
 		}
 		// The source byte cap applies to a cached body exactly as to a fetched
@@ -244,7 +262,10 @@ impl Cache {
 
 	fn write(&self, key: &str, meta: &Meta, body: &[u8]) -> Result<()> {
 		fs::create_dir_all(&self.root).context("Create image cache")?;
-		let header = serde_json::to_vec(meta).context("Encode cache header")?;
+		let mut meta = meta.clone();
+		meta.security = self.security.clone();
+		let header =
+			serde_json::to_vec(&meta).context("Encode cache header")?;
 		// The name is random and the file is created exclusively, so a symlink
 		// planted in the cache directory is never written through. The
 		// `.tmp-` prefix stays, because [`Cache::evict`] is what reclaims a
@@ -510,7 +531,20 @@ pub(super) async fn fetch_http(
 	cache: Option<&Cache>,
 	services: &crate::services::Handle,
 	cancel: &tokio_util::sync::CancellationToken,
+	security: &crate::security::Security,
 ) -> Result<Vec<u8>> {
+	if !offline {
+		crate::net::check_access(url, security).await?;
+	}
+	let cache = cache.cloned().map(|cache| cache.with_security(security));
+	if !offline
+		&& let Some(cache) = &cache
+		&& let Some(meta) =
+			cache.disk(url, |cache, url| cache.load_meta(&url)).await?
+		&& meta.final_url() != url
+	{
+		crate::net::check_access(meta.final_url(), security).await?;
+	}
 	let get = |validators: Validators| {
 		let services = services.clone();
 		let cancel = cancel.clone();
@@ -521,12 +555,12 @@ pub(super) async fn fetch_http(
 			tokio::select! {
 				biased;
 				_ = cancel.cancelled() => bail!("Cancelled"),
-				result = crate::net::get(&url, &validators, super::source::MAX_BYTES as u64, "Image", &headers) => result,
+				result = crate::net::get(&url, &validators, super::source::MAX_BYTES as u64, "Image", &headers, security) => result,
 			}
 		}
 	};
 	match cache {
-		Some(cache) => fetch_cached(cache, url, offline, get).await,
+		Some(cache) => fetch_cached(&cache, url, offline, get).await,
 		None if offline => bail!("Network images disabled (--offline)"),
 		None => Ok(get(Validators::default()).await?.body),
 	}

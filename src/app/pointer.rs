@@ -323,6 +323,15 @@ impl<P: super::SendEvent> App<P> {
 		let Some((src, rect)) = self.image_at_cursor() else {
 			return;
 		};
+		if let Some(resource) =
+			self.readers.session.blocked_images.get(&src).cloned()
+		{
+			self.ask_permission(
+				resource,
+				crate::state::PermissionAction::Images,
+			);
+			return;
+		}
 		// The pixels the renderer already holds cap the fitting, so the
 		// viewer never promises a sharper picture than exists. A picture
 		// still decoding fits its laid-out rect instead.
@@ -398,23 +407,39 @@ impl<P: super::SendEvent> App<P> {
 			.path
 			.as_deref()
 			.and_then(std::path::Path::parent);
-		match crate::link::resolve(url, directory) {
+		match crate::link::resolve_for(
+			url,
+			directory,
+			&self.readers.session.security,
+		) {
 			Some(link::Target::Markdown(path)) => {
-				if background {
-					if let Some(index) = self.readers.find(&path) {
-						self.readers.queue_anchor(index, fragment);
-						if index == self.readers.active() {
-							self.apply_anchor();
-						}
-						self.redraw();
-					} else if self.readers.open_background(path, fragment) {
-						self.redraw();
-					}
+				let placement = if background {
+					state::TabPlacement::Background
 				} else {
-					self.open(path);
-					if let Some(fragment) = fragment {
-						self.goto_anchor(fragment);
-					}
+					state::TabPlacement::Foreground
+				};
+				let trust = self.readers.session.security.origin.trust();
+				if let Err(error) =
+					self.readers.session.security.check_file(&path)
+				{
+					let required = error
+						.downcast_ref::<crate::security::PermissionRequired>()
+						.unwrap();
+					self.ask_permission(
+						required.0.clone(),
+						state::PermissionAction::Markdown {
+							path,
+							anchor: fragment,
+							placement,
+						},
+					);
+				} else {
+					self.open_markdown(
+						path,
+						fragment,
+						placement,
+						crate::security::Security::local(trust),
+					);
 				}
 			}
 			Some(link::Target::Remote(link)) => self.launch(&link),

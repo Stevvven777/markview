@@ -391,6 +391,7 @@ fn update(
 		version: 1,
 		path,
 		result: Some(Ok(ReaderSnapshot {
+			blocked_images: Default::default(),
 			document,
 			layout,
 			content_version,
@@ -1256,6 +1257,7 @@ fn document_thumb_drag_cancels_restoration_during_reflow() {
 		let viewport = app.viewport();
 		app.readers.session.accept(
 			ReaderSnapshot {
+				blocked_images: Default::default(),
 				document: document.clone(),
 				layout: full.clone(),
 				content_version: 1,

@@ -280,3 +280,12 @@ status_web_offline = "オフライン：Web ページを読み込めません"
 empty_paste_hint = "Markdown 文書や HTTP(S) リンクを貼り付け（{shortcut}）"
 empty_url_placeholder = "HTTP(S) リンクを入力"
 empty_open_url = "リンクを開く"
+
+# Document resource permissions.
+permission_title = "このリソースを許可しますか？"
+permission_file = "Markview でこのファイルを読み込みます。"
+permission_network = "この接続先へのリクエストを許可します。"
+permission_scope = "文書が変更または閉じられると\n許可は失効します。"
+permission_allow = "許可"
+permission_cancel = "キャンセル"
+permission_select_image = "画像ファイルを選択してください。\n貼り付けた文書には保存先がありません。"

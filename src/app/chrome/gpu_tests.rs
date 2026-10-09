@@ -382,7 +382,20 @@ fn notice_strip_and_confirmation_frames() -> Result<()> {
 			cursor: (620.0, 300.0),
 			..Default::default()
 		};
+		let permission = InteractionState {
+			modal: Some(Modal::Permission {
+				resource: crate::security::Resource::Network {
+					origin: "http://localhost:8080".into(),
+					class: crate::security::AddressClass::Loopback,
+				},
+				resume: crate::state::PermissionAction::Images,
+			}),
+			focus_visible: true,
+			focus: Some(Command::ModalDismiss),
+			..Default::default()
+		};
 		for (interaction, name) in [
+			(&permission, "resource-permission"),
 			(&relative, "confirm-modal"),
 			// A far target has no short relative form; its front is elided.
 			(
@@ -422,6 +435,39 @@ fn notice_strip_and_confirmation_frames() -> Result<()> {
 			renderer.save_png(
 				&target,
 				&directory.join(format!("{name}-{suffix}.png")),
+			)?;
+		}
+		for lang in [Lang::En, Lang::ZhHans, Lang::ZhHant, Lang::Ja] {
+			let narrow = InteractionState {
+				modal: Some(Modal::Permission {
+					resource: crate::security::Resource::SelectImage(
+						"image.png".into(),
+					),
+					resume: crate::state::PermissionAction::Images,
+				}),
+				focus_visible: true,
+				focus: Some(Command::ModalDismiss),
+				..Default::default()
+			};
+			let overlay =
+				modal::draw_modal(&mut ui, &narrow, 360.0, 640.0, lang);
+			let target = renderer.offscreen(450, 800);
+			let submission = renderer.render(
+				&snapshot,
+				&View {
+					width: 450,
+					height: 800,
+					..view(TOP + 10.0)
+				},
+				&overlay,
+				&target.create_view(&Default::default()),
+			)?;
+			renderer.wait(Some(submission))?;
+			renderer.save_png(
+				&target,
+				&directory.join(format!(
+					"resource-permission-narrow-{lang:?}-{suffix}.png"
+				)),
 			)?;
 		}
 	}

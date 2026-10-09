@@ -278,3 +278,12 @@ status_web_offline = "离线：无法加载网页"
 empty_paste_hint = "粘贴 Markdown 文档或 HTTP(S) 链接（{shortcut}）"
 empty_url_placeholder = "输入 HTTP(S) 链接"
 empty_open_url = "打开链接"
+
+# Document resource permissions.
+permission_title = "允许访问此资源？"
+permission_file = "在 Markview 中读取此文件。"
+permission_network = "允许向此网络目标发送请求。"
+permission_scope = "授权将在文档更改或关闭时失效。"
+permission_allow = "允许"
+permission_cancel = "取消"
+permission_select_image = "请选择要读取的图片文件。\n粘贴文本没有本地目录。"

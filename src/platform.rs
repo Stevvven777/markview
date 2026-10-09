@@ -224,6 +224,24 @@ impl Clipboard {
 	}
 }
 
+pub(crate) fn pick_image(
+	done: impl FnOnce(Option<std::path::PathBuf>) + Send + 'static,
+) {
+	#[cfg(not(target_os = "android"))]
+	std::thread::spawn(move || {
+		done(
+			rfd::FileDialog::new()
+				.add_filter(
+					"Images",
+					&["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"],
+				)
+				.pick_file(),
+		)
+	});
+	#[cfg(target_os = "android")]
+	android::pick_document(done);
+}
+
 pub(crate) fn pick_document(
 	done: impl FnOnce(Option<std::path::PathBuf>) + Send + 'static,
 ) {

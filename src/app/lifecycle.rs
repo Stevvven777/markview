@@ -208,6 +208,32 @@ impl<P: super::SendEvent> App<P> {
 				self.settings_loaded(*completion)
 			}
 			Event::SearchReady(result) => self.search_ready(result),
+			Event::ImageSelected {
+				document,
+				revision,
+				source,
+				file,
+			} => {
+				self.dialog_open = false;
+				if self.readers.session.path == document
+					&& self.readers.session.content_version == revision
+					&& self.readers.session.security.origin
+						== crate::security::Origin::Clipboard
+					&& let Some(path) = file
+				{
+					let path = std::fs::canonicalize(&path).unwrap_or(path);
+					self.readers.session.security.grant(
+						crate::security::Resource::SelectedImage {
+							source,
+							path,
+						},
+					);
+					if let Some(document) = &self.readers.session.document {
+						self.readers.session.security.bind(&document.source);
+					}
+					self.request(false);
+				}
+			}
 			Event::WebLoaded { url, path, result } => {
 				self.web_page_loaded(url, path, result)
 			}
@@ -270,12 +296,22 @@ impl<P: super::SendEvent> App<P> {
 			}
 			#[cfg(target_os = "android")]
 			Event::AndroidOpenUrl(url) => self.open_web_page(url),
+			#[cfg(target_os = "android")]
+			Event::AndroidShared(path) => {
+				self.open_document(path, crate::security::Security::default());
+				self.readers.session.content_version += 1;
+				self.readers.session.security.revoke();
+				self.request(false);
+			}
 			Event::Changed(path)
 				if self.readers.session.path.as_ref() == Some(&path) =>
 			{
 				self.cancel_gestures();
 				self.abandon_dm();
 				self.readers.session.content_version += 1;
+				self.readers.session.security.revoke();
+				self.readers.session.blocked_images.clear();
+				self.interaction.modal = None;
 				self.readers.session.load_error = None;
 				self.readers.session.parse_complete = false;
 				self.readers.session.search.retained = self

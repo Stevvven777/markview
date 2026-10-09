@@ -191,6 +191,9 @@ pub fn run(
 		let doc = document::parse(text);
 		let parse_ms = t.elapsed().as_secs_f64() * 1000.0;
 		let image_start = Instant::now();
+		images.set_security(crate::security::Security::local(
+			crate::security::Trust::Trusted,
+		));
 		images.prepare(
 			&doc,
 			path,

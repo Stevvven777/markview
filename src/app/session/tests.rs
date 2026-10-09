@@ -203,6 +203,7 @@ fn accept(
 	}
 	session.accept(
 		ReaderSnapshot {
+			blocked_images: Default::default(),
 			document: doc,
 			layout,
 			content_version: 1,
@@ -336,6 +337,7 @@ fn disclosures_apply_before_layout_and_changed_content_discards_overrides() {
 		version: 1,
 		active: 0,
 		tabs: vec![SavedTab {
+			origin: legacy_origin(),
 			path: path.clone(),
 			reading: saved,
 		}],
@@ -416,10 +418,12 @@ fn external_open_before_window_creation_restores_then_selects_the_requested_tab(
 		active: 0,
 		tabs: vec![
 			SavedTab {
+				origin: legacy_origin(),
 				path: a,
 				reading: Reading::default(),
 			},
 			SavedTab {
+				origin: legacy_origin(),
 				path: b.clone(),
 				reading: Reading::default(),
 			},
@@ -486,4 +490,35 @@ fn block_relative_and_text_positions_roundtrip_without_shifting() {
 		accept(&mut restored, &source, &options, true);
 		assert!((restored.scrolling.offset - scroll).abs() < 0.01);
 	}
+}
+
+#[test]
+fn restoration_keeps_modes_for_the_same_path_and_discards_resource_grants() {
+	use crate::security::{Origin, Resource, Security, Trust};
+	let dir = tempfile::tempdir().unwrap();
+	let path = document(dir.path(), "local.md");
+	let image = dir.path().join("image.png");
+	let mut tabs = Tabs::default();
+	tabs.open(path.clone(), Instant::now());
+	tabs.open(path.clone(), Instant::now());
+	tabs.session.security = Security::local(Trust::Untrusted);
+	tabs.session.security.grant(Resource::File(image.clone()));
+	let saved = tabs.capture_session(&dir.path().join("paste"));
+	let session_path = dir.path().join("session.json");
+	saved.write(&session_path).unwrap();
+	let encoded = fs::read_to_string(&session_path).unwrap();
+	assert!(!encoded.contains("image.png"));
+	let mut restored = Tabs::default();
+	restored.restore_session(Session::read(&session_path).unwrap());
+	assert_eq!(restored.entries().len(), 2);
+	assert_eq!(
+		restored.session.security.origin,
+		Origin::Local(Trust::Untrusted)
+	);
+	assert!(restored.session.security.check_file(&image).is_err());
+	restored.select(0, Instant::now());
+	assert_eq!(
+		restored.session.security.origin,
+		Origin::Local(Trust::Trusted)
+	);
 }

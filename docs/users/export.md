@@ -49,3 +49,17 @@ The PDF information dictionary takes `--title`, `--author` (repeat it for
 several authors), `--subject`, `--keywords`, `--language` and `--creator`.
 Nothing else is invented, and no creation or modification date is ever written,
 which is what keeps two exports of one document byte for byte identical.
+
+## Resource permissions
+
+Exports from the reader preserve the document's resource permissions. Directly opened local files use Trusted defaults; clipboard and web exports keep their Untrusted mode and current grants. PDF export fails when an image cannot be read, leaving any previous output intact; PNG keeps a placeholder for the blocked image.
+
+CLI PDF inputs default to Trusted. For an Untrusted local input, select its mode and authorize only the required resources:
+
+```sh
+markview pdf article.md -o article.pdf --document-trust untrusted
+markview pdf article.md -o article.pdf --document-trust untrusted --allow-local-image ./diagram.png
+markview pdf article.md -o article.pdf --document-trust untrusted --allow-network loopback=http://localhost:8080
+```
+
+Both grant options repeat. A network grant names an origin (scheme, host, effective port) and a class: `private`, `loopback`, or `link-local`. It does not authorize other origins or address classes. `--offline` opens no network connections and grants no additional cache access. Grants apply to the initial document content; a changed source in `--watch` revokes them, so an Untrusted job needing them must be restarted with explicit grants.

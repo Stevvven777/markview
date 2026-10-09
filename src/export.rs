@@ -57,6 +57,7 @@ pub(crate) struct PageOverrides {
 }
 /// A PDF job shared by desktop and CLI adapters, independent of launch state.
 pub(crate) struct PdfRequest {
+	pub(crate) security: crate::security::Security,
 	pub(crate) path: PathBuf,
 	pub(crate) output: PathBuf,
 	pub(crate) options: LayoutOptions,
@@ -140,6 +141,9 @@ pub(crate) fn pdf_request(
 ) -> Result<PdfRequest> {
 	let stylesheet = export_stylesheet(&settings.style, cjk, overrides)?;
 	Ok(PdfRequest {
+		security: crate::security::Security::local(
+			crate::security::Trust::Trusted,
+		),
 		offline,
 		path,
 		output,
@@ -168,6 +172,7 @@ pub(crate) fn png_snapshot(
 		options,
 		offline,
 		std::sync::Arc::new(crate::services::Services::new(4)),
+		crate::security::Security::local(crate::security::Trust::Trusted),
 	)
 }
 pub(crate) fn png_snapshot_with_services(
@@ -175,9 +180,10 @@ pub(crate) fn png_snapshot_with_services(
 	options: LayoutOptions,
 	offline: bool,
 	services: std::sync::Arc<crate::services::Services>,
+	security: crate::security::Security,
 ) -> Result<LayoutSnapshot> {
 	let text = read_document(path)?;
-	png_snapshot_text(path, &text, options, offline, services)
+	png_snapshot_text(path, &text, options, offline, services, security)
 }
 
 pub(crate) fn png_snapshot_text(
@@ -186,6 +192,7 @@ pub(crate) fn png_snapshot_text(
 	options: LayoutOptions,
 	offline: bool,
 	services: Arc<crate::services::Services>,
+	security: crate::security::Security,
 ) -> Result<LayoutSnapshot> {
 	let mut engine = LayoutEngine::with_executor(
 		services.handle.cpu.clone(),
@@ -194,6 +201,7 @@ pub(crate) fn png_snapshot_text(
 	engine.validate_stylesheet(&options.stylesheet)?;
 	let document = document::parse(text.to_owned());
 	let mut images = Images::shared(offline, options.fonts.clone(), &services);
+	images.set_security(security.for_content(&document.source));
 	images.prepare(
 		&document,
 		path,

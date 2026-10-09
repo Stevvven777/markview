@@ -1,4 +1,4 @@
-//! The confirmation for a local file whose type is not known to be inert.
+//! Confirmations for resource permissions and external local files.
 use super::super::Button;
 use super::controls::{ICON_BUTTON, draw_button};
 use super::icons;
@@ -198,18 +198,34 @@ pub(in crate::app) fn modal_buttons(
 	}
 	let rect = modal_rect(width, height);
 	let close = ICON_BUTTON;
-	let folder = button_width(shaper, lang.modal_open_folder());
-	let anyway = button_width(shaper, lang.modal_open_anyway());
+	let permission =
+		matches!(interaction.modal, Some(Modal::Permission { .. }));
+	let cancel_label = if permission {
+		lang.permission_cancel()
+	} else {
+		lang.modal_open_folder()
+	};
+	let allow_label = if permission {
+		lang.permission_allow()
+	} else {
+		lang.modal_open_anyway()
+	};
+	let folder = button_width(shaper, cancel_label);
+	let anyway = button_width(shaper, allow_label);
 	let row = rect.y + rect.h - 46.0;
 	vec![
 		Button {
-			label: (lang.modal_open_folder()).into(),
+			label: cancel_label.into(),
 			icon: None,
 			marker: None,
 			active: false,
 			kind: Default::default(),
 			enabled: true,
-			action: Command::ModalOpenFolder,
+			action: if permission {
+				Command::ModalDismiss
+			} else {
+				Command::ModalOpenFolder
+			},
 			rect: Rect {
 				x: rect.x + rect.w - 20.0 - folder,
 				y: row,
@@ -218,7 +234,7 @@ pub(in crate::app) fn modal_buttons(
 			},
 		},
 		Button {
-			label: (lang.modal_open_anyway()).into(),
+			label: allow_label.into(),
 			icon: None,
 			marker: None,
 			active: false,
@@ -257,6 +273,45 @@ pub(in crate::app) fn draw_modal(
 	height: f32,
 	lang: Lang,
 ) -> Vec<Draw> {
+	if let Some(Modal::Permission { resource, .. }) = &interaction.modal {
+		shaper.appearance = panel_appearance(shaper);
+		let rect = modal_rect(width, height);
+		let text = Paint::Styled(Condition::Panel, C::Color);
+		let muted = Paint::Styled(Condition::Panel, C::Muted);
+		let x = rect.x + 20.0;
+		let mut out = super::components::frame(rect, width, height);
+		let title = shaper.fit(lang.permission_title(), 20.0, rect.w - 80.0);
+		out.extend(shaper.label(&title, 20.0, x, rect.y + 36.0, text));
+		let shown = shaper.fit(&resource.to_string(), PATH_SIZE, rect.w - 70.0);
+		out.extend(shaper.label(&shown, PATH_SIZE, x, rect.y + 62.0, muted));
+		let description = match resource {
+			crate::security::Resource::File(_)
+			| crate::security::Resource::SelectedImage { .. } => lang.permission_file(),
+			crate::security::Resource::SelectImage(_) => {
+				lang.permission_select_image()
+			}
+			crate::security::Resource::Network { .. } => {
+				lang.permission_network()
+			}
+		};
+		for (i, line) in description
+			.lines()
+			.chain(lang.permission_scope().lines())
+			.enumerate()
+		{
+			out.extend(shaper.label(
+				line,
+				13.0,
+				x,
+				rect.y + 94.0 + i as f32 * 20.0,
+				muted,
+			));
+		}
+		for button in modal_buttons(shaper, interaction, width, height, lang) {
+			out.extend(draw_button(shaper, interaction, &button, true));
+		}
+		return out;
+	}
 	let Some(Modal::OpenLocal {
 		path, document_dir, ..
 	}) = &interaction.modal

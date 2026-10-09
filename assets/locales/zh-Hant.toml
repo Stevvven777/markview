@@ -280,3 +280,12 @@ status_web_offline = "離線：無法載入網頁"
 empty_paste_hint = "貼上 Markdown 文件或 HTTP(S) 連結（{shortcut}）"
 empty_url_placeholder = "輸入 HTTP(S) 連結"
 empty_open_url = "開啟連結"
+
+# Document resource permissions.
+permission_title = "允許存取此資源？"
+permission_file = "在 Markview 中讀取此檔案。"
+permission_network = "允許向此網路目標傳送請求。"
+permission_scope = "授權將在文件變更或關閉時失效。"
+permission_allow = "允許"
+permission_cancel = "取消"
+permission_select_image = "請選擇要讀取的圖片檔案。\n貼上文字沒有本機目錄。"

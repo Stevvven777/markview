@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run Markview integration tests on an Android emulator and keep screenshots."""
+import hashlib
 import argparse
 from functools import partial
 import os
@@ -58,12 +59,14 @@ def main():
     adb("shell", "run-as", "io.github.szdytom.markview", "rm", "-rf", "files/markview/cache/images")
     if not args.online:
         url = "https://raw.githubusercontent.com/szdytom/markview/main/assets/markview-icon-color.svg"
+        # Match the Trusted local-file cache partition; grants are absent.
+        security = hashlib.sha256(b'{"origin":{"Local":"Trusted"},"grants":[],"content":null}').hexdigest()
         helper = build / "cache-key.rs"
-        helper.write_text('use std::hash::{Hash,Hasher}; fn main(){ let mut h=std::collections::hash_map::DefaultHasher::new(); std::env::args().nth(1).unwrap().hash(&mut h); println!("{:016x}.img",h.finish()); }')
+        helper.write_text('use std::hash::{Hash,Hasher}; fn main(){ let mut h=std::collections::hash_map::DefaultHasher::new(); let mut args=std::env::args().skip(1); args.next().unwrap().hash(&mut h); Some(args.next().unwrap()).hash(&mut h); println!("{:016x}.img",h.finish()); }')
         run("rustc", "--crate-name", "cache_key", helper, "-o", build / "cache-key")
-        name = subprocess.check_output([str(build / "cache-key"), url], text=True).strip()
+        name = subprocess.check_output([str(build / "cache-key"), url, security], text=True).strip()
         body = (ROOT / "assets/markview-icon-color.svg").read_bytes()
-        header = json.dumps(dict(url=url, final_url=url, etag=None, last_modified=None, lifetime=3600, date=int(time.time()), no_cache=False, bytes=len(body))).encode()
+        header = json.dumps(dict(security=security, url=url, final_url=url, etag=None, last_modified=None, lifetime=3600, date=int(time.time()), no_cache=False, bytes=len(body))).encode()
         fixture = build / name
         fixture.write_bytes(b"MARKVIEW-CACHE/1\n" + struct.pack("<I", len(header)) + header + body)
         adb("push", fixture, "/data/local/tmp/" + name)

@@ -12,7 +12,7 @@ impl<P: super::SendEvent> App<P> {
 			.and_then(|url| url.host_str())
 			.unwrap_or(&url);
 		let path = if let Some(path) = self.web_pages.get(&url).cloned()
-			&& let Some(index) = self.readers.find(&path)
+			&& let Some(index) = self.readers.find_web(&path)
 		{
 			self.select_tab(index);
 			if self.readers.session.load_error.is_none() {
@@ -26,7 +26,10 @@ impl<P: super::SendEvent> App<P> {
 			path
 		} else {
 			let path = self.temporary_path(title);
-			self.open_pending(path.clone());
+			self.open_pending(
+				path.clone(),
+				crate::security::Security::web(url.clone()),
+			);
 			path
 		};
 		self.web_pages.insert(url.clone(), path.clone());
@@ -39,6 +42,7 @@ impl<P: super::SendEvent> App<P> {
 			self.web_page_loaded(url, path, Err(anyhow::anyhow!(message)));
 			return;
 		}
+		let security = self.readers.session.security.clone();
 		let proxy = self.proxy.clone();
 		let handle = self.services.handle.clone();
 		let cancel = handle.cancel.clone();
@@ -47,7 +51,13 @@ impl<P: super::SendEvent> App<P> {
 		if !handle.clone().submit(async move {
 			let result = async {
 				let _permit = handle.permit(&cancel).await?;
-				crate::web_page::load(&url, false, &handle.http_headers()).await
+				crate::web_page::load(
+					&url,
+					false,
+					&handle.http_headers(),
+					security,
+				)
+				.await
 			};
 			tokio::select! {
 				biased;
@@ -67,15 +77,17 @@ impl<P: super::SendEvent> App<P> {
 		&mut self,
 		url: String,
 		path: PathBuf,
-		result: anyhow::Result<String>,
+		result: anyhow::Result<crate::web_page::Article>,
 	) {
 		if self.web_pages.get(&url) != Some(&path) {
 			return;
 		}
-		let Some(index) = self.readers.find(&path) else {
+		let Some(index) = self.readers.find_web(&path) else {
 			return;
 		};
-		let result = result.and_then(|markdown| {
+		let result = result.and_then(|article| {
+			let markdown = article.markdown;
+			self.readers.session_mut(index).security = article.security;
 			let title = crate::paste::title_for(
 				&markdown,
 				self.preferences.values.lang(),
@@ -95,6 +107,15 @@ impl<P: super::SendEvent> App<P> {
 				}
 			}
 			Err(error) => {
+				if index == self.readers.active()
+					&& let Some(required) = error
+						.downcast_ref::<crate::security::PermissionRequired>(
+					) {
+					self.ask_permission(
+						required.0.clone(),
+						crate::state::PermissionAction::Web(url),
+					);
+				}
 				let message = self
 					.preferences
 					.values

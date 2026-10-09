@@ -239,6 +239,10 @@ pub(crate) enum PanelTab {
 /// A blocking question awaiting the reader's answer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Modal {
+	Permission {
+		resource: crate::security::Resource,
+		resume: PermissionAction,
+	},
 	/// A local file whose type is not on the inert allowlist.
 	OpenLocal {
 		path: PathBuf,
@@ -247,6 +251,22 @@ pub(crate) enum Modal {
 		/// The open document's directory, for a shorter relative display.
 		document_dir: Option<PathBuf>,
 	},
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum PermissionAction {
+	Images,
+	Markdown {
+		path: PathBuf,
+		anchor: Option<String>,
+		placement: TabPlacement,
+	},
+	Web(String),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TabPlacement {
+	Foreground,
+	Background,
 }
 
 /// The full-size image viewer an opened image floats in.
@@ -443,6 +463,8 @@ impl Dropdown {
 
 #[derive(Default, Clone)]
 pub(crate) struct ReaderSession {
+	pub(crate) security: crate::security::Security,
+	pub(crate) blocked_images: HashMap<String, crate::security::Resource>,
 	pub(crate) search: crate::app::search::SearchState,
 	pub(crate) parse_complete: bool,
 	pub(crate) export_title: markview_core::text_input::TextInput,
@@ -1157,6 +1179,9 @@ impl ReaderSession {
 				self.follow_update,
 			)
 		};
+		if reader.parse_complete {
+			self.security = self.security.for_content(&reader.document.source);
+		}
 		self.accepted_content_id = reader.document.content_id;
 		self.document = Some(reader.document);
 		self.snapshot = reader.layout;
@@ -1164,6 +1189,7 @@ impl ReaderSession {
 		self.snapshot_complete = reader.complete;
 		self.parse_complete = reader.parse_complete;
 		self.remote_deferred = reader.remote_deferred;
+		self.blocked_images = reader.blocked_images;
 		self.resolve_scroll(viewport);
 		self.accepted_revision = reader.content_version;
 		self.follow_update = false;

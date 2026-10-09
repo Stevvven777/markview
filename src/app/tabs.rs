@@ -30,6 +30,8 @@ impl Tabs {
 		reading: super::session::Reading,
 	) -> usize {
 		let mut tab = ReaderTab::new(path.clone());
+		tab.session.security =
+			crate::security::Security::local(crate::security::Trust::Trusted);
 		tab.session.path = Some(path);
 		tab.session.content_version = 1;
 		tab.session.details_open = std::sync::Arc::new(reading.details.clone());
@@ -88,8 +90,39 @@ impl Tabs {
 		}
 		true
 	}
+	#[cfg(test)]
 	pub(super) fn find(&self, path: &std::path::Path) -> Option<usize> {
 		self.entries.iter().position(|tab| tab.path == path)
+	}
+	pub(super) fn find_web(&self, path: &std::path::Path) -> Option<usize> {
+		self.entries.iter().enumerate().find_map(|(index, tab)| {
+			let session = if index == self.active() {
+				&self.session
+			} else {
+				&tab.session
+			};
+			(tab.path == path
+				&& matches!(
+					session.security.origin,
+					crate::security::Origin::Web(_)
+				))
+			.then_some(index)
+		})
+	}
+	pub(super) fn find_origin(
+		&self,
+		path: &std::path::Path,
+		origin: &crate::security::Origin,
+	) -> Option<usize> {
+		self.entries.iter().enumerate().find_map(|(index, tab)| {
+			let session = if index == self.active() {
+				&self.session
+			} else {
+				&tab.session
+			};
+			(tab.path == path && &session.security.origin == origin)
+				.then_some(index)
+		})
 	}
 	pub(super) fn open(&mut self, path: PathBuf, now: Instant) {
 		// A switch ends whatever scroll was in flight in the old document.
@@ -109,6 +142,8 @@ impl Tabs {
 			self.active = self.entries.len() - 1;
 		}
 		self.session.path = Some(path);
+		self.session.security =
+			crate::security::Security::local(crate::security::Trust::Trusted);
 		self.session.content_version += 1;
 		// A different document starts capped again.
 		self.session.load_all_images = false;
@@ -119,12 +154,27 @@ impl Tabs {
 		self.session.horizontal.clear();
 	}
 	/// Queue a tab for first use without disturbing the active reader or worker.
+	#[cfg(test)]
 	pub(super) fn open_background(
 		&mut self,
 		path: PathBuf,
 		anchor: Option<String>,
 	) -> bool {
-		if self.session.path.is_none() || self.find(&path).is_some() {
+		self.open_background_secure(
+			path,
+			anchor,
+			crate::security::Security::local(crate::security::Trust::Trusted),
+		)
+	}
+	pub(super) fn open_background_secure(
+		&mut self,
+		path: PathBuf,
+		anchor: Option<String>,
+		security: crate::security::Security,
+	) -> bool {
+		if self.session.path.is_none()
+			|| self.find_origin(&path, &security.origin).is_some()
+		{
 			return false;
 		}
 		let mut tab = ReaderTab::new(path.clone());
@@ -133,6 +183,7 @@ impl Tabs {
 		tab.session.load_all_images = false;
 		tab.session.remote_notice_dismissed = false;
 		tab.session.pending_anchor = anchor;
+		tab.session.security = security;
 		self.entries.push(tab);
 		true
 	}
@@ -213,6 +264,7 @@ impl Tabs {
 		self.session.requested_options = Some(options.clone());
 		self.session.layout_pending = true;
 		Some(Request {
+			security: self.session.security.clone(),
 			version: self.session.version,
 			content_version: self.session.content_version,
 			path,

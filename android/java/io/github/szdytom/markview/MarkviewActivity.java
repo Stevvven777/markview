@@ -107,8 +107,8 @@ public class MarkviewActivity extends NativeActivity {
                         File file = new File(getFilesDir(), "shared/Shared.md");
                         file.getParentFile().mkdirs();
                         Files.write(file.toPath(), text.getBytes(StandardCharsets.UTF_8));
-                        deliver(0, file.getAbsolutePath());
-                    } catch (Exception error) { fail(error, 0); }
+                        deliver(6, file.getAbsolutePath());
+                    } catch (Exception error) { fail(error, 6); }
                 });
                 return;
             }

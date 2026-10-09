@@ -24,6 +24,7 @@ at the same level, without `[brackets]`.
 ### Changed
 
 - Share PNG rendering and encoding across callers, and accept in-memory Markdown for PDF and PNG export.
+- Enforce enum-based document trust, scoped resource grants, origin-preserving tabs and exports, and permission-aware image caches; add PDF trust and grant options.
 - Define Trusted local-file and Untrusted clipboard/web modes, origin-preserving navigation and target authorization in the threat model; distinguish the design from current enforcement.
 - Refresh README imagery and source credits for the Cyberspace Independence Declaration, Open Access Manifesto and revised Rust excerpts.
 - Add localized four-panel README previews from the Open Access Manifesto, the Rust Book, OpenStax's Stokes' theorem and Wikipedia web extraction, with source and license credits.
@@ -50,6 +51,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Preserve non-UTF-8 filesystem grants in image cache partitions and keep live exports when closing another origin's tab.
 - Keep Android CI device logs alive across web-fixture setup by restarting adb before starting logcat.
 
 - Use committed font subsets in anchor integration tests, fixing Linux CI with system fonts disabled.

@@ -132,8 +132,14 @@ impl ReaderSession {
 	}
 }
 
+fn legacy_origin() -> crate::security::Origin {
+	crate::security::Origin::Local(crate::security::Trust::Trusted)
+}
+
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub(super) struct SavedTab {
+	#[serde(default = "legacy_origin")]
+	origin: crate::security::Origin,
 	path: PathBuf,
 	reading: Reading,
 }
@@ -204,6 +210,7 @@ impl Tabs {
 					&tab.session
 				};
 				Some(SavedTab {
+					origin: session.security.origin.clone(),
 					path: tab.path.clone(),
 					reading: Reading::capture(session),
 				})
@@ -228,6 +235,7 @@ impl Tabs {
 			};
 			session.scrolling.offset.to_bits().hash(&mut hash);
 			session.details_open.hash(&mut hash);
+			session.security.origin.hash(&mut hash);
 			session.accepted_content_id.hash(&mut hash);
 		}
 		hash.finish()
@@ -240,12 +248,13 @@ impl Tabs {
 				continue;
 			};
 			if !path.is_file()
-				|| fs::File::open(&path).is_err()
-				|| self.find(&path).is_some()
+				|| crate::file::open_regular(&path).is_err()
+				|| self.find_origin(&path, &tab.origin).is_some()
 			{
 				continue;
 			}
 			let entry = self.restore_tab(path, tab.reading);
+			self.session_mut(entry).security.origin = tab.origin;
 			if closest
 				.is_none_or(|(distance, _)| index.abs_diff(selected) < distance)
 			{

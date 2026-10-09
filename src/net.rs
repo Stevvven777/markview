@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use reqwest::header::HeaderMap;
 use std::{
 	io::Read,
-	net::{IpAddr, SocketAddr},
+	net::SocketAddr,
 	path::Path,
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -230,48 +230,13 @@ pub(crate) struct Fetched {
 	pub(crate) freshness_cap: Option<SystemTime>,
 }
 
-/// Whether a document may reach this address.
-///
-/// Loopback, link-local, and private ranges are refused so a document cannot
-/// use the reader as a request proxy against local services. The check runs on
-/// every resolved address, and the chosen address is then pinned, so a rebind
-/// between resolution and connection cannot slip a private address through.
-pub(crate) fn permitted(ip: IpAddr) -> bool {
-	if let IpAddr::V6(v6) = ip
-		&& let Some(v4) = v6.to_ipv4_mapped()
-	{
-		return permitted(IpAddr::V4(v4));
-	}
-	match ip {
-		IpAddr::V4(v4) => {
-			let o = v4.octets();
-			!(v4.is_private()
-				|| v4.is_loopback()
-				|| v4.is_link_local()
-				|| v4.is_broadcast()
-				|| v4.is_unspecified()
-				|| v4.is_documentation()
-				|| v4.is_multicast()
-				|| o[0] == 0
-				|| o[0] >= 240
-				// Carrier-grade NAT, 100.64.0.0/10.
-				|| (o[0] == 100 && (64..=127).contains(&o[1])))
-		}
-		IpAddr::V6(v6) => {
-			!(v6.is_loopback()
-				|| v6.is_unspecified()
-				|| v6.is_unique_local()
-				|| v6.is_unicast_link_local()
-				|| v6.is_multicast())
-		}
-	}
+#[cfg(test)]
+pub(crate) fn permitted(ip: std::net::IpAddr) -> bool {
+	crate::security::AddressClass::of(ip)
+		== crate::security::AddressClass::Public
 }
 
-/// Builds a client whose connection can only go to a public address of `url`.
-///
-/// Resolution happens here rather than inside the client so the addresses are
-/// inspected first and then pinned; the client cannot re-resolve behind us.
-/// The host and the permitted addresses `url` resolves to.
+/// Resolve addresses before checking authority and pinning the connection.
 ///
 /// `Url::host_str` keeps the brackets of an IPv6 literal, which does not
 /// resolve; the address itself is what a lookup and a pin need.
@@ -296,17 +261,56 @@ async fn resolved(
 		bail!("{what} host has no address");
 	}
 	for addr in &addrs {
-		if !permitted(addr.ip()) {
-			bail!("{what} host resolves to a local or private address");
+		if crate::security::AddressClass::of(addr.ip())
+			== crate::security::AddressClass::Invalid
+		{
+			bail!("{what} host resolves to an invalid address");
 		}
 	}
 	Ok((host, addrs))
 }
 
 /// Whether `url` may be fetched at all, before any address is resolved.
-fn check_scheme(url: &url::Url, what: &str) -> Result<()> {
+pub(crate) fn validate_url(url: &url::Url, what: &str) -> Result<()> {
 	if !matches!(url.scheme(), "http" | "https") {
 		bail!("Unsupported {what} URL scheme");
+	}
+	if !url.username().is_empty() || url.password().is_some() {
+		bail!("URL credentials are not allowed");
+	}
+	let port = url.port_or_known_default().context("URL has no port")?;
+	if matches!(port, 0 | 1 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 20..=23 | 25 | 37 | 42 | 43 | 53 | 69 | 77 | 79 | 87 | 95 | 101..=104 | 109..=111 | 113 | 115 | 117 | 119 | 123 | 135 | 137 | 139 | 143 | 161 | 179 | 389 | 427 | 465 | 512..=515 | 526 | 530..=532 | 540 | 548 | 554 | 556 | 563 | 587 | 601 | 636 | 989 | 990 | 993 | 995 | 1719 | 1720 | 1723 | 2049 | 3659 | 4045 | 4190 | 5060 | 5061 | 6000 | 6566 | 6665..=6669 | 6679 | 6697 | 10080)
+	{
+		bail!("Unsafe HTTP port");
+	}
+	Ok(())
+}
+
+/// Authorize an explicitly requested target, without granting its redirect destinations.
+pub(crate) async fn grant_target(
+	url: &str,
+	security: &mut crate::security::Security,
+) -> Result<()> {
+	let url = url::Url::parse(url)?;
+	validate_url(&url, "Resource")?;
+	let (_, addrs) = resolved(&url, "Resource").await?;
+	for addr in addrs {
+		security.grant(crate::security::Resource::Network {
+			origin: url.origin().ascii_serialization(),
+			class: crate::security::AddressClass::of(addr.ip()),
+		});
+	}
+	Ok(())
+}
+
+pub(crate) async fn check_access(
+	url: &str,
+	security: &crate::security::Security,
+) -> Result<()> {
+	let url = url::Url::parse(url)?;
+	validate_url(&url, "Resource")?;
+	for addr in resolved(&url, "Resource").await?.1 {
+		security.check_address(&url, addr.ip())?;
 	}
 	Ok(())
 }
@@ -347,13 +351,18 @@ async fn pinned_async_client(
 	total_timeout: Option<Duration>,
 	what: &str,
 	browser: &HeaderMap,
+	security: &crate::security::Security,
 ) -> Result<reqwest::Client> {
-	check_scheme(url, what)?;
+	validate_url(url, what)?;
 	let (host, addrs) = resolved(url, what).await?;
+	for addr in &addrs {
+		security.check_address(url, addr.ip())?;
+	}
 	let mut builder = reqwest::Client::builder()
 		.connect_timeout(Duration::from_secs(5))
 		.read_timeout(read_timeout)
 		.referer(false)
+		.no_proxy()
 		.redirect(reqwest::redirect::Policy::none())
 		.resolve_to_addrs(&host, &addrs)
 		.default_headers(resource_headers(what, browser));
@@ -386,12 +395,14 @@ async fn fetch_into(
 ) -> Result<()> {
 	let mut current =
 		url::Url::parse(url).with_context(|| format!("Invalid {what} URL"))?;
+	let mut security = crate::security::Security::default();
+	grant_target(url, &mut security).await?;
 	for _ in 0..=MAX_REDIRECTS {
 		let response = tokio::select! {
 			biased;
 			_ = cancel.cancelled() => bail!("Cancelled"),
 			response = async {
-				let client = pinned_async_client(&current, STALL_TIMEOUT, None, what, &HeaderMap::new()).await?;
+				let client = pinned_async_client(&current, STALL_TIMEOUT, None, what, &HeaderMap::new(), &security).await?;
 				Ok::<_, anyhow::Error>(client.get(current.clone()).send().await?)
 			} => response?,
 		};
@@ -472,6 +483,8 @@ async fn probe_once(url: &str, what: &str) -> Result<Duration> {
 	let mut current =
 		url::Url::parse(url).with_context(|| format!("Invalid {what} URL"))?;
 	let started = std::time::Instant::now();
+	let mut security = crate::security::Security::default();
+	grant_target(url, &mut security).await?;
 	for _ in 0..=MAX_REDIRECTS {
 		let client = pinned_async_client(
 			&current,
@@ -479,6 +492,7 @@ async fn probe_once(url: &str, what: &str) -> Result<Duration> {
 			Some(Duration::from_secs(10)),
 			what,
 			&HeaderMap::new(),
+			&security,
 		)
 		.await?;
 		let response = client
@@ -511,6 +525,7 @@ pub(crate) async fn get(
 	max: u64,
 	what: &str,
 	browser: &HeaderMap,
+	security: &crate::security::Security,
 ) -> Result<Fetched> {
 	let mut current =
 		url::Url::parse(url).with_context(|| format!("Invalid {what} URL"))?;
@@ -522,6 +537,7 @@ pub(crate) async fn get(
 			Some(Duration::from_secs(15)),
 			what,
 			browser,
+			security,
 		)
 		.await?;
 		let mut request = client.get(current.clone());
@@ -1127,6 +1143,7 @@ mod tests {
 			None,
 			"Font",
 			&HeaderMap::new(),
+			&crate::security::Security::default(),
 		)
 		.await
 		.unwrap_err()
@@ -1139,6 +1156,7 @@ mod tests {
 			1024,
 			"Font",
 			&HeaderMap::new(),
+			&crate::security::Security::default(),
 		)
 		.await
 		.expect_err("an unparsable URL is refused")
@@ -1236,5 +1254,154 @@ mod tests {
 		// unstorable, because it may move at any time.
 		chain.note(&Headers::default(), now);
 		assert!(!chain.cacheable);
+	}
+}
+
+#[cfg(test)]
+mod authorization_tests {
+	use super::*;
+	use crate::security::{AddressClass, Origin, Resource, Security, Trust};
+	use std::sync::{Arc, Mutex};
+	use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+	struct Server {
+		url: String,
+		requests: Arc<Mutex<Vec<String>>>,
+		task: tokio::task::JoinHandle<()>,
+	}
+	impl Server {
+		async fn new(location: Option<&str>) -> Self {
+			let listener =
+				tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+			let url = format!("http://{}/", listener.local_addr().unwrap());
+			let requests = Arc::new(Mutex::new(Vec::new()));
+			let received = requests.clone();
+			let response = match location {
+				Some(location) => format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+				None => "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nimage".into(),
+			};
+			let task = tokio::spawn(async move {
+				loop {
+					let (mut socket, _) = listener.accept().await.unwrap();
+					let mut buffer = [0; 8192];
+					let n = socket.read(&mut buffer).await.unwrap();
+					received.lock().unwrap().push(
+						String::from_utf8_lossy(&buffer[..n]).into_owned(),
+					);
+					socket.write_all(response.as_bytes()).await.unwrap();
+				}
+			});
+			Self {
+				url,
+				requests,
+				task,
+			}
+		}
+		async fn fetch(&self, security: &Security) -> Result<Fetched> {
+			get(
+				&self.url,
+				&Validators::default(),
+				1024,
+				"Image",
+				&HeaderMap::new(),
+				security,
+			)
+			.await
+		}
+	}
+	impl Drop for Server {
+		fn drop(&mut self) {
+			self.task.abort();
+		}
+	}
+
+	#[tokio::test]
+	async fn local_requests_require_authority_before_connecting_and_redirects_repeat_it()
+	 {
+		let destination = Server::new(None).await;
+		let mut security = Security::default();
+		assert!(
+			destination
+				.fetch(&security)
+				.await
+				.unwrap_err()
+				.downcast_ref::<crate::security::PermissionRequired>()
+				.is_some()
+		);
+		assert!(destination.requests.lock().unwrap().is_empty());
+		assert_eq!(
+			destination
+				.fetch(&Security::local(Trust::Trusted))
+				.await
+				.unwrap()
+				.body,
+			b"image"
+		);
+		let redirect = Server::new(Some(&destination.url)).await;
+		grant_target(&redirect.url, &mut security).await.unwrap();
+		assert!(redirect.fetch(&security).await.is_err());
+		assert_eq!(redirect.requests.lock().unwrap().len(), 1);
+		assert_eq!(destination.requests.lock().unwrap().len(), 1);
+		security.grant(Resource::Network {
+			origin: url::Url::parse(&destination.url)
+				.unwrap()
+				.origin()
+				.ascii_serialization(),
+			class: AddressClass::Loopback,
+		});
+		assert_eq!(redirect.fetch(&security).await.unwrap().body, b"image");
+		assert_eq!(security.origin, Origin::Clipboard);
+		for request in destination.requests.lock().unwrap().iter() {
+			let request = request.to_ascii_lowercase();
+			assert!(request.starts_with("get / http/1.1"));
+			for header in [
+				"authorization:",
+				"cookie:",
+				"referer:",
+				"proxy-authorization:",
+			] {
+				assert!(!request.contains(header));
+			}
+		}
+		security.revoke();
+		assert!(destination.fetch(&security).await.is_err());
+		assert_eq!(destination.requests.lock().unwrap().len(), 2);
+	}
+
+	#[tokio::test]
+	async fn explicit_font_targets_do_not_authorize_local_redirect_destinations()
+	 {
+		let destination = Server::new(None).await;
+		let redirect = Server::new(Some(&destination.url)).await;
+		assert!(Downloader::new("Font").probe(&redirect.url).await.is_err());
+		assert_eq!(redirect.requests.lock().unwrap().len(), 1);
+		assert!(destination.requests.lock().unwrap().is_empty());
+		assert!(
+			Downloader::new("Font")
+				.probe(&destination.url)
+				.await
+				.is_ok()
+		);
+	}
+
+	#[test]
+	fn credentials_and_unsafe_ports_are_rejected_in_every_mode() {
+		for url in [
+			"http://reader:secret@localhost:8080/",
+			"http://localhost:22/",
+			"https://localhost:4190/",
+			"http://localhost:6679/",
+		] {
+			assert!(
+				validate_url(&url::Url::parse(url).unwrap(), "Image").is_err()
+			);
+		}
+		assert!(
+			validate_url(
+				&url::Url::parse("http://localhost:8080/").unwrap(),
+				"Image"
+			)
+			.is_ok()
+		);
 	}
 }

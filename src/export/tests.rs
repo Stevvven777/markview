@@ -1,6 +1,77 @@
 use super::*;
 use crate::lang::Lang;
 
+#[test]
+fn in_memory_exports_keep_permissions_bound_to_the_supplied_text() {
+	use crate::security::{Resource, Security, Trust};
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("unsaved.md");
+	let image = dir.path().join("picture.png");
+	image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]))
+		.save(&image)
+		.unwrap();
+	let text = "# Unsaved snapshot\n\n![image](picture.png)";
+	let mut granted = Security::local(Trust::Untrusted);
+	granted.grant(Resource::File(std::fs::canonicalize(image).unwrap()));
+	granted.bind(text);
+	let mut stale = granted.clone();
+	stale.bind("Previous content");
+	let services = Arc::new(crate::services::Services::new(4));
+	for (index, (security, expected_images)) in [
+		(Security::local(Trust::Trusted), 1),
+		(Security::local(Trust::Untrusted), 0),
+		(granted, 1),
+		(stale, 0),
+	]
+	.into_iter()
+	.enumerate()
+	{
+		let snapshot = png_snapshot_text(
+			&path,
+			text,
+			crate::test_support::options(),
+			true,
+			services.clone(),
+			security.clone(),
+		)
+		.unwrap();
+		assert_eq!(snapshot.images.decoded().len(), expected_images);
+		let mut request = pdf_request(
+			path.clone(),
+			dir.path().join(format!("{index}.pdf")),
+			&ExportSettings::default(),
+			crate::test_support::fonts(),
+			CjkType::Sc,
+			&[],
+			true,
+		)
+		.unwrap();
+		request.security = security;
+		let result = crate::pdf::export_text(
+			&request,
+			text,
+			services.clone(),
+			|| Ok(()),
+		);
+		if expected_images == 0 {
+			assert!(
+				result
+					.unwrap_err()
+					.to_string()
+					.contains("Permission required")
+			);
+			assert!(!request.output.exists());
+		} else {
+			result.unwrap();
+			let pdf = lopdf::Document::load(&request.output).unwrap();
+			assert!(
+				pdf.extract_text(&[1]).unwrap().contains("Unsaved snapshot")
+			);
+		}
+	}
+	assert!(!path.exists());
+}
+
 fn settings(format: ExportFormat) -> ExportSettings {
 	ExportSettings {
 		format,

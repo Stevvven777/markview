@@ -13,6 +13,10 @@ pub(crate) fn open(path: PathBuf) {
 	open_event(Event::Open(Some(path)));
 }
 
+pub(crate) fn shared(path: PathBuf) {
+	open_event(Event::AndroidShared(path));
+}
+
 pub(crate) fn open_url(url: String) {
 	open_event(Event::AndroidOpenUrl(url));
 }
@@ -124,6 +128,7 @@ impl<P: super::SendEvent> App<P> {
 		serde_json::json!({
 			"tabs": self.readers.entries().iter().map(|tab| tab.path.display().to_string()).collect::<Vec<_>>(),
 			"active": self.readers.active(), "path": session.path,
+			"trust": format!("{:?}", session.security.origin.trust()),
 			"ready": session.snapshot_complete, "blocks": session.snapshot.blocks.len(),
 			"math_errors": session.snapshot.math_errors,
 			"scroll": session.scrolling.offset, "height": session.snapshot.height,

@@ -1,3 +1,4 @@
+use super::source::source;
 use super::*;
 use super::{
 	decode::decode as decode_image, pixels::pixel_bytes, source::fetch,
@@ -1187,9 +1188,9 @@ fn bracketed_ipv6_hosts_are_parsed_and_refused_before_connecting() {
 	// `Url::host_str` keeps the brackets; a lookup on "[::1]" fails, which
 	// used to report a resolution error instead of the address policy.
 	for url in [
-		"http://[::1]:9/x.png",
-		"http://[fe80::1]:9/x.png",
-		"http://[fd00::1]:9/x.png",
+		"http://[::1]:8080/x.png",
+		"http://[fe80::1]:8080/x.png",
+		"http://[fd00::1]:8080/x.png",
 	] {
 		let error = tokio::runtime::Builder::new_current_thread()
 			.enable_all()
@@ -1201,11 +1202,12 @@ fn bracketed_ipv6_hosts_are_parsed_and_refused_before_connecting() {
 				super::source::MAX_BYTES as u64,
 				"Image",
 				&reqwest::header::HeaderMap::new(),
+				&crate::security::Security::default(),
 			))
 			.err()
 			.unwrap()
 			.to_string();
-		assert!(error.contains("local or private address"), "{url}: {error}");
+		assert!(error.contains("Permission required"), "{url}: {error}");
 	}
 }
 
@@ -1301,7 +1303,11 @@ fn offline_serves_a_cached_remote_image_and_fails_without_one() {
 	let url = "https://example.com/cached.png";
 	let bytes = png(5, 3, [4, 5, 6, 255]);
 	// A stored entry with no expiry is stale; offline reading still wants it.
-	super::cache::Cache::new(root.clone()).put(url, Default::default(), &bytes);
+	super::cache::Cache::new(root.clone())
+		.with_security(&crate::security::Security::local(
+			crate::security::Trust::Trusted,
+		))
+		.put(url, Default::default(), &bytes);
 	let path = dir.path().join("note.md");
 	let document = format!("![a]({url})");
 	fs::write(&path, &document).unwrap();
@@ -1339,6 +1345,71 @@ fn offline_serves_a_cached_remote_image_and_fails_without_one() {
 		images.snapshot.entries[missing].error.as_deref(),
 		Some("Network images disabled (--offline)")
 	);
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_grants_preserve_remote_image_loading_and_cache_isolation() {
+	use crate::security::{Resource, Security};
+	use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+	let dir = tempfile::tempdir().unwrap();
+	let root = dir.path().join("cache");
+	let file = dir
+		.path()
+		.join(OsString::from_vec(b"image-\xff.png".to_vec()));
+	let other = dir
+		.path()
+		.join(OsString::from_vec(b"image-\xfe.png".to_vec()));
+	let bytes = png(5, 3, [4, 5, 6, 255]);
+	fs::write(&file, &bytes).unwrap();
+	fs::write(&other, &bytes).unwrap();
+	assert_eq!(file.to_string_lossy(), other.to_string_lossy());
+	let url = "https://example.com/cached.png";
+	let doc = crate::document::parse(format!("![remote]({url})"));
+	for selected in [false, true] {
+		let grant = |path| {
+			if selected {
+				Resource::SelectedImage {
+					source: "local.png".into(),
+					path,
+				}
+			} else {
+				Resource::File(path)
+			}
+		};
+		let mut security = Security::default();
+		security.grant(grant(file.clone()));
+		super::cache::Cache::new(root.clone())
+			.with_security(&security)
+			.put(url, Default::default(), &bytes);
+		let mut images = Images::with_cache(true, Some(root.clone()));
+		images.set_security(security);
+		images.prepare(
+			&doc,
+			&dir.path().join("note.md"),
+			1,
+			false,
+			&Stylesheet::default(),
+			&crate::test_support::fonts(),
+		);
+		images.wait();
+		assert!(images.snapshot.entries[url].error.is_none());
+		assert_eq!(images.snapshot.decoded()[url].width, 5);
+		let mut security = Security::default();
+		security.grant(grant(other.clone()));
+		images.set_security(security);
+		images.prepare(
+			&doc,
+			&dir.path().join("note.md"),
+			1,
+			false,
+			&Stylesheet::default(),
+			&crate::test_support::fonts(),
+		);
+		images.wait();
+		assert!(images.snapshot.decoded().is_empty());
+		assert!(images.snapshot.entries[url].error.is_some());
+	}
 }
 
 #[test]
@@ -1541,13 +1612,14 @@ fn failing_batches_do_not_cancel_a_later_healthy_job() {
 	// Advance time and report one job per poll. Total time exceeds the
 	// deadline, but every completion must reset it regardless of its result.
 	let start = Instant::now();
+	let generation = images.generation;
 	let mut tick = 0;
 	images.wait_with_clock(deadline, || {
 		if tick < sources.len() {
 			done.send(Finished {
 				ticket: tick as u64,
 				source: sources[tick].clone(),
-				generation: 0,
+				generation,
 				result: Err(anyhow::anyhow!("Cannot open image")),
 			})
 			.unwrap();
@@ -1555,7 +1627,7 @@ fn failing_batches_do_not_cancel_a_later_healthy_job() {
 			done.send(Finished {
 				ticket: 99,
 				source: healthy.clone(),
-				generation: 0,
+				generation,
 				result: Ok(Loaded {
 					intrinsic: (4, 3),
 					raster: (4, 3),
@@ -1706,4 +1778,85 @@ fn a_queue_behind_held_pipelines_settles_boundedly() {
 			.all(|e| !e.busy && e.info.error.as_deref() == Some(STALLED)),
 		"a queued image was left unsettled"
 	);
+}
+
+#[test]
+fn resource_authority_controls_local_reads_and_cached_bodies_including_offline()
+{
+	use crate::security::{Origin, Resource, Security, Trust};
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("staged.md");
+	let file = dir.path().join("picture.png");
+	let bytes = png(5, 3, [1, 2, 3, 255]);
+	fs::write(&file, &bytes).unwrap();
+	let file = fs::canonicalize(file).unwrap();
+	let mut untrusted = Security::local(Trust::Untrusted);
+	assert!(super::source::resolve("picture.png", &path, &untrusted).is_err());
+	untrusted.grant(Resource::File(file));
+	assert!(matches!(
+		super::source::resolve("picture.png", &path, &untrusted),
+		Ok(Source::File(_))
+	));
+	assert!(
+		super::source::resolve("picture.png", &path, &Security::default())
+			.is_err()
+	);
+	let web = Security::web("https://example.org/articles/intro".into());
+	assert!(
+		matches!(super::source::resolve("../picture.png", &path, &web), Ok(Source::Http(url)) if url == "https://example.org/picture.png")
+	);
+	assert_eq!(web.origin.trust(), Trust::Untrusted);
+
+	let root = dir.path().join("cache");
+	let url = "http://127.0.0.1:8080/picture.png";
+	let trusted = Security::local(Trust::Trusted);
+	super::cache::Cache::new(root.clone())
+		.with_security(&trusted)
+		.put(url, Default::default(), &bytes);
+	let document = crate::document::parse(format!("![image]({url})"));
+	let mut images = Images::with_cache(true, Some(root.clone()));
+	images.prepare(
+		&document,
+		&path,
+		1,
+		false,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	images.wait();
+	assert_eq!(images.snapshot.entries[url].size, Some((5, 3)));
+	images.set_security(Security::default());
+	images.prepare(
+		&document,
+		&path,
+		1,
+		true,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	images.wait();
+	assert!(images.snapshot.decoded().is_empty());
+	assert!(images.snapshot.entries[url].error.is_some());
+	let mut granted = Security::default();
+	granted.grant(Resource::Network {
+		origin: "http://127.0.0.1:8080".into(),
+		class: crate::security::AddressClass::Loopback,
+	});
+	super::cache::Cache::new(root).with_security(&granted).put(
+		url,
+		Default::default(),
+		&bytes,
+	);
+	images.set_security(granted);
+	images.prepare(
+		&document,
+		&path,
+		1,
+		true,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	images.wait();
+	assert_eq!(images.snapshot.entries[url].size, Some((5, 3)));
+	assert_eq!(images.security.origin, Origin::Clipboard);
 }

@@ -43,6 +43,28 @@ const INERT: &[&str] = &[
 ///
 /// `None` means the link is refused outright: an unknown URL scheme, an empty
 /// target, or a bare fragment, which the caller resolves inside the reader.
+pub(super) fn resolve_for(
+	link: &str,
+	directory: Option<&Path>,
+	security: &crate::security::Security,
+) -> Option<Target> {
+	match &security.origin {
+		crate::security::Origin::Web(base)
+			if url::Url::parse(link).is_err() =>
+		{
+			let url = url::Url::parse(base).ok()?.join(link).ok()?;
+			resolve(url.as_str(), None)
+		}
+		crate::security::Origin::Clipboard
+			if url::Url::parse(link).is_err()
+				&& !Path::new(link).is_absolute() =>
+		{
+			None
+		}
+		_ => resolve(link, directory),
+	}
+}
+
 pub(super) fn resolve(
 	link: &str,
 	document_dir: Option<&Path>,

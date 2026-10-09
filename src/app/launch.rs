@@ -172,6 +172,9 @@ pub(super) fn run() -> Result<()> {
 			args.options.fonts.clone(),
 			&services,
 		);
+		images.set_security(crate::security::Security::local(
+			crate::security::Trust::Trusted,
+		));
 		images.prepare(
 			&doc,
 			path,

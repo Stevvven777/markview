@@ -204,6 +204,7 @@ fn identical_content_with_a_new_version_keeps_the_selection() {
 	let layout = engine.layout(&document, &crate::test_support::options());
 	assert!(session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document: document.clone(),
 			layout: layout.clone(),
 			content_version: 1,
@@ -217,6 +218,7 @@ fn identical_content_with_a_new_version_keeps_the_selection() {
 	// A file event re-reads the same bytes: a new revision, same content.
 	assert!(!session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document,
 			layout,
 			content_version: 2,
@@ -299,6 +301,7 @@ fn heading_anchors_queue_until_their_heading_is_laid_out() {
 	let mut session = ReaderSession::default();
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document: document.clone(),
 			layout: layout.clone(),
 			content_version: 1,
@@ -324,6 +327,7 @@ fn heading_anchors_queue_until_their_heading_is_laid_out() {
 	prefix.height = layout.blocks[1].y;
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document,
 			layout: prefix,
 			content_version: 2,
@@ -355,6 +359,7 @@ fn a_jump_into_a_collapsed_body_expands_its_containers_first() {
 	let mut session = ReaderSession::default();
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document: document.clone(),
 			layout: collapsed,
 			content_version: 1,
@@ -379,6 +384,7 @@ fn a_jump_into_a_collapsed_body_expands_its_containers_first() {
 		.expect("the opened body lays the heading out");
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document,
 			layout: expanded,
 			content_version: 1,
@@ -411,6 +417,7 @@ fn partial_reload_waits_for_anchor_and_keeps_the_old_snapshot() {
 	let mut session = ReaderSession::default();
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document: document.clone(),
 			layout: full.clone(),
 			content_version: 1,
@@ -426,6 +433,7 @@ fn partial_reload_waits_for_anchor_and_keeps_the_old_snapshot() {
 	partial.blocks.truncate(5);
 	partial.height = full.blocks[5].y;
 	let reader = crate::worker::ReaderSnapshot {
+		blocked_images: Default::default(),
 		document,
 		layout: partial,
 		content_version: 2,
@@ -459,6 +467,7 @@ fn completing_a_prefix_preserves_scroll_and_selection_and_finishes_counts() {
 	let mut session = ReaderSession::default();
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document: document.clone(),
 			layout: prefix.unwrap(),
 			content_version: 1,
@@ -473,6 +482,7 @@ fn completing_a_prefix_preserves_scroll_and_selection_and_finishes_counts() {
 	let selection = session.snapshot.select_all(1).unwrap();
 	let text = session.snapshot.extract_text(selection, 1);
 	let reader = crate::worker::ReaderSnapshot {
+		blocked_images: Default::default(),
 		document,
 		layout,
 		content_version: 1,
@@ -502,6 +512,7 @@ fn text_and_layout_are_accepted_together_and_reflow_is_not_new_content() {
 	let mut engine = crate::layout::LayoutEngine::new();
 	let mut session = ReaderSession::default();
 	let reader = crate::worker::ReaderSnapshot {
+		blocked_images: Default::default(),
 		document: document.clone(),
 		layout: engine.layout(&document, &crate::test_support::options()),
 		content_version: 1,
@@ -575,6 +586,7 @@ fn the_outline_caches_per_document_and_its_entries_queue_heading_anchors() {
 	let mut session = ReaderSession::default();
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document,
 			layout: layout.clone(),
 			content_version: 1,
@@ -642,6 +654,7 @@ fn an_outline_jump_into_the_reserved_blank_lifts_the_heading() {
 	let mut session = ReaderSession::default();
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document,
 			layout: layout.clone(),
 			content_version: 1,
@@ -669,6 +682,7 @@ fn a_footnote_reference_between_headings_keeps_the_later_heading_current() {
 	let mut session = ReaderSession::default();
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document,
 			layout: layout.clone(),
 			content_version: 1,
@@ -870,6 +884,7 @@ fn a_long_outline_resolves_the_reading_position_in_one_pass() {
 	let mut session = ReaderSession::default();
 	session.accept(
 		crate::worker::ReaderSnapshot {
+			blocked_images: Default::default(),
 			document,
 			layout: layout.clone(),
 			content_version: 1,

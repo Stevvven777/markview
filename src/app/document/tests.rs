@@ -126,8 +126,14 @@ fn web_tabs_open_immediately_and_complete_without_stealing_focus() {
 	h.open("README.md", 2);
 	let active_path = h.app.readers.session.path.clone();
 	let markdown = "# Web article\n\nNative article text.\n";
-	h.app
-		.web_page_loaded(url.clone(), pending_path, Ok(markdown.into()));
+	h.app.web_page_loaded(
+		url.clone(),
+		pending_path,
+		Ok(crate::web_page::Article {
+			markdown: markdown.into(),
+			security: crate::security::Security::web(url.clone()),
+		}),
+	);
 	assert_eq!(h.app.readers.session.path, active_path);
 	assert_eq!(h.app.readers.active(), 1);
 	h.app.open_web_page(url);
@@ -172,7 +178,10 @@ fn failed_tabs_keep_their_errors_and_closed_web_tabs_ignore_completions() {
 	h.app.web_page_loaded(
 		url.clone(),
 		first_path.clone(),
-		Ok("# Closed article".into()),
+		Ok(crate::web_page::Article {
+			markdown: "# Closed article".into(),
+			security: crate::security::Security::web(url.clone()),
+		}),
 	);
 	assert_eq!(h.app.readers.entries().len(), 1);
 	h.app.open_web_page(url.clone());
@@ -181,7 +190,10 @@ fn failed_tabs_keep_their_errors_and_closed_web_tabs_ignore_completions() {
 	h.app.web_page_loaded(
 		url.clone(),
 		first_path,
-		Ok("# Stale article".into()),
+		Ok(crate::web_page::Article {
+			markdown: "# Stale article".into(),
+			security: crate::security::Security::web(url.clone()),
+		}),
 	);
 	assert_eq!(h.app.readers.session.path.as_ref(), Some(&second_path));
 	assert!(h.app.readers.session.load_error.is_some());
@@ -410,4 +422,116 @@ fn closing_last_parked_tab_releases_the_workers_document() {
 		std::thread::sleep(Duration::from_millis(10));
 	}
 	assert_eq!(h.app.interaction.panel, crate::state::PanelPage::Closed);
+}
+
+#[test]
+fn untrusted_local_navigation_and_images_need_grants_without_reusing_trusted_tabs()
+ {
+	use crate::{
+		security::{Origin, Security, Trust},
+		state::{Command, Modal},
+	};
+	let mut h = Harness::new();
+	h.open("README.zh-cn.md", 1);
+	let source = h.dir.path().join("README.md");
+	h.app
+		.open_document(source.clone(), Security::local(Trust::Untrusted));
+	h.wait_images(0);
+	assert!(
+		h.app
+			.readers
+			.session
+			.blocked_images
+			.contains_key("first.png")
+	);
+	let resource = h.app.readers.session.blocked_images["first.png"].clone();
+	h.app
+		.ask_permission(resource, crate::state::PermissionAction::Images);
+	h.app.action(Command::ModalConfirm);
+	h.wait_images(1);
+	h.app.action(Command::RemoteLoadAll);
+	h.wait_images(1);
+	assert!(
+		h.app
+			.readers
+			.session
+			.blocked_images
+			.contains_key("diagram.svg")
+	);
+	assert_eq!(
+		h.app.readers.session.security.origin.trust(),
+		Trust::Untrusted
+	);
+	h.app.open_link("README.zh-cn.md", false);
+	assert_eq!(h.app.readers.entries().len(), 2);
+	assert!(matches!(
+		h.app.interaction.modal,
+		Some(Modal::Permission { .. })
+	));
+	h.app.action(Command::ModalConfirm);
+	h.wait_images(0);
+	assert_eq!(h.app.readers.entries().len(), 3);
+	assert_eq!(
+		h.app.readers.session.security.origin,
+		Origin::Local(Trust::Untrusted)
+	);
+	assert!(
+		h.app
+			.readers
+			.session
+			.blocked_images
+			.contains_key("second.png")
+	);
+	h.app.select_tab(1);
+	h.wait_images(1);
+	h.app.handle_user_event(&StubLoop, Event::Changed(source));
+	h.wait_images(0);
+	assert!(
+		h.app
+			.readers
+			.session
+			.blocked_images
+			.contains_key("first.png")
+	);
+}
+
+#[test]
+fn clipboard_images_use_selected_files_and_web_relative_images_use_the_url() {
+	use crate::{
+		security::{Origin, Resource, Trust},
+		state::Command,
+	};
+	let mut h = Harness::new();
+	h.app.open_text("# Pasted\n\n![image](first.png)");
+	h.wait_images(0);
+	assert_eq!(h.app.readers.session.security.origin, Origin::Clipboard);
+	assert_eq!(
+		h.app.readers.session.blocked_images["first.png"],
+		Resource::SelectImage("first.png".into())
+	);
+	let document = h.app.readers.session.path.clone();
+	let revision = h.app.readers.session.content_version;
+	h.app.handle_user_event(
+		&StubLoop,
+		Event::ImageSelected {
+			document,
+			revision,
+			source: "first.png".into(),
+			file: Some(h.dir.path().join("first.png")),
+		},
+	);
+	h.wait_images(1);
+	h.app.action(Command::RemoteLoadAll);
+	assert_eq!(
+		h.app.readers.session.security.origin.trust(),
+		Trust::Untrusted
+	);
+	let staged = h.app.readers.session.path.clone().unwrap();
+	h.app.open(staged);
+	h.wait_images(0);
+	assert_eq!(h.app.readers.entries().len(), 2);
+	assert_eq!(
+		h.app.readers.session.security.origin,
+		Origin::Local(Trust::Trusted)
+	);
 }

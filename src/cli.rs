@@ -68,6 +68,7 @@ pub(crate) enum FontsCommand {
 }
 
 pub(crate) struct LaunchOptions {
+	pub(crate) security: crate::security::Security,
 	pub(crate) offline: bool,
 	pub(crate) mode: Mode,
 	pub(crate) path: Option<PathBuf>,
@@ -95,6 +96,9 @@ pub(crate) struct LaunchOptions {
 impl Default for LaunchOptions {
 	fn default() -> Self {
 		Self {
+			security: crate::security::Security::local(
+				crate::security::Trust::Trusted,
+			),
 			offline: false,
 			mode: Mode::Window,
 			path: None,
@@ -277,6 +281,15 @@ struct BenchArgs {
 
 #[derive(Args)]
 struct PdfArgs {
+	/// Resource trust of the input document.
+	#[arg(long, value_enum, default_value = "trusted")]
+	document_trust: crate::security::Trust,
+	/// Authorize this local image file for an untrusted export; repeats.
+	#[arg(long, value_name = "FILE")]
+	allow_local_image: Vec<PathBuf>,
+	/// Authorize a network origin and address class; repeats (e.g. loopback=http://localhost:8080).
+	#[arg(long, value_name = "CLASS=ORIGIN", value_parser = network_grant)]
+	allow_network: Vec<crate::security::Resource>,
 	/// The document to export.
 	file: PathBuf,
 	/// Where to write the PDF.
@@ -547,6 +560,21 @@ fn apply_command(out: &mut LaunchOptions, command: Command) -> Result<()> {
 		}
 		Command::Pdf(args) => {
 			out.mode = Mode::Pdf;
+			out.security =
+				crate::security::Security::local(args.document_trust);
+			for path in args.allow_local_image {
+				out.security.grant(crate::security::Resource::File(
+					std::fs::canonicalize(&path).with_context(|| {
+						format!(
+							"Cannot resolve authorized image {}",
+							path.display()
+						)
+					})?,
+				));
+			}
+			for resource in args.allow_network {
+				out.security.grant(resource);
+			}
 			out.path = Some(args.file);
 			out.output = Some(args.output);
 			out.links = !args.no_links;
@@ -775,6 +803,31 @@ fn template(flag: &str, value: &str) -> Result<()> {
 	Ok(())
 }
 
+fn network_grant(value: &str) -> Result<crate::security::Resource, String> {
+	use crate::security::{AddressClass, Resource};
+	let (class, origin) = value.split_once('=').ok_or("Use CLASS=ORIGIN")?;
+	let class = match class {
+		"private" => AddressClass::Private,
+		"loopback" => AddressClass::Loopback,
+		"link-local" => AddressClass::LinkLocal,
+		_ => return Err("Use private, loopback or link-local".into()),
+	};
+	let url = crate::web_page::validate_url(origin)
+		.map_err(|error| error.to_string())?;
+	crate::net::validate_url(&url, "Resource")
+		.map_err(|error| error.to_string())?;
+	if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
+		return Err(
+			"A grant requires an origin without a path, query or fragment"
+				.into(),
+		);
+	}
+	Ok(Resource::Network {
+		origin: url.origin().ascii_serialization(),
+		class,
+	})
+}
+
 /// The checks that depend on the whole command, once every option is known.
 fn finish(mut out: LaunchOptions) -> Result<Option<LaunchOptions>> {
 	if out.style.is_some() && out.theme.is_some() {
@@ -889,6 +942,7 @@ fn normalize(path: &std::path::Path) -> std::path::PathBuf {
 impl LaunchOptions {
 	pub(crate) fn pdf_request(&self) -> Result<PdfRequest> {
 		Ok(PdfRequest {
+			security: self.security.clone(),
 			path: self
 				.path
 				.clone()
@@ -1452,5 +1506,67 @@ mod tests {
 		assert!(same_target(&file, &dir.path().join("./a.md")));
 		assert!(same_target(&file, &dir.path().join("sub/../a.md")));
 		assert!(!same_target(&file, &dir.path().join("b.md")));
+	}
+	#[test]
+	fn pdf_trust_and_grants_are_explicit_and_do_not_promote_mode() {
+		use crate::security::{Origin, Trust};
+		let dir = tempfile::tempdir().unwrap();
+		let image = dir.path().join("image.png");
+		std::fs::write(&image, b"image").unwrap();
+		let args = parse(&[
+			"pdf",
+			"article.md",
+			"-o",
+			"article.pdf",
+			"--document-trust",
+			"untrusted",
+			"--allow-local-image",
+			image.to_str().unwrap(),
+			"--allow-network",
+			"loopback=http://localhost:8080",
+			"--offline",
+		]);
+		let request = args.pdf_request().unwrap();
+		assert_eq!(request.security.origin, Origin::Local(Trust::Untrusted));
+		assert!(
+			request
+				.security
+				.check_file(&std::fs::canonicalize(&image).unwrap())
+				.is_ok()
+		);
+		assert!(
+			request
+				.security
+				.check_address(
+					&url::Url::parse("http://localhost:8080/image").unwrap(),
+					"127.0.0.1".parse().unwrap()
+				)
+				.is_ok()
+		);
+		assert!(
+			request
+				.security
+				.check_address(
+					&url::Url::parse("http://localhost:8081/image").unwrap(),
+					"127.0.0.1".parse().unwrap()
+				)
+				.is_err()
+		);
+		for value in [
+			"invalid=http://localhost:8080",
+			"loopback=file:///tmp/image",
+			"loopback=http://user:secret@localhost:8080",
+			"loopback=http://localhost:22",
+			"private=http://localhost:8080/image",
+		] {
+			assert!(network_grant(value).is_err());
+		}
+		assert_eq!(
+			parse(&["pdf", "article.md", "-o", "article.pdf"])
+				.security
+				.origin
+				.trust(),
+			Trust::Trusted
+		);
 	}
 }
