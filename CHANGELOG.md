@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Change the Reveal folder shortcut from Ctrl+Shift+O to Ctrl+Alt+R.
 - Redesign the Reveal toolbar icon with a simple location pin at the folder's lower-left corner.
 - Share PNG rendering and encoding across callers, and accept in-memory Markdown for PDF and PNG export.
 - Enforce enum-based document trust, scoped resource grants, origin-preserving tabs and exports, and permission-aware image caches; add PDF trust and grant options.
@@ -45,7 +46,7 @@ at the same level, without `[brackets]`.
 - Send browser-style web/image headers with configurable `user-agent` and `accept-language`, HTML acceptance for articles and a separate capitalized font UA.
 - Include the browser UA OS comment in About diagnostics and copied issue reports.
 - Open URL and file tabs immediately, show loading and persistent errors in the reader, and keep background web completions attached to their original tabs.
-- Add a desktop-only "Reveal" toolbar button and <kbd>Ctrl+Shift+O</kbd> that show the active document's folder in the file manager; the Open button becomes a file-plus icon and the minimum window width rises to 536 px to keep the tab strip's floor.
+- Add a desktop-only "Reveal" toolbar button and <kbd>Ctrl+Alt+R</kbd> that show the active document's folder in the file manager; the Open button becomes a file-plus icon and the minimum window width rises to 536 px to keep the tab strip's floor.
 - Add a fragment-target navigation oracle to the `fuzz/` harness, checking that a jump expands exactly the disclosures framing its target and lands in the block that declares it.
 
 ### Fixed
