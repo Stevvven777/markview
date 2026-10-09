@@ -1361,8 +1361,6 @@ fn non_utf8_grants_preserve_remote_image_loading_and_cache_isolation() {
 		.path()
 		.join(OsString::from_vec(b"image-\xfe.png".to_vec()));
 	let bytes = png(5, 3, [4, 5, 6, 255]);
-	fs::write(&file, &bytes).unwrap();
-	fs::write(&other, &bytes).unwrap();
 	assert_eq!(file.to_string_lossy(), other.to_string_lossy());
 	let url = "https://example.com/cached.png";
 	let doc = crate::document::parse(format!("![remote]({url})"));

@@ -899,6 +899,7 @@ mod security_tests {
 		let dir = tempfile::tempdir().unwrap();
 		let source = dir.path().join("document.md");
 		std::fs::write(&source, "# Document").unwrap();
+		let source = std::fs::canonicalize(source).unwrap();
 		let (send, receive) = std::sync::mpsc::channel();
 		let mut app = App::new(
 			crate::cli::LaunchOptions {

@@ -148,6 +148,7 @@ public class Smoke extends Instrumentation {
             Intent sharing = intent("second.md", Intent.ACTION_SEND).setType("application/x-markdown").setPackage(null);
             getTargetContext().startActivity(Intent.createChooser(sharing, "Read Markdown").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             clickText("Read in Markview");
+            waitSystem(getTargetContext().getPackageName());
             waitFor(s -> s.optJSONArray("tabs").length() == 2 && s.optBoolean("ready") && loadedImages(s) >= 1);
             require(!activity.isDestroyed() && state().getString("path").endsWith("/second.md"), "Share reuses the running reader");
             pass("Implicit open at startup and share into the running reader");
@@ -733,13 +734,11 @@ public class Smoke extends Instrumentation {
         while (SystemClock.uptimeMillis() < deadline) {
             AccessibilityNodeInfo root = getUiAutomation().getRootInActiveWindow();
             if (root != null) for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(text)) {
-                Rect bounds = new Rect(); node.getBoundsInScreen(bounds);
-                long down = SystemClock.uptimeMillis();
-                MotionEvent press = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, bounds.centerX(), bounds.centerY(), 0);
-                press.setSource(InputDevice.SOURCE_TOUCHSCREEN); getUiAutomation().injectInputEvent(press, true); press.recycle();
-                MotionEvent release = MotionEvent.obtain(down, down + 60, MotionEvent.ACTION_UP, bounds.centerX(), bounds.centerY(), 0);
-                release.setSource(InputDevice.SOURCE_TOUCHSCREEN); getUiAutomation().injectInputEvent(release, true); release.recycle();
-                return;
+                // System sheets can expose label bounds before their layout settles.
+                for (AccessibilityNodeInfo control = node; control != null; control = control.getParent()) {
+                    if (control.isVisibleToUser() && control.isEnabled() && control.isClickable()
+                        && control.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+                }
             }
             SystemClock.sleep(100);
         }

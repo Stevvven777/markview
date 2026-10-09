@@ -51,6 +51,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Fix security regression tests on Windows and macOS and avoid misclicks on Android system sharing controls in CI.
 - Preserve non-UTF-8 filesystem grants in image cache partitions and keep live exports when closing another origin's tab.
 - Keep Android CI device logs alive across web-fixture setup by restarting adb before starting logcat.
 

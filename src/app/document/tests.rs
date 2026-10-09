@@ -433,7 +433,7 @@ fn untrusted_local_navigation_and_images_need_grants_without_reusing_trusted_tab
 	};
 	let mut h = Harness::new();
 	h.open("README.zh-cn.md", 1);
-	let source = h.dir.path().join("README.md");
+	let source = fs::canonicalize(h.dir.path().join("README.md")).unwrap();
 	h.app
 		.open_document(source.clone(), Security::local(Trust::Untrusted));
 	h.wait_images(0);
