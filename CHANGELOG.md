@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Redesign the Reveal toolbar icon with a simple location pin at the folder's lower-left corner.
 - Share PNG rendering and encoding across callers, and accept in-memory Markdown for PDF and PNG export.
 - Enforce enum-based document trust, scoped resource grants, origin-preserving tabs and exports, and permission-aware image caches; add PDF trust and grant options.
 - Define Trusted local-file and Untrusted clipboard/web modes, origin-preserving navigation and target authorization in the threat model; distinguish the design from current enforcement.
