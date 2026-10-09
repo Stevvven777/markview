@@ -43,8 +43,38 @@ VK_DRIVER_FILES="$driver" WGPU_BACKEND=vulkan \
 `VK_DRIVER_FILES` restricts Vulkan to Lavapipe even when a hardware adapter is
 available. A missing adapter fails the tests rather than skipping them. Windows
 can use the Direct3D software adapter (WARP); macOS uses Metal. CI uploads the
-generated frames in `artifacts/` for inspection. These frames are not yet
-compared against committed image baselines.
+generated frames in `artifacts/` for inspection.
+
+On Linux, `crates/markview-render/tests/golden.rs` also compares document frames
+against committed PNGs in `crates/markview-render/tests/goldens`. It requires
+Lavapipe and compares decoded RGBA pixels with a tolerance of one level per
+channel for cross-driver rounding. Every pixel must meet that limit; there is
+no permitted percentage of larger differences. Image dimensions must match
+exactly.
+The six Markdown fixtures cover prose, lists and quotations, tables, highlighted
+code, math, and images; prose also runs at a narrow width and at 1.25× in dark
+mode. Fonts and image pixels are loaded before rendering, and highlighting is
+settled before the capture. Windows and macOS run the existing rendering tests
+without comparing to the Linux baselines.
+
+Run just the baseline comparisons, or explicitly update them after an intended
+visual change:
+
+```sh
+bash scripts/test_render_goldens.sh
+bash scripts/test_render_goldens.sh --update
+```
+
+The script accepts an existing `VK_DRIVER_FILES` override. Normal tests never
+create missing baselines or overwrite existing ones. A mismatch writes actual,
+expected and difference PNGs to `artifacts/render-goldens/`; magenta pixels in
+the difference image mark every changed pixel. The failure reports the pixel
+count, bounding coordinates and dimensions, and CI uploads these files even on
+failure. Missing baselines fail with the actual frame available for inspection.
+Review the updated PNGs before committing them alongside the visual change.
+CI pins Ubuntu 24.04, Mesa 25.2.8 and LLVM 20.1.2 in `checks.yml`; when changing
+these versions, verify comparisons before considering a baseline update rather
+than widening the tolerance.
 
 Release archives, installers, and the platform icons are maintained separately;
 see the [packaging guide](packaging.md). After changing `assets/markview-icon-color.svg`:

@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Compare document rendering with committed PNG baselines on Lavapipe, with explicit updates and CI difference images.
+
 ### Changed
 
 - Run offscreen rendering tests by default, with Lavapipe in Linux CI and rendered frames uploaded for inspection.

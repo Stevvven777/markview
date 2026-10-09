@@ -2701,6 +2701,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "image",
  "markview-core",
  "markview-render",
  "parley",
@@ -2711,6 +2712,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "swash",
+ "tempfile",
  "tiny-skia",
  "web-time",
  "wgpu",
