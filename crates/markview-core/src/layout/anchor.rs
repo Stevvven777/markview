@@ -1,6 +1,7 @@
 use super::scroll_limit;
 use crate::scene::Draw;
 use crate::scene::LayoutSnapshot;
+use std::collections::HashMap;
 pub fn anchored_scroll(
 	old: &LayoutSnapshot,
 	new: &LayoutSnapshot,
@@ -64,6 +65,11 @@ pub fn anchored_scroll(
 			return (b.y + (scroll - anchor.y).min(b.layout.height))
 				.clamp(0.0, max);
 		}
+		// Index each identity's first occurrence once for all fallback neighbors.
+		let mut first = HashMap::new();
+		for block in &new.blocks {
+			first.entry(block.id).or_insert(block);
+		}
 		for delta in 1..=old.blocks.len() {
 			for neighbor in [
 				index.checked_sub(delta),
@@ -73,7 +79,7 @@ pub fn anchored_scroll(
 			.flatten()
 			{
 				let a = &old.blocks[neighbor];
-				if let Some(b) = new.blocks.iter().find(|b| b.id == a.id) {
+				if let Some(b) = first.get(&a.id) {
 					return (b.y + scroll - a.y).clamp(0.0, max);
 				}
 			}
