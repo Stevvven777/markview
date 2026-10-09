@@ -362,7 +362,6 @@ mod tests {
 	use super::*;
 
 	#[test]
-	#[ignore = "requires a GPU"]
 	fn report_separates_submission_from_completed_gpu_wait() -> Result<()> {
 		let dir = tempfile::tempdir()?;
 		let input = dir.path().join("sample.md");
@@ -404,7 +403,6 @@ mod tests {
 	}
 
 	#[test]
-	#[ignore = "requires a GPU"]
 	fn a_document_with_no_geometry_still_measures_its_opening_frame()
 	-> Result<()> {
 		let dir = tempfile::tempdir()?;

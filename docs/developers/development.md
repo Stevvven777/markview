@@ -16,7 +16,7 @@ cargo build --release --locked
 Debian and Ubuntu additionally need the native development packages:
 
 ```sh
-sudo apt-get install libfontconfig1-dev libxkbcommon-dev libwayland-dev
+sudo apt-get install libfontconfig1-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers vulkan-tools
 ```
 
 Automated tests use the committed subsets in `crates/markview-core/tests/fonts`
@@ -26,8 +26,25 @@ reader itself needs fonts covering Latin and CJK, such as `fonts-noto-core` and
 adding characters or faces; that step requires the source Noto fonts and
 Python `fontTools`.
 
-On Linux, CI uses `tests/fontconfig.conf` to hide all installed fonts. Reproduce
-that check with `FONTCONFIG_FILE="$PWD/tests/fontconfig.conf" cargo test --workspace --all-targets --locked`.
+Offscreen rendering tests run with the normal test suite and need no window or
+physical GPU. Linux CI selects Mesa Lavapipe, which executes the Vulkan pipeline
+on the CPU, and uses `tests/fontconfig.conf` to hide all installed fonts. On
+Arch Linux, install `vulkan-swrast` and `vulkan-tools`. Reproduce Linux CI with:
+
+```sh
+driver=$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)
+test -n "$driver"
+VK_DRIVER_FILES="$driver" WGPU_BACKEND=vulkan vulkaninfo --summary
+VK_DRIVER_FILES="$driver" WGPU_BACKEND=vulkan \
+  FONTCONFIG_FILE="$PWD/tests/fontconfig.conf" \
+  cargo test --workspace --all-targets --locked
+```
+
+`VK_DRIVER_FILES` restricts Vulkan to Lavapipe even when a hardware adapter is
+available. A missing adapter fails the tests rather than skipping them. Windows
+can use the Direct3D software adapter (WARP); macOS uses Metal. CI uploads the
+generated frames in `artifacts/` for inspection. These frames are not yet
+compared against committed image baselines.
 
 Release archives, installers, and the platform icons are maintained separately;
 see the [packaging guide](packaging.md). After changing `assets/markview-icon-color.svg`:
@@ -165,16 +182,16 @@ complete snapshot to render before exiting. Its PNG captures the first readable
 frame. Offscreen `bench` and `render` continue to use complete geometry;
 their timings must not be reported as progressive window first-frame timings.
 
-Ignored GPU tests are useful for settings, selection, and image-frame regressions:
+Run individual rendering tests for settings, selection, and image-frame regressions:
 
 ```sh
-cargo test --workspace --locked button_feedback_frames -- --ignored
-cargo test --workspace --locked redesigned_chrome_frames -- --ignored
-cargo test --workspace --locked settings_and_selection_frame -- --ignored
-cargo test --workspace --locked outline_drawer_frames -- --ignored
-cargo test --workspace --locked tab_strip_frames_clip_overflow_at_fractional_dpi -- --ignored
-cargo test --workspace --locked gpu_frame_draws_decoded_images -- --ignored
-cargo test --workspace --locked color_glyphs_preserve_rgb_and_share_paint_order -- --ignored
+cargo test --workspace --locked button_feedback_frames
+cargo test --workspace --locked redesigned_chrome_frames
+cargo test --workspace --locked settings_and_selection_frame
+cargo test --workspace --locked outline_drawer_frames
+cargo test --workspace --locked tab_strip_frames_clip_overflow_at_fractional_dpi
+cargo test --workspace --locked gpu_frame_draws_decoded_images
+cargo test --workspace --locked color_glyphs_preserve_rgb_and_share_paint_order
 ```
 
 The redesigned chrome matrix writes `artifacts/ui-redesign/` frames for both
@@ -249,10 +266,10 @@ Start with the [MVSS authoring workflow](../users/stylesheets.md#authoring-workf
 
 For a repository-bundled theme, add the file to `Stylesheet::named_rules` and its ID to `Stylesheet::READER_THEMES` or `Stylesheet::PDF_THEMES` according to its destination in `crates/markview-core/src/style.rs`; discovery and reserved-ID checks use that registry. Run `cargo fmt --all` and `cargo test --workspace`, then render the fixture. A new theme usually needs no parser or renderer changes. Extend MVSS only for a concrete visual requirement that existing fields cannot express, with parser and rendering tests plus documentation.
 
-The GPU comparison uses the host's installed fonts and draws requested weights 400, 450 and 500 at 12/14/16 logical pixels on light/dark panels and at 1×, 1.25× and 2× scale:
+The rendering comparison uses the committed test fonts and draws requested weights 400, 450 and 500 at 12/14/16 logical pixels on light/dark panels and at 1×, 1.25× and 2× scale:
 
 ```sh
-cargo test -p markview cjk_ui_weight_comparison -- --ignored --nocapture
+cargo test -p markview cjk_ui_weight_comparison -- --nocapture
 ```
 
 Images are written to `artifacts/cjk-weight/`. With static Noto Sans CJK SC Regular and Medium faces, both 450 and 500 select Medium. Other families and operating systems need their own check; the screenshot's Traditional/Japanese sample still uses the SC font convention for this controlled comparison.
@@ -327,7 +344,7 @@ or iteration counts differ; do not merge incompatible experiments or relax the
 5% gate. A controlled pass does not erase an earlier failed measurement.
 
 Keep visual checks alongside timing checks. Compare deterministic offscreen
-exports with the preserved binary, then run the ignored GPU tests and native
+exports with the preserved binary, then run the rendering tests and native
 window/watch smoke tests. Native Windows/macOS CI checks remain necessary;
 Linux GPU measurements do not establish runtime behavior on those platforms.
 

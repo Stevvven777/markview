@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Changed
+
+- Run offscreen rendering tests by default, with Lavapipe in Linux CI and rendered frames uploaded for inspection.
+
 ### Fixed
 
 - Keep saves made while a watched export is still writing from being dropped, including before the first export has chosen its output.

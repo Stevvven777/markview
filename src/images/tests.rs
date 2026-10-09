@@ -778,7 +778,6 @@ fn svg_renders_at_the_intrinsic_and_requested_size() {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/images.png"]
 fn gpu_frame_draws_decoded_images() -> Result<()> {
 	use crate::{
 		layout::{LayoutEngine, LayoutOptions},

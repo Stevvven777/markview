@@ -311,7 +311,6 @@ fn document_scrollbar_keeps_its_edge_inset_and_width_while_dragging() {
 }
 
 #[test]
-#[ignore = "requires a GPU"]
 fn scrolled_content_paints_to_both_viewport_edges() -> anyhow::Result<()> {
 	use crate::render::{Renderer, Theme, View};
 	let (mut app, _) =

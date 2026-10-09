@@ -185,6 +185,6 @@ Run the desktop regression and GPU export checks with:
 
 ```sh
 cargo test --workspace --locked
-cargo test --lib a_whole_document_png_export_stitches_its_tiles -- --ignored
+cargo test --lib a_whole_document_png_export_stitches_its_tiles
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```

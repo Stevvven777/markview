@@ -371,7 +371,6 @@ mod tests {
 	}
 
 	#[test]
-	#[ignore = "requires a GPU; writes artifacts/empty-page/*.png"]
 	fn empty_page_frames() -> anyhow::Result<()> {
 		let output = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 			.join("artifacts/empty-page");
@@ -380,7 +379,7 @@ mod tests {
 		for dark in [false, true] {
 			let sheet = markview_core::style::Stylesheet::bundled(dark);
 			renderer.set_stylesheet(sheet.clone());
-			let mut ui = TextShaper::with_fonts(Default::default());
+			let mut ui = crate::test_support::shaper();
 			ui.set_stylesheet(sheet);
 			for lang in [Lang::En, Lang::ZhHans, Lang::ZhHant, Lang::Ja] {
 				for (width, height) in [

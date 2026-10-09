@@ -572,7 +572,6 @@ fn worker_latest_request_wins_after_cancellation() {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/search/*.png"]
 fn search_bar_and_highlight_gpu_frames() -> anyhow::Result<()> {
 	use crate::{
 		lang::Lang,

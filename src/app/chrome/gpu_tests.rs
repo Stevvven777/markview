@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use super::*;
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/refactor-ui.png"]
 fn settings_and_selection_frame() -> Result<()> {
 	for (width, height, theme, panel_open, restart_pending, filename) in [
 		(800.0, 600.0, Theme::Light, true, false, "refactor-ui.png"),
@@ -131,11 +130,7 @@ fn settings_and_selection_frame() -> Result<()> {
 			(width, height),
 			Lang::En,
 		));
-		let mut ui = if restart_pending {
-			TextShaper::with_fonts(Default::default())
-		} else {
-			crate::test_support::shaper()
-		};
+		let mut ui = crate::test_support::shaper();
 		ui.set_stylesheet(settings.stylesheet.clone());
 		overlay.extend(draw_controls(
 			&mut ui,
@@ -248,7 +243,6 @@ fn settings_and_selection_frame() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/notice-*.png and artifacts/confirm-modal*.png"]
 fn notice_strip_and_confirmation_frames() -> Result<()> {
 	let (width, height) = (800.0_f32, 600.0_f32);
 	let directory =
@@ -475,7 +469,6 @@ fn notice_strip_and_confirmation_frames() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/tab-bar/*.png"]
 fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 	use crate::app::{
 		tab_metrics::TabMetrics,
@@ -724,7 +717,6 @@ fn tab_strip_frames_clip_overflow_at_fractional_dpi() -> Result<()> {
 /// The Settings icon is the probe because it is symmetric: a correctly placed
 /// raster puts its coverage centroid on the box centre.
 #[test]
-#[ignore = "requires a GPU; writes artifacts/icon-centre-*.png"]
 fn icons_keep_their_optical_centre_at_fractional_dpi() -> Result<()> {
 	const SCALE: f32 = 1.25;
 	const HEIGHT: f32 = 300.0;
@@ -779,11 +771,16 @@ fn icons_keep_their_optical_centre_at_fractional_dpi() -> Result<()> {
 		std::fs::create_dir_all(output.parent().unwrap())?;
 		renderer.save_png(&target, &output)?;
 		let image = image::open(output)?.to_rgba8();
-		// Both buttons center their 20 px icon box four pixels inside their
-		// rectangle; Settings is the second button, so it sits at `width - 40`.
-		let left = (width - 40.0) * SCALE;
-		let top = 10.0 * SCALE;
-		let centre = [left + 10.0 * SCALE, top + 10.0 * SCALE];
+		let button = controls::toolbar_controls(width, false, Lang::En)
+			.into_iter()
+			.find(|button| button.action == Command::Settings)
+			.unwrap();
+		let centre = [
+			(button.rect.x + button.rect.w / 2.0) * SCALE,
+			(button.rect.y + button.rect.h / 2.0) * SCALE,
+		];
+		let left = centre[0] - 10.0 * SCALE;
+		let top = centre[1] - 10.0 * SCALE;
 		let (x, y) = coverage_centroid(&image, left, top, 20.0 * SCALE);
 		let offset = [x - f64::from(centre[0]), y - f64::from(centre[1])];
 		assert!(
@@ -824,7 +821,6 @@ fn coverage_centroid(
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/export-whole.png"]
 fn a_whole_document_png_export_stitches_its_tiles() -> Result<()> {
 	let settings = crate::settings::ExportSettings {
 		format: crate::settings::ExportFormat::Png,
@@ -900,7 +896,6 @@ fn a_whole_document_png_export_stitches_its_tiles() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/export-panel*.png"]
 fn export_panel_frames() -> Result<()> {
 	use super::export::draw_export;
 	let (width, height) = (1000.0_f32, 700.0_f32);
@@ -1445,7 +1440,6 @@ fn font_samples() -> Vec<crate::fonts::Family> {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/ui-redesign/*.png"]
 fn redesigned_chrome_frames() -> Result<()> {
 	use crate::app::{tab_metrics::TabMetrics, tab_strip::TabStrip};
 	let output =
@@ -1854,7 +1848,6 @@ fn redesigned_chrome_frames() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/ui-feedback/button-states-*.png"]
 fn button_feedback_frames() -> Result<()> {
 	use super::components::{ButtonKind, appearance, button, draw_button};
 	let directory =
@@ -1995,7 +1988,6 @@ fn button_feedback_frames() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/cjk-weight/*.png"]
 fn cjk_ui_weight_comparison() -> Result<()> {
 	use markview_core::style::{CjkType, Stylesheet, TextAppearance};
 	let directory =
@@ -2098,7 +2090,6 @@ fn cjk_ui_weight_comparison() -> Result<()> {
 }
 
 #[test]
-#[ignore = "requires a GPU; writes artifacts/outline-drawer-*.png"]
 fn outline_drawer_frames() -> Result<()> {
 	let directory =
 		std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("artifacts");

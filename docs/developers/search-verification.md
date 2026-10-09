@@ -17,7 +17,7 @@ belong to a tab and are retained when reopening with Ctrl/Cmd+F, but are not sav
 cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test -p markview app::search::tests::search_bar_and_highlight_gpu_frames -- --ignored --nocapture
+cargo test -p markview app::search::tests::search_bar_and_highlight_gpu_frames -- --nocapture
 cargo test --release -p markview-core --test search large_document_search_measurement -- --ignored --nocapture
 ```
 

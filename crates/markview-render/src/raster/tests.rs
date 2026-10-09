@@ -92,7 +92,6 @@ fn a_color_bitmap_emoji_decodes_to_color() {
 }
 
 #[test]
-#[ignore = "requires a GPU; validates color glyph pixels and atlas reset"]
 fn color_glyphs_preserve_rgb_and_share_paint_order() {
 	use super::{Entry, RasterKey, color::ColorAtlas};
 	use crate::{Renderer, Theme, View};
@@ -242,7 +241,6 @@ fn color_glyphs_preserve_rgb_and_share_paint_order() {
 }
 
 #[test]
-#[ignore = "requires a GPU"]
 fn prewarm_prepares_the_next_screenful_before_the_frame_needs_it() {
 	use crate::{RasterStats, Renderer, Theme, View};
 	use markview_core::scene::{
@@ -348,7 +346,6 @@ fn prewarm_prepares_the_next_screenful_before_the_frame_needs_it() {
 }
 
 #[test]
-#[ignore = "requires a GPU"]
 fn prewarming_leaves_the_visible_image_demand_alone() {
 	use crate::{Renderer, Theme, View};
 	use markview_core::{

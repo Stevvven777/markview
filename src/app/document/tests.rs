@@ -461,7 +461,6 @@ fn returning_to_cached_tabs_reloads_images_after_switching_or_closing() {
 }
 
 #[test]
-#[ignore = "requires a GPU"]
 fn gpu_restored_tabs_draw_images_after_switching_or_closing()
 -> anyhow::Result<()> {
 	use crate::render::{Renderer, Theme, View};
