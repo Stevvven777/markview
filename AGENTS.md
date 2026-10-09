@@ -47,7 +47,3 @@ Update the [changelog](CHANGELOG.md) as you go. Never be too detailed. Fit every
 
 - Some agent harness hides the GPU inside the sandbox. Request a out-of-sandbox command to run related tests.
 - Use headless Android emulator for Android tests, unless otherwise requested.
-
-## Performance Measurement
-
-Build and backup a binary of the current state of the code before making code changes. This makes it easy to compare performance before and after changes later. You can safely delete the backup binary after committing the changes. If you are not editing Rust sources, you can safely ingore this backup requirement.
