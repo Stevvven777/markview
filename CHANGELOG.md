@@ -27,6 +27,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Allow cached-tab refresh tests to update file timestamps on Windows.
 - Keep saves made while a watched export is still writing from being dropped, including before the first export has chosen its output.
 - Refresh cached tabs when their source files change, disappear or are recreated while inactive, including tabs restored by closing the current one.
 - Preserve fragment navigation during cached-tab refreshes by waiting for the current content revision before resolving anchors.

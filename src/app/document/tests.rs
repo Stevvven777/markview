@@ -348,7 +348,9 @@ fn cached_text_tabs_refresh_background_edits_on_every_activation_path() {
 		if activation % 2 == 0 {
 			fs::write(&path, after).unwrap();
 			let modified = fs::metadata(&path).unwrap().modified().unwrap();
-			fs::File::open(&path)
+			fs::OpenOptions::new()
+				.write(true)
+				.open(&path)
 				.unwrap()
 				.set_times(
 					fs::FileTimes::new()
