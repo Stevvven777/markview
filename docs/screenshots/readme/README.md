@@ -1,8 +1,8 @@
 # README images
 
-The English and Chinese READMEs use three compositions: a desktop monitor with
-an Android phone and tablet, enlarged text/math and code details, and a rectangular
-page joining Light and Dark along a single diagonal. All screen pixels come
+The English and Chinese READMEs use two compositions: a desktop monitor with
+an Android phone and tablet, and a rectangular page joining Light and Dark along
+a single diagonal. All screen pixels come
 from Markview. Device frames and shadows are presentation graphics.
 
 Desktop inputs (`en-*.png`, `zh-*.png`, excluding compositions) show the localized
@@ -27,7 +27,11 @@ text is 16 px, the tablet reading width is 760 px, and the same downloaded font
 resources are available in each app's private `markview/fonts` directory.
 System bars remain in the capture.
 
-With Pillow, Fontconfig, DejaVu Sans and Noto Sans CJK installed, recompose:
+Chinese captions, credits and chart labels use Noto Sans CJK SC, including the
+SC face index when the font is installed as a collection. Reader captures keep
+their theme fonts.
+
+With Pillow installed, recompose:
 
 ```sh
 python3 scripts/generate_readme_images.py
@@ -38,7 +42,8 @@ The localized `*-performance-comparison.png` charts read first-readable-frame
 time and total process-group RSS directly from the recorded tables in the
 [comparison report](../../developers/comparison.md). They use linear axes starting
 at zero and show all four fixtures, measured over three runs on September 22–23,
-2026. With Matplotlib and the same fonts installed, regenerate with:
+2026. With Matplotlib, FontTools, Fontconfig, Noto Sans and Noto Sans CJK SC
+installed, regenerate with:
 
 ```sh
 python3 scripts/generate_readme_comparison.py

@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import matplotlib
+from readme_fonts import save_chart
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -106,7 +107,12 @@ def draw(language, output=OUTPUT):
     )
     fig.text(0.035, 0.055, note, color=MUTED, fontsize=12, linespacing=1.7)
     output.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output / f"{language}-performance-comparison.png", facecolor=PAPER)
+    save_chart(
+        fig,
+        output / f"{language}-performance-comparison.png",
+        language,
+        facecolor=PAPER,
+    )
     plt.close(fig)
 
 

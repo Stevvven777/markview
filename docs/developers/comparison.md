@@ -26,6 +26,8 @@ The current sample is the title and opening two paragraphs of John Perry Barlow'
 as supplied in the text file. The localized labels use the same English passage so both figures demonstrate
 English line breaking. Regenerate them with `python3 scripts/render_typography_comparison.py`
 and `python3 scripts/render_typography_comparison.py --language zh --out docs/screenshots/zh-comparison.png`.
+Chinese headings and captions use Noto Sans CJK SC; the English passage keeps
+the same Noto Serif font in both panels.
 Replace the text file directly, separating paragraphs with blank lines; single
 line breaks within a paragraph become spaces. Text is treated literally, so
 Markdown punctuation does not introduce formatting. `--source /path/to/text.txt`

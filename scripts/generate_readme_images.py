@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Capture real reader windows and compose the localized README images.
 
-Requires Pillow, Fontconfig, and the caption fonts. Desktop capture also needs
+Requires Pillow. Desktop capture also needs
 Spectacle, a graphical desktop and a release binary; Android capture needs a
 configured emulator with Markview installed. Omit capture flags to recompose.
 """
@@ -16,28 +16,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "docs/screenshots/readme"
 THEMES = ("light", "dark", "celadon", "rosewood", "blueprint", "8-bit")
-BACKGROUND = "#EDF2F7"
-INK = "#263548"
-MUTED = "#52657B"
-
-
-def font(size, language):
-    family = "Noto Sans CJK SC" if language == "zh" else "DejaVu Sans"
-    path = subprocess.check_output(
-        ["fc-match", "-f", "%{file}", family], text=True
-    ).strip()
-    return ImageFont.truetype(path, size)
-
-
-def paste(canvas, picture, box):
-    picture = ImageOps.contain(picture.convert("RGB"), box[2:])
-    x, y = box[:2]
-    canvas.paste(picture, (x + (box[2] - picture.width) // 2, y))
 
 
 def save(canvas, name):
@@ -188,7 +171,6 @@ def hero(language):
 
 
 def compose(language):
-    title_font = font(36, language)
     desktop = Image.open(OUTPUT / f"{language}-light.png")
     hero(language)
 
@@ -207,35 +189,6 @@ def compose(language):
     )
     light.paste(dark, (0, 0), mask)
     save(light, f"{language}-themes.png")
-
-    detail = Image.new("RGB", (1800, 1020), BACKGROUND)
-    draw = ImageDraw.Draw(detail)
-    labels = (
-        ("Text and mathematics, together", "Code with room to breathe")
-        if language == "en"
-        else ("正文与公式，自然相融", "代码清晰，留白从容")
-    )
-    # These are enlarged crops of the same screenshot, never reconstructed text.
-    math_box, code_box = (
-        ((0.18, 0.30, 0.82, 0.53), (0.18, 0.67, 0.82, 0.85))
-        if language == "en"
-        else ((0.18, 0.31, 0.82, 0.48), (0.18, 0.63, 0.82, 0.81))
-    )
-    for y, box, label in (
-        (45, math_box, labels[0]),
-        (610, code_box, labels[1]),
-    ):
-        crop = desktop.crop(
-            tuple(
-                round(value * dimension)
-                for value, dimension in zip(
-                    box, (desktop.width, desktop.height, desktop.width, desktop.height)
-                )
-            )
-        )
-        draw.text((60, y), label, font=title_font, fill=INK)
-        paste(detail, crop, (60, y + 70, 1680, 420))
-    save(detail, f"{language}-details.png")
 
 
 def capture_android(serial, kind="android"):

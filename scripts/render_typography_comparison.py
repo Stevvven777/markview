@@ -23,7 +23,8 @@ import sys
 import tempfile
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
+from readme_fonts import font
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs/screenshots/source/typography.txt"
@@ -231,14 +232,10 @@ def main():
         draw = ImageDraw.Draw(figure)
         chinese = args.language == "zh"
 
-        def font(family, size):
-            path = run("fc-match", "-f", "%{file}", family).stdout
-            return ImageFont.truetype(path, size * args.scale)
-
         utility = "Noto Sans CJK SC" if chinese else "Noto Sans"
-        display = "Noto Serif CJK SC" if chinese else "Noto Serif"
-        caption = font(utility, 12)
-        heading = font(display, 28)
+        display = utility if chinese else "Noto Serif"
+        caption = font(12 * args.scale, args.language, family=utility)
+        heading = font(28 * args.scale, args.language, family=display)
         title = "齐整的边缘，自然的阅读。" if chinese else "A paragraph, in balance."
         note = (
             "相同文字、字体与栏宽，感受段落排版的差异。"
@@ -264,7 +261,13 @@ def main():
         )
         for index, left in enumerate((margin, margin + panel + gap)):
             x = left + INSET_X * args.scale
-            label(draw, font(utility, 17), x, 116 * args.scale, labels[index])
+            label(
+                draw,
+                font(17 * args.scale, args.language, family=utility),
+                x,
+                116 * args.scale,
+                labels[index],
+            )
             draw.text(
                 (x, 143 * args.scale), subtitles[index], font=caption, fill="#687587"
             )

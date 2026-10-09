@@ -6,8 +6,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from generate_readme_images import font
 from PIL import Image, ImageDraw
+from readme_fonts import font
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ROOT / "docs/screenshots/source/showcase"
@@ -108,26 +108,30 @@ def render(binary, output):
                 ],
                 check=True,
             )
-            with Image.open(target) as rendered:
-                page = Image.new("RGB", (1440, 1664), "#F9FAFC")
-                page.paste(rendered, (0, 0))
-                draw = ImageDraw.Draw(page)
-                if kind == "math":
-                    credit = "Download for free at https://openstax.org/details/books/calculus-volume-3."
-                elif language == "zh":
-                    credit = {
-                        "prose": "Aaron Swartz ·《游击队开放访问宣言》· 2008 年 7 月",
-                        "technical": "《Rust 程序设计语言》· Rust 中文社区译本",
-                        "web": "维基百科 ·《韦伯的首次深空》· 原文转写节选",
-                    }[kind]
-                else:
-                    credit = {
-                        "prose": "Aaron Swartz · Guerilla Open Access Manifesto · July 2008",
-                        "technical": "The Rust Programming Language · Data Types",
-                        "web": "Wikipedia · Webb’s First Deep Field · Extracted article",
-                    }[kind]
-                draw.text((70, 1616), credit, font=font(21, language), fill="#687587")
-                page.save(target, optimize=True)
+            compose_credit(target, language, kind)
+
+
+def compose_credit(target, language, kind):
+    with Image.open(target) as rendered:
+        page = Image.new("RGB", (1440, 1664), "#F9FAFC")
+        page.paste(rendered.crop((0, 0, 1440, 1600)), (0, 0))
+        draw = ImageDraw.Draw(page)
+        if kind == "math":
+            credit = "Download for free at https://openstax.org/details/books/calculus-volume-3."
+        elif language == "zh":
+            credit = {
+                "prose": "Aaron Swartz ·《游击队开放访问宣言》· 2008 年 7 月",
+                "technical": "《Rust 程序设计语言》· Rust 中文社区译本",
+                "web": "维基百科 ·《韦伯的首次深空》· 原文转写节选",
+            }[kind]
+        else:
+            credit = {
+                "prose": "Aaron Swartz · Guerilla Open Access Manifesto · July 2008",
+                "technical": "The Rust Programming Language · Data Types",
+                "web": "Wikipedia · Webb’s First Deep Field · Extracted article",
+            }[kind]
+        draw.text((70, 1616), credit, font=font(21, language), fill="#687587")
+        page.save(target, optimize=True)
 
 
 if __name__ == "__main__":

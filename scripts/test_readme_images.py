@@ -11,8 +11,9 @@ from unittest.mock import patch
 import numpy as np
 from generate_readme_comparison import SOURCE, draw, measurements
 from generate_readme_images import capture_profile
-from generate_readme_showcase import KINDS, SOURCES, extract_web
+from generate_readme_showcase import KINDS, SOURCES, compose_credit, extract_web
 from PIL import Image, ImageChops
+from readme_fonts import font, save_chart
 from render_typography_comparison import (
     FOOTER,
     GAP,
@@ -27,6 +28,42 @@ IMAGES = ROOT / "docs/screenshots/readme"
 
 
 class ReadmeImagesTest(unittest.TestCase):
+    def test_chinese_captions_use_the_sc_face(self):
+        self.assertEqual(font(36, "zh").getname()[0], "Noto Sans CJK SC")
+        self.assertEqual(font(21, "zh").getname()[0], "Noto Sans CJK SC")
+        self.assertEqual(font(36, "en").getname()[0], "DejaVu Sans")
+
+    def test_chinese_chart_uses_sc_for_regular_and_bold_text(self):
+        import matplotlib.pyplot as plt
+        from matplotlib.ft2font import FT2Font
+        from matplotlib.text import Text
+
+        figure, axes = plt.subplots()
+        axes.set_title("中文标题", fontsize=18, fontweight="bold")
+        axes.set_xlabel("中文说明", fontsize=12)
+        savefig = figure.savefig
+
+        def check_and_save(*args, **kwargs):
+            for text in figure.findobj(Text):
+                self.assertEqual(
+                    FT2Font(text.get_fontproperties().get_file()).family_name,
+                    "Noto Sans CJK SC",
+                )
+            self.assertEqual(
+                FT2Font(axes.title.get_fontproperties().get_file()).style_name,
+                "Bold",
+            )
+            self.assertEqual(axes.title.get_fontsize(), 18)
+            return savefig(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "chart.png"
+            with patch.object(figure, "savefig", side_effect=check_and_save):
+                save_chart(figure, target, "zh")
+            with Image.open(target) as chart:
+                self.assertGreater(len(chart.getcolors(100000)), 100)
+        plt.close(figure)
+
     def test_web_previews_replay_the_production_extractor(self):
         expected = {
             language: (SOURCES / language / "web-extracted.md").read_text()
@@ -55,6 +92,23 @@ class ReadmeImagesTest(unittest.TestCase):
             self.assertIn("| `i128`", technical)
             math = (SOURCES / language / "math.md").read_text()
             self.assertGreaterEqual(math.count("$$"), 6)
+
+    def test_showcase_credits_reproduce_without_changing_reader_pixels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for language in ("en", "zh"):
+                for kind in KINDS:
+                    name = f"{language}-showcase-{kind}.png"
+                    target = Path(directory) / name
+                    shutil.copyfile(IMAGES / name, target)
+                    compose_credit(target, language, kind)
+                    with (
+                        self.subTest(image=name),
+                        Image.open(IMAGES / name) as expected,
+                        Image.open(target) as actual,
+                    ):
+                        self.assertIsNone(
+                            ImageChops.difference(actual, expected).getbbox()
+                        )
 
     def test_plain_text_is_literal_in_both_engines(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -149,9 +203,7 @@ class ReadmeImagesTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             for capture in IMAGES.glob("*.png"):
-                if not any(
-                    kind in capture.stem for kind in ("hero", "details", "themes")
-                ):
+                if not any(kind in capture.stem for kind in ("hero", "themes")):
                     shutil.copyfile(capture, output / capture.name)
             subprocess.run(
                 [
@@ -163,7 +215,8 @@ class ReadmeImagesTest(unittest.TestCase):
                 check=True,
             )
             for language in ("en", "zh"):
-                for kind in ("hero", "details", "themes"):
+                self.assertFalse((output / f"{language}-details.png").exists())
+                for kind in ("hero", "themes"):
                     name = f"{language}-{kind}.png"
                     with (
                         self.subTest(image=name),
