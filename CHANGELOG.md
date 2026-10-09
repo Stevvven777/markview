@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Replace the Open file-plus icon with simple open reading pages in the toolbar and tab drawer.
 - Simplify the empty reader with responsive local-file and experimental web-reading entry points, square controls and unobtrusive shortcuts, without drag-and-drop guidance.
 - Upgrade `comrak` to the crates.io 0.56 release and remove its Git patches from the application, fuzz harness and README preview generator.
 - Launch desktop reader windows in the background by default for `markview`, `markview FILE` and `markview web URL`; add `--foreground` to wait for the window and retain terminal logs.
@@ -49,7 +50,7 @@ at the same level, without `[brackets]`.
 - Send browser-style web/image headers with configurable `user-agent` and `accept-language`, HTML acceptance for articles and a separate capitalized font UA.
 - Include the browser UA OS comment in About diagnostics and copied issue reports.
 - Open URL and file tabs immediately, show loading and persistent errors in the reader, and keep background web completions attached to their original tabs.
-- Add a desktop-only "Reveal" toolbar button and <kbd>Ctrl+Alt+R</kbd> that show the active document's folder in the file manager; the Open button becomes a file-plus icon and the minimum window width rises to 536 px to keep the tab strip's floor.
+- Add a desktop-only "Reveal" toolbar button and <kbd>Ctrl+Alt+R</kbd> that show the active document's folder in the file manager; raise the minimum window width to 536 px to keep the tab strip's floor.
 - Add a fragment-target navigation oracle to the `fuzz/` harness, checking that a jump expands exactly the disclosures framing its target and lands in the block that declares it.
 
 ### Fixed
