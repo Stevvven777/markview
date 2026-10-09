@@ -1720,9 +1720,26 @@ fn redesigned_chrome_frames() -> Result<()> {
 					}
 					frame = frame
 						.with_tab_end(metrics.end(frame.tabs, strip.scroll));
+					let input_draws = if page == "empty" {
+						let buttons = empty::buttons(
+							&mut ui,
+							width,
+							height,
+							settings.lang(),
+						);
+						markview_core::text_input::TextInput::default().draw(
+							&mut ui,
+							buttons[1].rect,
+							false,
+							false,
+							settings.lang().empty_url_placeholder(),
+						)
+					} else {
+						Vec::new()
+					};
 					let mut chrome = Chrome {
 						frame,
-						input_draws: Vec::new(),
+						input_draws,
 						backend: None,
 						ui: &mut ui,
 						session,

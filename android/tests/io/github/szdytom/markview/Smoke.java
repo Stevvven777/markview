@@ -559,6 +559,23 @@ public class Smoke extends Instrumentation {
                     && source.equals(new String(Files.readAllBytes(new File(s.getString("path")).toPath()), StandardCharsets.UTF_8)));
             }
             pass("Shared list items, indented URL code blocks and URL prose retain their complete Markdown source");
+            if (state().getBoolean("phone_layout")) tap("Tabs");
+            tap("NewPage");
+            waitFor(s -> button(s, "FocusInput(Url)") != null);
+            double fullHeight = state().getJSONArray("dimensions").getDouble(1);
+            tap("FocusInput(Url)");
+            JSONObject resized = waitFor(s -> keyboardVisible()
+                && s.getJSONArray("dimensions").getDouble(1) < fullHeight - 50);
+            for (String action : new String[]{"FocusInput(Url)", "OpenUrl"}) {
+                JSONObject control = button(resized, action);
+                require(control != null && control.getDouble("y") >= 40
+                    && control.getDouble("y") + control.getDouble("h") <= resized.getJSONArray("dimensions").getDouble(1) - 28,
+                    "Web control remains visible above the keyboard: " + action);
+            }
+            sendStringSync(url);
+            tap("OpenUrl");
+            waitFor(s -> s.optBoolean("ready") && s.optString("path").equals(path) && !keyboardVisible());
+            pass("Empty-page URL input and Open button stay visible and usable with the Android keyboard: " + resized.getJSONArray("dimensions"));
             pass("Shared Markdown preservation and native URL parsing for bracketed queries and IPv6 hosts");
             pass("HTTP article extraction, shared URLs, title and URL shares, and link tab reuse" + (cold ? " at cold startup" : ""));
         }

@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Simplify the empty reader with responsive local-file and experimental web-reading entry points, square controls and unobtrusive shortcuts, without drag-and-drop guidance.
 - Upgrade `comrak` to the crates.io 0.56 release and remove its Git patches from the application, fuzz harness and README preview generator.
 - Launch desktop reader windows in the background by default for `markview`, `markview FILE` and `markview web URL`; add `--foreground` to wait for the window and retain terminal logs.
 - Change the Reveal folder shortcut from Ctrl+Shift+O to Ctrl+Alt+R.
@@ -53,6 +54,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep empty-page web controls visible when the Android keyboard reduces stacked viewports, trimming guidance to fit the available height.
 - Show fatal desktop reader startup errors in a native dialog, including stylesheet and GPU failures; keep `--foreground` and diagnostic errors in the terminal.
 - Fix security regression tests on Windows and macOS and avoid misclicks on Android system sharing controls in CI.
 - Preserve non-UTF-8 filesystem grants in image cache partitions and keep live exports when closing another origin's tab.
