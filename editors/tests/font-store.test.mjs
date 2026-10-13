@@ -55,3 +55,30 @@ test("family replacement preserves old files on failure/cancellation and commits
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("custom template batches use one snapshot and clean it up after failure", async () => {
+  const { FontClient } = await import("../dist/font-client.js");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "markview-template-test-"));
+  const original = path.join(dir, "style.mvss.toml");
+  const client = new FontClient("unused", dir);
+  let snapshot;
+  try {
+    await writeFile(original, "original");
+    await assert.rejects(
+      client.withTemplate(
+        { id: "custom", name: "Custom", path: original },
+        async (template) => {
+          snapshot = template.path;
+          await writeFile(original, "changed");
+          assert.equal(await readFile(snapshot, "utf8"), "original");
+          throw new Error("batch failed");
+        },
+      ),
+      /batch failed/,
+    );
+    await assert.rejects(readFile(snapshot), { code: "ENOENT" });
+    assert.equal(await readFile(original, "utf8"), "changed");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

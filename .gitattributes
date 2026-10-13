@@ -4,3 +4,6 @@
 # Pinned test fonts must survive a checkout byte for byte.
 *.otf binary
 *.ttf binary
+
+# Keep editor sources consistent with Prettier on Windows.
+editors/** text eol=lf
