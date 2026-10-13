@@ -24,3 +24,7 @@ uses an export marker followed by bounded process termination.
 
 Tests use committed font fixtures and temporary directories. No internet downloads
 or globally installed fonts are needed for deterministic matching tests.
+
+`FontClient` wraps the native catalog/download protocol and snapshots custom
+templates for batch operations. It requires a compatible `markview export` CLI;
+scanning and cache operations remain usable without a native binary.
