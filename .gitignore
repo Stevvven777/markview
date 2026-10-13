@@ -29,3 +29,7 @@ web/.tsbuildinfo
 
 # Vendored tools
 .tools/
+
+# Editor tooling
+/editors/node_modules/
+/editors/dist/
