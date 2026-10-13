@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Add a VS Code font manager with template availability, local directories, bulk downloads, progress, cancellation, and retry.
 - Add editor-side system and downloaded font indexing, family matching, and cancellable native process transport.
 - Export unsaved Markdown through `markview export --stdin` to PDF or PNG, with templates, resource directories, JSON progress and cancellation.
 - Cover nested disclosures in quotes and lists, styled container edges, selection and horizontal scrolling with rendering baselines.

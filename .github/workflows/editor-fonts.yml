@@ -20,3 +20,7 @@ jobs:
       - run: npm ci --prefix editors
       - run: npm --prefix editors run lint
       - run: npm --prefix editors test
+      - if: runner.os == 'Linux'
+        run: npx --prefix editors playwright install --with-deps chromium
+      - if: runner.os == 'Linux'
+        run: npm --prefix editors run test:browser

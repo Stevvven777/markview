@@ -1,7 +1,7 @@
 # Editor font services
 
 This private Node package supplies reusable font services for editor integrations.
-It does not register a VS Code extension yet.
+The VS Code development extension registers the font management command.
 
 ```sh
 npm ci --prefix editors
@@ -28,3 +28,23 @@ or globally installed fonts are needed for deterministic matching tests.
 `FontClient` wraps the native catalog/download protocol and snapshots custom
 templates for batch operations. It requires a compatible `markview export` CLI;
 scanning and cache operations remain usable without a native binary.
+
+## Font manager development
+
+Requires the template-font CLI change plus the reusable editor font services.
+The panel is prepared on top of those services and should be reviewed after both
+prerequisite PRs merge. It adds no reading preview or document export command yet.
+
+```sh
+npm --prefix editors run build
+cd editors
+npx playwright install chromium
+npm run test:browser
+MARKVIEW_BINARY=/absolute/path/to/markview node --test tests/native-fonts.mjs
+MARKVIEW_BINARY=/absolute/path/to/markview npm run package
+```
+
+Install the generated platform-specific VSIX from `artifacts/vscode`, then open
+**Markview: 字体管理…**. The CLI binary must support `export --catalog/--download`.
+Browser tests exercise the production panel host and DOM with mocked VS Code
+services; native transport tests exercise the real CLI separately.

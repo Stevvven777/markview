@@ -6,15 +6,20 @@
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "npm run typecheck && prettier --check \"vscode/src/**/*.ts\" \"tests/**/*.mjs\" \"*.mjs\" \"*.json\"",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:browser": "npm run build && playwright test",
+    "package": "node package.mjs"
   },
   "dependencies": {
     "fontkit": "2.0.4",
     "get-system-fonts": "2.0.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@types/fontkit": "^2.0.8",
     "@types/node": "^22.0.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.0",
     "prettier": "^3.9.9",
     "typescript": "^5.9.0"
