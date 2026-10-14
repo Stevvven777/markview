@@ -10,7 +10,7 @@ test("font index reads internal family names, TTC faces and fallback candidates"
   const dir = await mkdtemp(path.join(os.tmpdir(), "markview-font-test-"));
   try {
     const index = new FontIndex(dir, path.join(dir, "index.json"));
-    const fixtures = path.resolve("../crates/markview-web/tests/fonts");
+    const fixtures = path.resolve("../../../crates/markview-web/tests/fonts");
     await index.refresh([], [path.join(fixtures, "Noto-subset.ttc")]);
     assert.equal(index.records.length, 1);
     assert.ok(index.records[0].names.includes("Noto Serif"));
@@ -50,7 +50,7 @@ test("directory scanning skips invalid files and invalidates cached names after 
     const face = path.join(extra, "fixture.otf");
     await copyFile(
       path.resolve(
-        "../crates/markview-layout/tests/fonts/NotoSerif-Regular-subset.otf",
+        "../../../crates/markview-layout/tests/fonts/NotoSerif-Regular-subset.otf",
       ),
       face,
     );

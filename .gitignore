@@ -31,5 +31,5 @@ web/.tsbuildinfo
 .tools/
 
 # Editor tooling
-/editors/node_modules/
-/editors/dist/
+/web/app/vsc-ext/node_modules/
+/web/app/vsc-ext/dist/

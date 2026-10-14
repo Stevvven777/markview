@@ -4,9 +4,9 @@ This private Node package supplies reusable font services for editor integration
 It does not register a VS Code extension yet.
 
 ```sh
-npm ci --prefix editors
-npm --prefix editors run lint
-npm --prefix editors test
+npm ci --prefix web/app/vsc-ext
+npm --prefix web/app/vsc-ext run lint
+npm --prefix web/app/vsc-ext test
 ```
 
 `FontIndex` enumerates system fonts, the download cache and configured directories.
