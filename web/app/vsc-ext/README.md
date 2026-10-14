@@ -4,9 +4,9 @@ This private Node package supplies reusable font services for editor integration
 The VS Code development extension registers the font management command.
 
 ```sh
-npm ci --prefix editors
-npm --prefix editors run lint
-npm --prefix editors test
+npm ci --prefix web/app/vsc-ext
+npm --prefix web/app/vsc-ext run lint
+npm --prefix web/app/vsc-ext test
 ```
 
 `FontIndex` enumerates system fonts, the download cache and configured directories.
@@ -36,8 +36,8 @@ The panel is prepared on top of those services and should be reviewed after both
 prerequisite PRs merge. It adds no reading preview or document export command yet.
 
 ```sh
-npm --prefix editors run build
-cd editors
+npm --prefix web/app/vsc-ext run build
+cd web/app/vsc-ext
 npx playwright install chromium
 npm run test:browser
 MARKVIEW_BINARY=/absolute/path/to/markview node --test tests/native-fonts.mjs

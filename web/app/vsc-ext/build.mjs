@@ -35,6 +35,6 @@ await build({
   target: "es2022",
 });
 await cp("vscode/src/shared/font-panel.css", "vscode/media/fonts.css");
-await cp("../assets/markview-icon-color.svg", "vscode/media/brand.svg");
-await cp("../assets/icons/markview-256.png", "vscode/icon.png");
-await cp("../LICENSE", "vscode/LICENSE");
+await cp("../../../assets/markview-icon-color.svg", "vscode/media/brand.svg");
+await cp("../../../assets/icons/markview-256.png", "vscode/icon.png");
+await cp("../../../LICENSE", "vscode/LICENSE");

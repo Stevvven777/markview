@@ -15,7 +15,7 @@ test("native catalog and downloads feed the editor cache and font status", async
   const dir = await mkdtemp(path.join(os.tmpdir(), "markview-native-fonts-"));
   const bytes = await readFile(
     new URL(
-      "../../crates/markview-layout/tests/fonts/NotoSerif-Regular-subset.otf",
+      "../../../../crates/markview-layout/tests/fonts/NotoSerif-Regular-subset.otf",
       import.meta.url,
     ),
   );

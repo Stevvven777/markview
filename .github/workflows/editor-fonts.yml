@@ -1,7 +1,7 @@
 name: Editor fonts
 on:
   pull_request:
-    paths: ['editors/**', 'crates/markview-web/tests/fonts/**', '.github/workflows/editor-fonts.yml']
+    paths: ['web/app/vsc-ext/**', 'crates/markview-web/tests/fonts/**', '.github/workflows/editor-fonts.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,10 +17,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - run: npm ci --prefix editors
-      - run: npm --prefix editors run lint
-      - run: npm --prefix editors test
+      - run: npm ci --prefix web/app/vsc-ext
+      - run: npm --prefix web/app/vsc-ext run lint
+      - run: npm --prefix web/app/vsc-ext test
       - if: runner.os == 'Linux'
-        run: npx --prefix editors playwright install --with-deps chromium
+        run: npx --prefix web/app/vsc-ext playwright install --with-deps chromium
       - if: runner.os == 'Linux'
-        run: npm --prefix editors run test:browser
+        run: npm --prefix web/app/vsc-ext run test:browser

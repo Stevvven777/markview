@@ -224,7 +224,7 @@ test("font manager uses production host and UI for status, progress, retry, temp
   ).toBe(true);
   expect(errors).toEqual([]);
   await page.screenshot({
-    path: `${root}../artifacts/vscode/font-manager.png`,
+    path: `${root}../../../artifacts/vscode/font-manager.png`,
     fullPage: true,
   });
   app.instance.dispose();

@@ -10,7 +10,7 @@ const target =
 const binary =
   process.env.MARKVIEW_BINARY ??
   path.resolve(
-    "../target/release",
+    "../../../target/release",
     target.startsWith("win32") ? "markview.exe" : "markview",
   );
 const handle = await open(binary);
@@ -47,11 +47,11 @@ await cp(
   binary,
   `vscode/bin/${target.startsWith("win32") ? "markview.exe" : "markview"}`,
 );
-await mkdir("../artifacts/vscode", { recursive: true });
+await mkdir("../../../artifacts/vscode", { recursive: true });
 const folder = "vscode";
 const manifest = JSON.parse(await readFile(`${folder}/package.json`, "utf8"));
 const output = path.resolve(
-  `../artifacts/vscode/${manifest.name}-${manifest.version}-${target}.vsix`,
+  `../../../artifacts/vscode/${manifest.name}-${manifest.version}-${target}.vsix`,
 );
 const result = spawnSync(
   process.execPath,

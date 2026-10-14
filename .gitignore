@@ -31,13 +31,13 @@ web/.tsbuildinfo
 .tools/
 
 # Editor tooling
-/editors/node_modules/
-/editors/dist/
-/editors/vscode/dist/
-/editors/vscode/media/
-/editors/vscode/bin/
-/editors/vscode/icon.png
-/editors/vscode/LICENSE
-/editors/test-results/
-/editors/playwright-report/
+/web/app/vsc-ext/node_modules/
+/web/app/vsc-ext/dist/
+/web/app/vsc-ext/vscode/dist/
+/web/app/vsc-ext/vscode/media/
+/web/app/vsc-ext/vscode/bin/
+/web/app/vsc-ext/vscode/icon.png
+/web/app/vsc-ext/vscode/LICENSE
+/web/app/vsc-ext/test-results/
+/web/app/vsc-ext/playwright-report/
 /artifacts/vscode/

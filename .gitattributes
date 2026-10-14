@@ -6,4 +6,4 @@
 *.ttf binary
 
 # Keep editor sources consistent with Prettier on Windows.
-editors/** text eol=lf
+web/app/vsc-ext/** text eol=lf

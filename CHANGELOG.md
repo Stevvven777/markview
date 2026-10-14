@@ -33,6 +33,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Move VS Code extension sources and tooling to `web/app/vsc-ext/`.
 - Split source parsing, semantic documents and layout into `markview-commonmark`, `markview-document` and `markview-layout`, preserving host scheduling and reader behavior.
 - Skip vertex emission during a glyph prewarm pass, which only prepares atlases for a frame it discards.
 - Reuse the per-frame paint order buffers instead of allocating them on every frame.
