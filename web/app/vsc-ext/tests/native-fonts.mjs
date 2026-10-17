@@ -20,9 +20,14 @@ test("native catalog and downloads feed the editor cache and font status", async
     ),
   );
   let valid = false;
+  let cancelTransfer = false;
+  const controller = new AbortController();
   const server = createServer((_request, response) => {
     response.writeHead(200, { "Content-Length": bytes.length });
-    response.end(valid ? bytes : Buffer.alloc(bytes.length));
+    if (cancelTransfer && _request.method !== "HEAD") {
+      response.write(bytes.subarray(0, 10));
+      controller.abort();
+    } else response.end(valid ? bytes : Buffer.alloc(bytes.length));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -71,6 +76,17 @@ files=['http://127.0.0.1:${server.address().port}/fixture.otf']
     assert.ok(status.match);
     assert.deepEqual(await readFile(status.match.path), bytes);
     assert.ok(progress.some((event) => event.type === "progress"));
+    cancelTransfer = true;
+    await assert.rejects(
+      client.downloadFamily(
+        template,
+        "ui",
+        "fixture-family",
+        controller.signal,
+      ),
+      { name: "AbortError" },
+    );
+    assert.deepEqual(await readFile(status.match.path), bytes);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
