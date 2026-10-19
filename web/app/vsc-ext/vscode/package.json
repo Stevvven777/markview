@@ -1,0 +1,61 @@
+{
+  "version": "0.3.0",
+  "publisher": "szdytom",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/szdytom/markview"
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./dist/extension.cjs",
+  "icon": "icon.png",
+  "scripts": {
+    "vscode:prepublish": "node ../build.mjs"
+  },
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Markview reads local fonts and launches its packaged exporter."
+    }
+  },
+  "name": "markview",
+  "displayName": "Markview Preview & Export",
+  "description": "Markview font management for reading and export templates.",
+  "contributes": {
+    "commands": [
+      {
+        "command": "markview.fonts",
+        "title": "\u5b57\u4f53\u7ba1\u7406\u2026",
+        "category": "Markview"
+      }
+    ],
+    "configuration": {
+      "title": "Markview",
+      "properties": {
+        "markview.fontDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional local font directories."
+        },
+        "markview.previewStyleFile": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to a custom MVSS stylesheet supporting the ui destination."
+        }
+      }
+    }
+  },
+  "activationEvents": []
+}

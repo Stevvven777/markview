@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Manage template fonts in VS Code with availability, individual or bulk downloads, progress and cancellation.
 - Preview a tab on hover after a short delay: a shared card shows its wrapped title and path, plus the tab's page scene drawn at device resolution unless that page is already on screen.
 - Resize sidebars from Settings or by dragging desktop edges, with saved independent folder, outline and phone sidebar widths.
 - Browse Markdown folders in a native file tree with refresh, collapse-all, keyboard navigation and session restoration, including Android folder imports.

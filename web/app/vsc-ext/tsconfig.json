@@ -6,8 +6,8 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "lib": ["ES2022", "DOM"]
+    "types": ["node", "vscode"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["vscode/src/**/*.ts"]
 }

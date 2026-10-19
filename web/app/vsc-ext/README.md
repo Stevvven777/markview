@@ -1,7 +1,7 @@
 # Editor font services
 
 This private Node package supplies reusable font services for editor integrations.
-It does not register a VS Code extension yet.
+The VS Code development extension registers the font management command.
 
 ```sh
 npm ci --prefix web/app/vsc-ext
@@ -20,7 +20,7 @@ coverage or exact rendering equivalence. Unreadable font files are skipped.
 and records its declared license/source metadata. Failed or cancelled downloads keep
 the prior installed family. Callers serialize installations for the same family.
 `runNative()` transports stdin and JSON progress to/from a subprocess; cancellation
-uses a cancellation marker followed by bounded process termination.
+uses an export marker followed by bounded process termination.
 
 Tests use committed font fixtures and temporary directories. No internet downloads
 or globally installed fonts are needed for deterministic matching tests.
@@ -28,3 +28,22 @@ or globally installed fonts are needed for deterministic matching tests.
 `FontClient` wraps the native catalog/download protocol and snapshots custom
 templates for batch operations. It requires a compatible `markview fonts` CLI;
 scanning and cache operations remain usable without a native binary.
+
+## Font manager development
+
+Uses the native font CLI and reusable editor font services. This slice adds
+font management; reading preview and document export commands follow separately.
+
+```sh
+npm --prefix web/app/vsc-ext run build
+cd web/app/vsc-ext
+npx playwright install chromium
+npm run test:browser
+MARKVIEW_BINARY=/absolute/path/to/markview node --test tests/native-fonts.mjs
+MARKVIEW_BINARY=/absolute/path/to/markview npm run package
+```
+
+Install the generated platform-specific VSIX from `artifacts/vscode`, then open
+**Markview: 字体管理…**. The CLI binary must support `fonts catalog` and `fonts download --json`.
+Browser tests exercise the production panel host and DOM with mocked VS Code
+services; native transport tests exercise the real CLI separately.

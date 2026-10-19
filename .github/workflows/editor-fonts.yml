@@ -20,3 +20,20 @@ jobs:
       - run: npm ci --prefix web/app/vsc-ext
       - run: npm --prefix web/app/vsc-ext run lint
       - run: npm --prefix web/app/vsc-ext test
+      - if: runner.os == 'Linux'
+        run: npx --prefix web/app/vsc-ext playwright install --with-deps chromium
+      - if: runner.os == 'Linux'
+        run: npm --prefix web/app/vsc-ext run test:browser
+      - if: runner.os == 'macOS'
+        uses: dtolnay/rust-toolchain@stable
+      - if: runner.os == 'macOS'
+        uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'macOS'
+        run: cargo build --release --locked --bin markview
+      - if: runner.os == 'macOS'
+        working-directory: web/app/vsc-ext
+        env:
+          MARKVIEW_BINARY: ${{ github.workspace }}/target/release/markview
+        run: node --test tests/native-fonts.mjs
+      - if: runner.os == 'macOS'
+        run: npm --prefix web/app/vsc-ext run package

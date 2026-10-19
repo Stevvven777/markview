@@ -33,3 +33,13 @@ web/.tsbuildinfo
 # Editor tooling
 /web/app/vsc-ext/node_modules/
 /web/app/vsc-ext/dist/
+
+# Local VS Code build outputs.
+web/app/vsc-ext/vscode/dist/
+web/app/vsc-ext/vscode/media/
+web/app/vsc-ext/vscode/bin/
+web/app/vsc-ext/vscode/icon.png
+web/app/vsc-ext/vscode/LICENSE
+artifacts/
+web/app/vsc-ext/test-results/
+web/app/vsc-ext/playwright-report/
