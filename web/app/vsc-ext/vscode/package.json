@@ -29,7 +29,7 @@
   },
   "name": "markview",
   "displayName": "Markview Preview & Export",
-  "description": "Markview font management and side-by-side Markdown preview.",
+  "description": "Markview font management, Markdown preview and export.",
   "contributes": {
     "commands": [
       {
@@ -45,6 +45,21 @@
           "light": "media/preview-light.svg",
           "dark": "media/preview-dark.svg"
         }
+      },
+      {
+        "command": "markview.export.pdf",
+        "title": "导出 PDF…",
+        "category": "Markview"
+      },
+      {
+        "command": "markview.export.png",
+        "title": "导出 PNG…",
+        "category": "Markview"
+      },
+      {
+        "command": "markview.export.template",
+        "title": "使用模板导出…",
+        "category": "Markview"
       }
     ],
     "configuration": {
@@ -62,6 +77,23 @@
           "type": "string",
           "default": "",
           "description": "Absolute path to a custom MVSS stylesheet supporting the ui destination."
+        },
+        "markview.exportTemplate": {
+          "type": "string",
+          "default": "default",
+          "description": "Default export template ID."
+        },
+        "markview.exportFontSize": {
+          "type": "number",
+          "default": 16,
+          "minimum": 1,
+          "description": "Export font size in pixels."
+        },
+        "markview.exportScale": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0.1,
+          "description": "PNG output scale."
         }
       }
     },
@@ -71,6 +103,23 @@
           "command": "markview.preview.open",
           "when": "editorLangId == markdown",
           "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "markview.export.pdf",
+          "when": "editorLangId == markdown",
+          "group": "markview"
+        },
+        {
+          "command": "markview.export.png",
+          "when": "editorLangId == markdown",
+          "group": "markview"
+        },
+        {
+          "command": "markview.export.template",
+          "when": "editorLangId == markdown",
+          "group": "markview"
         }
       ]
     }

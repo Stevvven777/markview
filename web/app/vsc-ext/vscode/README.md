@@ -1,7 +1,6 @@
 # Markview Preview & Export
 
 This development slice provides **Markview: 字体管理…** in the Command Palette.
-Document export commands are planned separately.
 
 The manager shows fonts required by reading and export templates, including their
 local paths, licenses, and download sources. Add a font directory, download one
@@ -21,3 +20,5 @@ Saved reading position is restored when VS Code reloads the window.
 This slice does not add synchronized scrolling or configurable reading templates.
 Fonts are resolved through the existing native font catalog and local font index.
 Only local trusted workspaces are supported.
+
+Right-click a Markdown editor to export PDF or PNG, or choose a built-in or custom MVSS template before exporting.

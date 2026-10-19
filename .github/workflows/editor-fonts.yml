@@ -38,6 +38,6 @@ jobs:
         working-directory: web/app/vsc-ext
         env:
           MARKVIEW_BINARY: ${{ github.workspace }}/target/release/markview
-        run: node --test tests/native-fonts.mjs
+        run: node --test tests/native-fonts.mjs tests/native-export.mjs
       - if: runner.os == 'macOS'
         run: npm --prefix web/app/vsc-ext run package

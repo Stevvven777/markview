@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Export saved or unsaved Markdown from VS Code to PDF or PNG using built-in or custom templates.
+
 ## 0.4.0 - 2026-10-20
 
 **Highlights**:

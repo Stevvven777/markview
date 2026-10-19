@@ -5,9 +5,13 @@ import path from "node:path";
 import { build } from "esbuild";
 await build({
   absWorkingDir: root,
-  entryPoints: ["fonts", "process", "font-store", "font-client"].map(
-    (name) => `vscode/src/shared/${name}.ts`,
-  ),
+  entryPoints: [
+    "fonts",
+    "process",
+    "font-store",
+    "font-client",
+    "export-snapshot",
+  ].map((name) => `vscode/src/shared/${name}.ts`),
   outdir: "dist",
   bundle: true,
   platform: "node",

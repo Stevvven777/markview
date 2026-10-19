@@ -56,6 +56,8 @@ This slice does not add synchronized scrolling or configurable reading templates
 Fonts are resolved through the existing native font catalog and local font index.
 Only local trusted workspaces are supported.
 
+Right-click a Markdown editor to export PDF or PNG, or choose a built-in or custom MVSS template before exporting.
+
 ## Development
 
 ```sh
@@ -68,6 +70,7 @@ cargo build --release --locked
 cd web/app/vsc-ext
 npx playwright install chromium
 npm run test:browser
+MARKVIEW_BINARY=/absolute/path/to/markview node --test tests/native-export.mjs
 MARKVIEW_BINARY=/absolute/path/to/markview npm run package
 ```
 

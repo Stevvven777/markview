@@ -143,6 +143,7 @@ test("side preview publishes unsaved edits, changes theme, deduplicates panels a
     commands.has("markview.fonts"),
     "Font management remains registered",
   );
+  assert.ok(commands.has("markview.export.pdf"), "Export remains registered");
   await commands.get("markview.preview.open")();
   assert.match(panel.webview.html, /wasm-unsafe-eval/);
   await receive({ type: "ready" });
