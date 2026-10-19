@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import { FontPanel } from "./shared/font-panel";
+import { activate as activateFeature } from "./preview/extension";
 import { Services } from "./shared/service";
 
 export function activate(context: vscode.ExtensionContext) {
   const services = new Services(context);
+  activateFeature(context, services);
   let panel: FontPanel | undefined;
   context.subscriptions.push(
     services,

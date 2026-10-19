@@ -31,8 +31,7 @@ scanning and cache operations remain usable without a native binary.
 
 ## Font manager development
 
-Uses the native font CLI and reusable editor font services. This slice adds
-font management; reading preview and document export commands follow separately.
+Uses the native font CLI and reusable editor font services.
 
 ```sh
 npm --prefix web/app/vsc-ext run build
@@ -47,3 +46,30 @@ Install the generated platform-specific VSIX from `artifacts/vscode`, then open
 **Markview: 字体管理…**. The CLI binary must support `fonts catalog` and `fonts download --json`.
 Browser tests exercise the production panel host and DOM with mocked VS Code
 services; native transport tests exercise the real CLI separately.
+
+Use the M icon in a Markdown editor title to open a side-by-side reading preview.
+The preview renders unsaved edits with MVaaC/WASM, follows the editor color theme,
+supports selection/copy, local and remote images, links and a visible scrollbar.
+Saved reading position is restored when VS Code reloads the window.
+
+This slice does not add synchronized scrolling or configurable reading templates.
+Fonts are resolved through the existing native font catalog and local font index.
+Only local trusted workspaces are supported.
+
+## Development
+
+```sh
+npm ci --prefix web/app/vsc-ext
+node web/scripts/wasm.mjs --setup
+node web/scripts/wasm.mjs
+npm --prefix web/app/vsc-ext run lint
+npm --prefix web/app/vsc-ext test
+cargo build --release --locked
+cd web/app/vsc-ext
+npx playwright install chromium
+npm run test:browser
+MARKVIEW_BINARY=/absolute/path/to/markview npm run package
+```
+
+VSIX output is written to `artifacts/vscode`. Build WASM and the native binary
+from the same checkout before packaging.

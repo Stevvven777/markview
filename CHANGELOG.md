@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Read unsaved Markdown in a VS Code side preview using MVaaC, with theme changes and window restoration.
 - Follow a tab switch in an open folder tree: the clicked document's branches open and its entry scrolls into view.
 - Manage template fonts in VS Code with availability, individual or bulk downloads, progress and cancellation.
 - Preview a tab on hover after a short delay: a shared card shows its wrapped title and path, plus the tab's page scene drawn at device resolution unless that page is already on screen.

@@ -7,7 +7,13 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["node", "vscode"],
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@markview/viewer": ["../../packages/markview/src/index.ts"],
+      "@markview/fonts": ["../../packages/fonts/src/index.ts"],
+      "@markview/resources": ["../../packages/resources/src/index.ts"]
+    },
+    "baseUrl": "."
   },
   "include": ["vscode/src/**/*.ts"]
 }
