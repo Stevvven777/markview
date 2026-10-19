@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { runInNewContext } from "node:vm";
 import { createRequire } from "node:module";
+let mockedModules = 0;
 const bundle = await build({
   entryPoints: ["vscode/src/extension.ts"],
   bundle: true,
@@ -14,14 +15,22 @@ const bundle = await build({
     {
       name: "services-fixture",
       setup(build) {
-        build.onLoad({ filter: /shared\/service\.ts$/ }, () => ({
-          contents: "export const Services = globalThis.Services;",
-          loader: "ts",
-        }));
+        build.onLoad({ filter: /shared[\\/]service\.ts$/ }, () => {
+          mockedModules++;
+          return {
+            contents: "export const Services = globalThis.Services;",
+            loader: "ts",
+          };
+        });
       },
     },
   ],
 });
+assert.equal(
+  mockedModules,
+  1,
+  "Host dependencies must be replaced before evaluating the test bundle",
+);
 test("side preview publishes unsaved edits, changes theme, deduplicates panels and restores after reload", async () => {
   const commands = new Map(),
     messages = [],
