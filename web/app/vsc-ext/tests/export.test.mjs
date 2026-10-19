@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { runInNewContext } from "node:vm";
 import { createRequire } from "node:module";
+let mockedModules = 0;
 const bundle = await build({
   entryPoints: ["vscode/src/extension.ts"],
   bundle: true,
@@ -14,18 +15,29 @@ const bundle = await build({
     {
       name: "host-fixture",
       setup(build) {
-        build.onLoad({ filter: /shared\/service\.ts$/ }, () => ({
-          contents: "export const Services = globalThis.Services;",
-          loader: "ts",
-        }));
-        build.onLoad({ filter: /shared\/export-snapshot\.ts$/ }, () => ({
-          contents: "export const exportSnapshot = globalThis.snapshot;",
-          loader: "ts",
-        }));
+        build.onLoad({ filter: /shared[\\/]service\.ts$/ }, () => {
+          mockedModules++;
+          return {
+            contents: "export const Services = globalThis.Services;",
+            loader: "ts",
+          };
+        });
+        build.onLoad({ filter: /shared[\\/]export-snapshot\.ts$/ }, () => {
+          mockedModules++;
+          return {
+            contents: "export const exportSnapshot = globalThis.snapshot;",
+            loader: "ts",
+          };
+        });
       },
     },
   ],
 });
+assert.equal(
+  mockedModules,
+  2,
+  "Host dependencies must be replaced before evaluating the test bundle",
+);
 test("export commands snapshot unsaved text, select templates, reveal success and handle cancellation/errors", async () => {
   const commands = new Map(),
     calls = [],
