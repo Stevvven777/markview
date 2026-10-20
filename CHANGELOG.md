@@ -21,8 +21,21 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+## 0.4.0 - 2026-10-20
+
+**Highlights**:
+
+- Browse Markdown folders in a native file tree that opens the clicked document's branches and restores across sessions.
+- Export unsaved Markdown straight from an editor buffer to PDF or PNG with `markview export --stdin`.
+- A browser Markdown editor with live preview, bundled fonts and scroll sync.
+- Editor-managed font downloads for templates, with availability, progress and cancellation in VS Code.
+- Resizable sidebars saved per panel, plus previews of a tab's page on hover.
+- Native parallel block layout on capable GPUs, with faster scrolling and reflows.
+
 ### Added
 
+- Read unsaved Markdown in a VS Code side preview using MVaaC, with theme changes and window restoration.
+- Follow a tab switch in an open folder tree: the clicked document's branches open and its entry scrolls into view.
 - Manage template fonts in VS Code with availability, individual or bulk downloads, progress and cancellation.
 - Preview a tab on hover after a short delay: a shared card shows its wrapped title and path, plus the tab's page scene drawn at device resolution unless that page is already on screen.
 - Resize sidebars from Settings or by dragging desktop edges, with saved independent folder, outline and phone sidebar widths.
@@ -66,6 +79,7 @@ at the same level, without `[brackets]`.
 ### Fixed
 
 - Isolate HTML allocation regression cases from concurrent test allocations without relaxing their memory limits.
+- Match Windows paths in VS Code host-test mocks so tests do not load native font services into the VM sandbox.
 - Restore fuzz harness compilation and include link command ranges and occurrence ids in layout differential checks.
 - Keep inline-link hover on the link under the pointer, so repeated links with one address and neighboring links no longer highlight together.
 - Hide the desktop sidebar toggle when no folder is open.

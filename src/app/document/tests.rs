@@ -1752,3 +1752,72 @@ fn folder_sidebar_repository_scroll_profile() {
 		samples[49], samples[94]
 	);
 }
+
+#[test]
+fn selecting_a_tab_opens_the_folder_onto_its_document() {
+	use crate::state::Command;
+	let mut h = Harness::new();
+	let root = h.dir.path().canonicalize().unwrap();
+	fs::create_dir_all(root.join("zoo/deep")).unwrap();
+	fs::write(root.join("zoo/deep/Zeta.md"), "# Zeta").unwrap();
+	// Enough siblings that the note sits below the list's clip.
+	for index in 0..30 {
+		fs::write(root.join(format!("note-{index:02}.md")), "note").unwrap();
+	}
+	h.open("README.md", 2);
+	h.open("zoo/deep/Zeta.md", 0);
+	h.app
+		.folder_loaded(0, false, crate::app::folder::Tree::read(root.clone()));
+	h.app.set_folder_open(true);
+	h.app
+		.interaction
+		.advance_drawers(Instant::now() + Duration::from_secs(1));
+	let rows = |h: &Harness| -> Vec<PathBuf> {
+		let tree = h.app.folder.tree.as_ref().unwrap();
+		tree.rows()
+			.iter()
+			.map(|i| {
+				tree.entries[*i]
+					.path
+					.strip_prefix(&tree.root)
+					.unwrap()
+					.to_owned()
+			})
+			.collect()
+	};
+	// A row is only reachable while its branch is open and on screen.
+	let reachable = |h: &mut Harness| -> Vec<PathBuf> {
+		let buttons = h.app.buttons();
+		let tree = h.app.folder.tree.as_ref().unwrap();
+		buttons
+			.iter()
+			.filter_map(|b| match b.action {
+				Command::FolderEntry(i) => Some(
+					tree.entries[i]
+						.path
+						.strip_prefix(&tree.root)
+						.unwrap()
+						.to_owned(),
+				),
+				_ => None,
+			})
+			.collect()
+	};
+	h.app.action(Command::FolderCollapseAll);
+	assert!(rows(&h).is_empty());
+	h.app.action(Command::SelectTab(0));
+	assert!(reachable(&mut h).contains(&PathBuf::from("README.md")));
+	assert!(!reachable(&mut h).iter().any(|p| p.starts_with("zoo")));
+	h.app.action(Command::SelectTab(1));
+	let opened = rows(&h);
+	for name in ["zoo", "zoo/deep", "zoo/deep/Zeta.md"] {
+		assert!(opened.contains(&PathBuf::from(name)), "{opened:?}");
+	}
+	// The row lands inside the clip, not just somewhere in the tree.
+	assert!(reachable(&mut h).contains(&PathBuf::from("zoo/deep/Zeta.md")));
+	assert!(h.app.folder.scroll > 0., "the row scrolls into the clip");
+	// A closed tree stays out of the way of a tab switch.
+	h.app.set_folder_open(false);
+	h.app.action(Command::SelectTab(0));
+	assert!(!h.app.folder.open);
+}

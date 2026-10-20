@@ -73,11 +73,13 @@ to choose one; you can also pass a directory to `markview`. The toolbar's **Reve
 button opens the current document's folder in the system file manager.
 Markview lists `.md`, `.markdown` and
 `.mdown` files in a left sidebar, preserving subfolders. Click a directory to
-expand or collapse it and a file to read it in a tab. Subfolders start collapsed;
-refreshing preserves the folders you expanded. Existing tabs are reused. The
-sidebar scrolls independently; Tab focuses its controls, arrow keys move
-between file rows, and Enter opens the selected row. Its header can collapse
-all folders or refresh the tree after files are added, moved or deleted.
+expand or collapse it and a file to read it in a tab. Subfolders start
+collapsed; refreshing preserves the folders you expanded. Existing tabs are
+reused. With the sidebar open, picking a tab expands the folders around its
+document and scrolls that row into view. The sidebar scrolls independently; Tab
+focuses its controls, arrow keys move between file rows, and Enter opens the
+selected row. Its header can collapse all folders or refresh the tree after
+files are added, moved or deleted.
 **Collapse all** also clears nested expansion and returns the tree to the top;
 use **Ctrl+Shift+O** to choose another folder.
 Hidden entries such as `.obsidian` and `.git`, and symbolic links, are omitted.

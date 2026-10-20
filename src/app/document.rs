@@ -205,22 +205,22 @@ impl<P: super::SendEvent> App<P> {
 		self.abandon_dm();
 		self.tab_strip.cancel_drag();
 		self.tab_strip.reveal_active = true;
-		if !self.readers.select(index, Instant::now()) {
-			self.apply_anchor();
-			self.redraw();
-			return;
+		if self.readers.select(index, Instant::now()) {
+			// A card describes the tab it was opened for, so a new active tab
+			// closes it; the resting pointer re-arms it on its next move.
+			self.dismiss_preview();
+			self.interaction.clear_selection();
+			self.worker.cancel();
+			self.close_search();
+			self.search_changed();
+			self.error = false;
+			self.status.clear();
+			self.status_until = None;
+			self.resume_document();
 		}
-		// A card describes the tab it was opened for, so a new active tab
-		// closes it; the resting pointer re-arms it on its next move.
-		self.dismiss_preview();
-		self.interaction.clear_selection();
-		self.worker.cancel();
-		self.close_search();
-		self.search_changed();
-		self.error = false;
-		self.status.clear();
-		self.status_until = None;
-		self.resume_document();
+		// The tree follows the clicked tab, so a collapsed branch cannot
+		// hide its entry.
+		self.expand_folder_to_tab();
 		self.apply_anchor();
 		self.redraw();
 	}

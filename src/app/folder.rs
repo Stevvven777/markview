@@ -183,6 +183,24 @@ impl Tree {
 		self.rebuild_rows();
 	}
 
+	/// Open every collapsed ancestor of `path`, and return its entry index.
+	pub fn expand_to(&mut self, path: &Path) -> Option<usize> {
+		let index = self.entries.iter().position(|e| e.path == path)?;
+		let depth = self.entries[index].depth;
+		self.expanded.extend(
+			(0..index)
+				.filter(|j| {
+					self.entries[*j].directory
+						&& self.entries[*j].depth < depth
+						&& index < self.entries[*j].subtree_end
+				})
+				.map(|j| self.entries[j].path.clone()),
+		);
+		self.root_collapsed = false;
+		self.rebuild_rows();
+		Some(index)
+	}
+
 	pub fn initial(&self) -> Option<PathBuf> {
 		self.entries
 			.iter()
@@ -362,6 +380,22 @@ impl<P: SendEvent> App<P> {
 		}
 		self.redraw();
 		true
+	}
+
+	/// Expand an open tree onto the document the reader is showing.
+	pub(super) fn expand_folder_to_tab(&mut self) {
+		if !(self.folder.open || self.phone_folder_open()) {
+			return;
+		}
+		let Some(path) = self.readers.session.path.clone() else {
+			return;
+		};
+		let Some(index) =
+			self.folder.tree.as_mut().and_then(|t| t.expand_to(&path))
+		else {
+			return;
+		};
+		self.reveal_folder(index);
 	}
 
 	pub(super) fn reveal_folder(&mut self, index: usize) {
@@ -866,5 +900,56 @@ mod tests {
 		assert_eq!(tree.resolve("https://example.com", &root), None);
 		assert_eq!(Tree::read(root.join("empty")).unwrap().initial(), None);
 		assert!(Tree::read(root.join("missing")).is_err());
+	}
+
+	#[test]
+	fn expand_to_opens_only_the_branch_above_a_path() {
+		let dir = tempfile::tempdir().unwrap();
+		let root = dir.path().canonicalize().unwrap();
+		for name in ["a/nested", "b/nested"] {
+			fs::create_dir_all(root.join(name)).unwrap();
+		}
+		for name in ["a/nested/One.md", "b/nested/Two.md", "Top.md"] {
+			fs::write(root.join(name), "note").unwrap();
+		}
+		let mut tree = Tree::read(root.clone()).unwrap();
+		let rows = |tree: &Tree| {
+			tree.rows()
+				.iter()
+				.map(|i| {
+					tree.entries[*i]
+						.path
+						.strip_prefix(&tree.root)
+						.unwrap()
+						.to_owned()
+				})
+				.collect::<Vec<_>>()
+		};
+		let expected = |names: &[&str]| {
+			names.iter().map(PathBuf::from).collect::<Vec<_>>()
+		};
+		// Only the branch above the note opens; siblings keep their state.
+		let one = root.join("a/nested/One.md");
+		let index = tree.expand_to(&one).unwrap();
+		assert!(tree.rows().contains(&index));
+		assert_eq!(
+			rows(&tree),
+			expected(&["a", "a/nested", "a/nested/One.md", "b", "Top.md"])
+		);
+		assert!(
+			tree.collapsed(
+				tree.entries
+					.iter()
+					.position(|e| e.path == root.join("b"))
+					.unwrap()
+			)
+		);
+		tree.collapse_all();
+		assert!(tree.rows().is_empty());
+		// A collapsed root reopens for the note it has to show.
+		assert_eq!(tree.expand_to(&root.join("Top.md")), Some(6));
+		assert!(!tree.root_collapsed());
+		assert_eq!(rows(&tree), expected(&["a", "b", "Top.md"]));
+		assert!(tree.expand_to(&root.join("absent.md")).is_none());
 	}
 }
