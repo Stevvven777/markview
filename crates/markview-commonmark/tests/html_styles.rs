@@ -19,7 +19,7 @@ use markview_document::{BlockKind, InlineKind};
 use std::{
 	alloc::{GlobalAlloc, Layout, System},
 	sync::{
-		Arc, Mutex,
+		Arc,
 		atomic::{AtomicUsize, Ordering},
 	},
 	time::{Duration, Instant},
@@ -87,16 +87,19 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
-/// The counters and the clock are process-wide, so one measured parse runs at
-/// a time; concurrent tests would otherwise see each other's allocations.
-static MEASURING: Mutex<()> = Mutex::new(());
+// The allocator counts the whole process, including input construction and
+// teardown. Keep all cases in one test so no other case can affect a sample.
+#[test]
+fn html_style_allocation_guards() {
+	deeply_nested_raw_html_keeps_its_allocation_bounded();
+	an_inline_address_is_not_copied_per_tag_or_per_run();
+	one_link_holds_one_address();
+	inline_scopes_are_budgeted();
+}
 
 /// One parse's reading text, the peak live bytes above the live bytes before
 /// it, and how long the parse took.
 fn parse_measured(source: String) -> (String, usize, Duration) {
-	let _measuring = MEASURING
-		.lock()
-		.unwrap_or_else(|poisoned| poisoned.into_inner());
 	let baseline = LIVE.load(Ordering::Relaxed);
 	PEAK.store(baseline, Ordering::Relaxed);
 	let start = Instant::now();
@@ -118,7 +121,6 @@ fn parse_measured(source: String) -> (String, usize, Duration) {
 	(text, peak, elapsed)
 }
 
-#[test]
 fn deeply_nested_raw_html_keeps_its_allocation_bounded() {
 	const DEPTH: usize = 4_000;
 	const BUDGET: usize = 4 << 20;
@@ -139,7 +141,6 @@ fn deeply_nested_raw_html_keeps_its_allocation_bounded() {
 /// per open scope or per emitted run. The guard compares the same shape with a
 /// short and a long address: neither the peak allocation nor the parse time may
 /// follow the address, however many tags carry it.
-#[test]
 fn an_inline_address_is_not_copied_per_tag_or_per_run() {
 	const TAGS: usize = 4_000;
 	const SHORT: usize = 64;
@@ -175,7 +176,6 @@ fn an_inline_address_is_not_copied_per_tag_or_per_run() {
 }
 
 /// Every run under one link shares one address buffer.
-#[test]
 fn one_link_holds_one_address() {
 	let source = format!(
 		"<a href=\"{}\">{}</a>\n",
@@ -203,7 +203,6 @@ fn one_link_holds_one_address() {
 /// An unclosed run of inline tags past the scope budget keeps the tags as
 /// source, which is what bounds the stack itself rather than only the address
 /// each entry holds.
-#[test]
 fn inline_scopes_are_budgeted() {
 	let source = format!("<a href=\"/a\">{}\n", "<b>".repeat(9_000));
 	let (text, peak, _) = parse_measured(source);
