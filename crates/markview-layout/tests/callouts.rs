@@ -229,3 +229,65 @@ fn callout_corners_default_to_square_and_follow_mvss() {
 		}
 	}
 }
+
+#[test]
+fn callouts_inherit_quote_line_widths_across_themes_and_mvss_overrides() {
+	for theme in std::iter::once("builtin")
+		.chain(Stylesheet::READER_THEMES.iter().copied())
+		.chain(Stylesheet::PDF_THEMES.iter().copied())
+	{
+		for rule in ["", "border_width=4.25", "border_edges=[0,0,0,5.5]"] {
+			let mut sheet = (*Stylesheet::builtin()).clone();
+			if theme != "builtin" {
+				sheet.merge(&Stylesheet::named_rules(theme).unwrap());
+			}
+			if !rule.is_empty() {
+				sheet.merge(
+					&Stylesheet::parse(&format!(
+						"format_version=2\nversion=1\n[[rule]]\nwhen=['blockquote']\n{rule}"
+					))
+					.unwrap(),
+				);
+			}
+			let options = LayoutOptions {
+				stylesheet: Arc::new(sheet),
+				..options(false)
+			};
+			for ofm in [false, true] {
+				let doc = parse_with(
+					"> Ordinary quote.\n\n> [!NOTE]\n> Body.\n",
+					Dialect {
+						ofm,
+						..Default::default()
+					},
+				);
+				let snapshot =
+					LayoutEngine::new().layout(&doc, &options).flattened();
+				let widths: Vec<_> = snapshot
+					.blocks
+					.iter()
+					.map(|block| {
+						block
+							.layout
+							.draws
+							.iter()
+							.find_map(|draw| match draw {
+								Draw::Box {
+									border,
+									decoration,
+									left_only: true,
+									..
+								} => Some(
+									decoration.map_or(*border, |d| d.edges[3]),
+								),
+								_ => None,
+							})
+							.unwrap()
+					})
+					.collect();
+				assert_eq!(widths.len(), 2);
+				assert_eq!(widths[0], widths[1], "{theme}: {rule}");
+			}
+		}
+	}
+}

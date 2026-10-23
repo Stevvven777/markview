@@ -263,6 +263,24 @@ fn block_role(block: &Block) -> Condition {
 	}
 }
 
+fn block_rule(
+	opts: &LayoutOptions,
+	chain: u128,
+	role: Condition,
+) -> crate::style::Rule {
+	let mut rule = opts.stylesheet.element_rule(chain, role);
+	// Callouts keep a decorated frame with the theme's quote line width.
+	if role.element_path().contains(Condition::Callout) {
+		rule.border_edges.get_or_insert([
+			0.,
+			0.,
+			0.,
+			rule.border_width.unwrap_or(0.),
+		]);
+	}
+	rule
+}
+
 pub(super) fn anchor_only(block: &Block) -> bool {
 	matches!(&block.kind, BlockKind::Paragraph(text) if text.iter().all(|i| matches!(i.kind, InlineKind::Anchor(_))))
 }
@@ -558,7 +576,7 @@ impl BlockContext<'_> {
 			opts.stylesheet.text(&previous, role)
 		};
 		let chain = appearance.chain;
-		let rule = opts.stylesheet.element_rule(chain, role);
+		let rule = block_rule(opts, chain, role);
 		// A hidden block draws nothing, box included, so a stylesheet can keep
 		// a document's metadata parsed while keeping it off the page.
 		if rule.show == Some(false) {

@@ -43,6 +43,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Keep alert and callout left borders as thick as ordinary blockquotes, following the active theme and MVSS overrides.
 - Keep inactive tabs' page previews available after idle document data is released, retaining only the preview's layout blocks and image pixels inside its scrolled clip.
 - Use the document background throughout tab hover previews and remove the inner frame.
 - Retry CI dependency installation and emulator setup failures while keeping application test failures fatal.

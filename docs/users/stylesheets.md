@@ -150,6 +150,8 @@ A condition is one fact about a rendered run: the blocks that contain it, the pa
 
 GFM alerts and Obsidian callouts share the `callout` container, refined by one color family and the theme's `blockquote` rules. Use `["callout_warning"] border_color` and `background` for its surface, and `["callout_warning", "label"] color`, `font` and `weight` for the title and SVG icon, including foldable titles. The families are `callout_note` (note, info, todo), `callout_tip` (abstract, tip), `callout_success`, `callout_warning` (question, warning), `callout_danger` (failure, danger, bug, GFM caution), `callout_example` (example, GFM important) and `callout_quote`. Obsidian keeps its own aliases: `important` means tip and `caution` means warning. Icons are precompiled vector geometry and never enter copied or searched text.
 
+Alerts and callouts inherit their left border width from `blockquote`, keeping it consistent with ordinary quotes in each theme. Set `border_width` on `callout` for an independent width, or `border_edges` for individual edges.
+
 Alerts and callouts have square corners by default. Set `radius` on `callout` to round them in the reader and exports:
 
 ```toml
