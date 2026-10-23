@@ -91,6 +91,9 @@ test("side preview publishes unsaved edits, changes theme, deduplicates panels a
       openTextDocument: async () => document,
     },
     window: {
+      visibleTextEditors: [],
+      onDidChangeTextEditorVisibleRanges: () => disposable,
+      onDidChangeTextEditorSelection: () => disposable,
       activeTextEditor: { document },
       activeColorTheme: { kind: 1 },
       createWebviewPanel: (_type, _title, column) => {

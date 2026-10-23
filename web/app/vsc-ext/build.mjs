@@ -53,6 +53,9 @@ await build({
   platform: "browser",
   target: "es2022",
   alias: {
+    "@markview/scroll-sync": path.resolve(
+      "../../packages/scroll-sync/src/index.ts",
+    ),
     "@markview/viewer": path.resolve("../../packages/markview/src/index.ts"),
     "@markview/fonts": path.resolve("../../packages/fonts/src/index.ts"),
     "@markview/resources": path.resolve(
