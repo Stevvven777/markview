@@ -477,7 +477,7 @@ fn a_highlight_mark_parses_only_in_the_dialect() {
 	let literal = parse("a ==marked== b\n");
 	assert_eq!(plain_text(paragraph(&literal)), "a ==marked== b");
 	assert!(paragraph(&literal).iter().all(|i| !i.style.mark));
-	// On, the same source reads as a mark; OFM lite parses it this way.
+	// On, the same source reads as a mark; Obsidian parses it this way.
 	let marked = parse_with("a ==marked== b\n", highlighted);
 	assert_eq!(plain_text(paragraph(&marked)), "a marked b");
 	assert!(paragraph(&marked).iter().any(|i| i.style.mark
@@ -2277,7 +2277,7 @@ fn wikilinks_escape_literal_percents_without_changing_markdown_urls() {
 	);
 }
 
-/// The OFM lite dialect: highlight marks, no hard breaks, Obsidian extras.
+/// The Obsidian dialect: highlight marks, no hard breaks, Obsidian extras.
 fn ofm() -> Dialect {
 	Dialect {
 		highlight_marks: true,
@@ -2428,7 +2428,7 @@ fn gfm_keeps_github_alerts_and_plain_quotes() {
 		panic!()
 	};
 	assert!(plain_text(text).starts_with("[!faq] Not an alert"));
-	// In OFM lite a GitHub alert is just another callout type.
+	// In Obsidian a GitHub alert is just another callout type.
 	let doc = parse_with("> [!NOTE]\n> Alert.\n", ofm());
 	let (callout, _) = callout_of(&doc.blocks[0]);
 	assert_eq!(

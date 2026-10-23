@@ -5,20 +5,21 @@
 打开 **设置** 用 `Ctrl+,`（macOS 上为 Command）。阅读偏好写在
 `settings.toml`；视觉主题写在 [样式表](stylesheets.md)。
 
-完整的设置说明见英文版 [Settings](settings.md)。本节说明 **Markdown 方言**。
+完整的设置说明见英文版 [Settings](settings.md)。本节说明 **Markdown 变体**。
 
 ## Markdown dialect
 
 **设置 → 通用 → 语言与代码** 决定 Markview 如何解析 Markdown。
-方言预设旁的信息按钮会打开本页。
 
-- **GFM（GitHub 风格 Markdown，默认）。** 软换行仍为空格。在此预设下可分别开关「单个换行视为硬换行」与 `==高亮==`。详见
+- **GFM（GitHub 风格 Markdown）。** 软换行仍为空格。在此预设下可分别开关「单个换行视为硬换行」与 `==高亮==`。详见
   [GFM 规范](https://github.github.com/gfm/)。
-- **OFM lite（类 Obsidian，有限子集）。** 对
+- **Obsidian（默认）。** 对
   [Obsidian Flavored Markdown](https://help.obsidian.md/obsidian-flavored-markdown)
   的受限阅读：强制开启高亮、软换行仍为空格，因此两个开关会保留在界面中但呈禁用（灰色）。
 
-### OFM lite 支持的范围
+配置值为 `markdown-flavor = "obsidian"`，旧值 `"ofm-lite"` 仍兼容；已明确选择 `"gfm"` 的配置保持不变。
+
+### Obsidian 支持的范围
 
 | 支持 | 不支持 |
 | --- | --- |
@@ -47,4 +48,4 @@
 > > [!note] 标注框可以嵌套。
 ```
 
-导出跟随阅读器：应用内 PDF/PNG 导出按所选方言解析并展开标注框正文；命令行 `markview export` 使用默认 GFM 方言，不读取阅读器的方言设置。
+导出跟随阅读器：应用内 PDF/PNG 导出按所选变体解析并展开标注框正文；命令行 `markview export` 使用默认 GFM 变体，不读取阅读器的变体设置。

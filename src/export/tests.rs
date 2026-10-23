@@ -290,7 +290,7 @@ fn a_symlinked_destination_is_replaced_rather_than_followed() {
 fn reader_dialects_reach_the_exported_layout() {
 	let dir = tempfile::tempdir().unwrap();
 	let path = dir.path().join("dialect.md");
-	// `[!example]` is no GitHub alert type, so only OFM lite reads it as a
+	// `[!example]` is no GitHub alert type, so only Obsidian reads it as a
 	// callout; GFM keeps the marker literal. The `+` fold sign makes the
 	// callout header a disclosure summary, which is reading text.
 	std::fs::write(
@@ -299,20 +299,30 @@ fn reader_dialects_reach_the_exported_layout() {
 	)
 	.unwrap();
 	let gfm_breaks = ReaderSettings {
+		markdown_flavor: MarkdownFlavor::Gfm,
 		hard_breaks: true,
 		highlight_marks: true,
 		..Default::default()
 	};
-	// The stored toggles are stale under OFM lite: the preset forces hard
+	// The stored toggles are stale under Obsidian: the preset forces hard
 	// breaks off and highlight marks on.
 	let stale_ofm = ReaderSettings {
-		markdown_flavor: MarkdownFlavor::OfmLite,
+		markdown_flavor: MarkdownFlavor::Obsidian,
 		hard_breaks: true,
 		highlight_marks: false,
 		..Default::default()
 	};
 	for (reader, join, highlight, callout) in [
-		(&ReaderSettings::default(), " ", false, false),
+		(&ReaderSettings::default(), " ", true, true),
+		(
+			&ReaderSettings {
+				markdown_flavor: MarkdownFlavor::Gfm,
+				..Default::default()
+			},
+			" ",
+			false,
+			false,
+		),
 		(&gfm_breaks, "\n", true, false),
 		(&stale_ofm, " ", true, true),
 	] {

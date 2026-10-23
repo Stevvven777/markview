@@ -882,63 +882,67 @@ fn launch_options_belong_to_the_interface_section() {
 }
 
 #[test]
-fn markdown_dialect_preset_lists_gfm_and_ofm_lite() {
+fn markdown_dialect_preset_lists_gfm_and_obsidian() {
 	let mut shaper = crate::test_support::shaper();
-	for (index, selected) in [MarkdownFlavor::Gfm, MarkdownFlavor::OfmLite]
-		.into_iter()
-		.enumerate()
-	{
-		let settings = ReaderSettings {
-			markdown_flavor: selected,
-			..Default::default()
-		};
-		let scroll = form(&mut shaper, &settings, 0.0, 1200.0, 800.0).reveal(
-			Command::Chrome(crate::state::ChromeCommand::ToggleDropdown(
-				DropdownId::MarkdownFlavor,
-				index,
-			))
-			.widget_id(),
-		);
-		let form = form(&mut shaper, &settings, scroll, 1200.0, 800.0);
-		assert!(form.buttons.iter().any(|button| {
-			button.action
-				== Command::Chrome(crate::state::ChromeCommand::ToggleDropdown(
-					DropdownId::MarkdownFlavor,
-					index,
+	for lang in Lang::ALL {
+		for (index, selected) in [MarkdownFlavor::Gfm, MarkdownFlavor::Obsidian]
+			.into_iter()
+			.enumerate()
+		{
+			let settings = ReaderSettings {
+				markdown_flavor: selected,
+				lang: Some(*lang),
+				..Default::default()
+			};
+			let scroll = form(&mut shaper, &settings, 0.0, 1200.0, 800.0)
+				.reveal(
+					Command::Chrome(
+						crate::state::ChromeCommand::ToggleDropdown(
+							DropdownId::MarkdownFlavor,
+							index,
+						),
+					)
+					.widget_id(),
+				);
+			let form = form(&mut shaper, &settings, scroll, 1200.0, 800.0);
+			assert!(form.buttons.iter().any(|button| {
+				button.action
+					== Command::Chrome(
+						crate::state::ChromeCommand::ToggleDropdown(
+							DropdownId::MarkdownFlavor,
+							index,
+						),
+					)
+			}));
+			let menu = form
+				.menu(
+					&mut crate::app::dropdown::Dropdown::new(
+						DropdownId::MarkdownFlavor,
+						index,
+					),
+					(1200.0, 800.0),
+				)
+				.unwrap();
+			assert_eq!(menu.options, 2);
+			assert_eq!(
+				menu.chosen(),
+				Some(Command::Settings(
+					crate::state::SettingsCommand::MarkdownFlavor(selected)
 				))
-		}));
-		let menu = form
-			.menu(
-				&mut crate::app::dropdown::Dropdown::new(
-					DropdownId::MarkdownFlavor,
-					index,
-				),
-				(1200.0, 800.0),
-			)
-			.unwrap();
-		assert_eq!(menu.options, 2);
-		assert_eq!(
-			menu.chosen(),
-			Some(Command::Settings(
-				crate::state::SettingsCommand::MarkdownFlavor(selected)
-			))
-		);
-		assert_eq!(menu.buttons[0].label, "GFM (GitHub Flavored Markdown)");
-		assert_eq!(
-			menu.buttons[1].label,
-			"OFM lite (Obsidian-like, limited subset)"
-		);
-		// The lite label must not claim full Obsidian Flavored Markdown.
-		assert!(!menu.buttons.iter().any(|b| {
-			b.label.contains("Obsidian") && !b.label.contains("lite")
-		}));
+			);
+			assert_eq!(menu.buttons[0].label, "GFM");
+			assert_eq!(menu.buttons[1].label, "Obsidian");
+		}
 	}
 }
 
 #[test]
-fn dialect_toggles_stay_visible_and_disable_under_ofm_lite() {
+fn dialect_toggles_stay_visible_and_disable_under_obsidian() {
 	let mut shaper = crate::test_support::shaper();
-	let gfm = ReaderSettings::default();
+	let gfm = ReaderSettings {
+		markdown_flavor: MarkdownFlavor::Gfm,
+		..Default::default()
+	};
 	let gfm_form = form(&mut shaper, &gfm, 0.0, 1200.0, 800.0);
 	let hard = gfm_form
 		.buttons
@@ -955,7 +959,7 @@ fn dialect_toggles_stay_visible_and_disable_under_ofm_lite() {
 		&& b.enabled));
 
 	let ofm = ReaderSettings {
-		markdown_flavor: MarkdownFlavor::OfmLite,
+		markdown_flavor: MarkdownFlavor::Obsidian,
 		// Stored values the preset ignores: UI must show effective dialect.
 		hard_breaks: true,
 		highlight_marks: false,
@@ -999,7 +1003,7 @@ fn dialect_toggles_stay_visible_and_disable_under_ofm_lite() {
 					crate::state::SettingsCommand::HardBreaks
 				) && !b.enabled)
 	);
-	// The preset control remains, labelled as OFM lite.
+	// The preset control remains, labelled as Obsidian.
 	let scroll = ofm_form.reveal(
 		Command::Chrome(crate::state::ChromeCommand::ToggleDropdown(
 			DropdownId::MarkdownFlavor,
@@ -1020,12 +1024,15 @@ fn dialect_toggles_stay_visible_and_disable_under_ofm_lite() {
 			)
 		})
 		.expect("dialect preset");
-	assert_eq!(control.label, "OFM lite (Obsidian-like, limited subset)");
+	assert_eq!(control.label, "Obsidian");
 }
 
 #[test]
 fn dialect_toggles_are_nested_without_gfm_section_title() {
-	let settings = ReaderSettings::default();
+	let settings = ReaderSettings {
+		markdown_flavor: MarkdownFlavor::Gfm,
+		..Default::default()
+	};
 	let mut found = 0;
 	for row in rows(&settings, false) {
 		if [
@@ -1043,7 +1050,7 @@ fn dialect_toggles_are_nested_without_gfm_section_title() {
 	assert_eq!(found, 2);
 
 	let ofm = ReaderSettings {
-		markdown_flavor: MarkdownFlavor::OfmLite,
+		markdown_flavor: MarkdownFlavor::Obsidian,
 		..Default::default()
 	};
 	let mut found = 0;
@@ -1064,18 +1071,38 @@ fn dialect_toggles_are_nested_without_gfm_section_title() {
 }
 
 #[test]
-fn dialect_preset_exposes_icon_help_control() {
+fn dialect_preset_uses_the_full_control_width_without_a_help_button() {
 	let mut shaper = crate::test_support::shaper();
-	let form =
-		form(&mut shaper, &ReaderSettings::default(), 0.0, 1200.0, 800.0);
-	let help = form
-		.buttons
-		.iter()
-		.find(|b| {
-			b.action
-				== Command::Chrome(crate::state::ChromeCommand::DialectHelp)
-		})
-		.expect("dialect help");
-	assert!(help.label.is_empty());
-	assert!(help.icon.is_some());
+	for (width, phone) in [(1200.0, false), (360.0, true)] {
+		let form = reader_form(
+			&mut shaper,
+			&ReaderSettings::default(),
+			0.0,
+			width,
+			800.0,
+			phone,
+		);
+		let dropdown = |id| {
+			form.buttons
+				.iter()
+				.find(|button| {
+					matches!(
+						button.action,
+						Command::Chrome(ChromeCommand::ToggleDropdown(found, _)) if found == id
+					)
+				})
+				.unwrap()
+		};
+		let preset = dropdown(DropdownId::MarkdownFlavor);
+		let language = dropdown(DropdownId::Language);
+		assert_eq!(preset.rect.w, language.rect.w);
+		assert_eq!(preset.label, "Obsidian");
+		assert_eq!(
+			form.buttons
+				.iter()
+				.filter(|button| button.rect.y == preset.rect.y)
+				.count(),
+			1
+		);
+	}
 }

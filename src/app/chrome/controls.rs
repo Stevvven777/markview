@@ -350,39 +350,37 @@ fn rows(settings: &ReaderSettings, phone: bool) -> Vec<Row> {
 				Command::Settings(SettingsCommand::CodeWrap),
 			)],
 		),
-		Row::new(t.settings_markdown_dialect(), vec![])
-			.menu(
-				DropdownId::MarkdownFlavor,
-				choices(
-					&[
-						(
-							t.settings_flavor_gfm(),
-							Command::Settings(
-								crate::state::SettingsCommand::MarkdownFlavor(
-									MarkdownFlavor::Gfm,
-								),
+		Row::new(t.settings_markdown_dialect(), vec![]).menu(
+			DropdownId::MarkdownFlavor,
+			choices(
+				&[
+					(
+						t.settings_flavor_gfm(),
+						Command::Settings(
+							crate::state::SettingsCommand::MarkdownFlavor(
+								MarkdownFlavor::Gfm,
 							),
 						),
-						(
-							t.settings_flavor_ofm_lite(),
-							Command::Settings(
-								crate::state::SettingsCommand::MarkdownFlavor(
-									MarkdownFlavor::OfmLite,
-								),
+					),
+					(
+						t.settings_flavor_obsidian(),
+						Command::Settings(
+							crate::state::SettingsCommand::MarkdownFlavor(
+								MarkdownFlavor::Obsidian,
 							),
 						),
-					],
-					Some(Command::Settings(
-						crate::state::SettingsCommand::MarkdownFlavor(
-							settings.markdown_flavor,
-						),
-					)),
-				),
-			)
-			.help(Command::Chrome(crate::state::ChromeCommand::DialectHelp)),
+					),
+				],
+				Some(Command::Settings(
+					crate::state::SettingsCommand::MarkdownFlavor(
+						settings.markdown_flavor,
+					),
+				)),
+			),
+		),
 	]);
 	// Hard-break and highlight toggles always sit under the dialect preset.
-	// OFM lite forces highlight on and hard breaks off through
+	// Obsidian forces highlight on and hard breaks off through
 	// effective_dialect(); under that preset the controls stay visible but
 	// greyed, showing the effective values rather than ignored stored ones.
 	let gfm = settings.markdown_flavor == MarkdownFlavor::Gfm;

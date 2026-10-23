@@ -64,7 +64,7 @@ pub enum TabStyle {
 
 /// The Markdown dialect a document is read in.
 ///
-/// The preset settles the toggles it owns, so OFM lite always reads with
+/// The preset settles the toggles it owns, so Obsidian always reads with
 /// highlight marks and without hard breaks, while GFM leaves both to the
 /// reader's own choices. See [`ReaderSettings::effective_dialect`].
 #[derive(
@@ -72,9 +72,10 @@ pub enum TabStyle {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum MarkdownFlavor {
-	#[default]
 	Gfm,
-	OfmLite,
+	#[default]
+	#[serde(alias = "ofm-lite")]
+	Obsidian,
 }
 
 /// The dialect a parse uses once the preset has settled the toggles it owns.
@@ -84,7 +85,7 @@ pub struct EffectiveDialect {
 	pub hard_breaks: bool,
 	/// `==highlight==` marks are parsed and rendered.
 	pub highlight_marks: bool,
-	/// Obsidian callouts and the extra inline HTML tags; OFM lite only.
+	/// Obsidian callouts, comments and extra inline HTML tags.
 	pub ofm: bool,
 }
 
@@ -156,7 +157,7 @@ impl Default for ReaderSettings {
 			justification: JustificationLimits::default(),
 			paragraph_indent: 0.0,
 			cjk_type: default_cjk_type(),
-			markdown_flavor: MarkdownFlavor::Gfm,
+			markdown_flavor: MarkdownFlavor::default(),
 			hard_breaks: false,
 			highlight_marks: false,
 			codeblock_theme_override: None,
@@ -312,7 +313,7 @@ impl ReaderSettings {
 	}
 
 	/// The dialect a parse uses: the preset settles the toggles it owns, so
-	/// OFM lite always reads with highlight marks and without hard breaks,
+	/// Obsidian always reads with highlight marks and without hard breaks,
 	/// while GFM keeps the stored choices.
 	pub fn effective_dialect(&self) -> EffectiveDialect {
 		match self.markdown_flavor {
@@ -321,7 +322,7 @@ impl ReaderSettings {
 				highlight_marks: self.highlight_marks,
 				ofm: false,
 			},
-			MarkdownFlavor::OfmLite => EffectiveDialect {
+			MarkdownFlavor::Obsidian => EffectiveDialect {
 				hard_breaks: false,
 				highlight_marks: true,
 				ofm: true,

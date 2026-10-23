@@ -51,7 +51,6 @@ pub(super) fn button(
 		action,
 		rect,
 		icon: match action {
-			Command::Chrome(ChromeCommand::DialectHelp) => Some(icons::INFO),
 			Command::Chrome(ChromeCommand::CopyDiagnostics) => {
 				Some(icons::COPY)
 			}
@@ -643,8 +642,6 @@ pub(super) struct Row {
 	link: Option<(&'static str, Command)>,
 	/// The options this row offers in a list instead of in place.
 	menu: Option<RowMenu>,
-	/// A compact icon-only help control drawn beside the row's menu, when present.
-	help: Option<Command>,
 	/// Indents the label and uses secondary (muted) styling under a parent row.
 	pub nested: bool,
 	/// When false, the row's controls stay visible but greyed and inert.
@@ -676,7 +673,6 @@ impl Row {
 			value: None,
 			link: None,
 			menu: None,
-			help: None,
 			nested: false,
 			enabled: true,
 		}
@@ -689,11 +685,6 @@ impl Row {
 	/// current one where a value would go.
 	pub fn menu(mut self, id: DropdownId, entries: Vec<Action>) -> Self {
 		self.menu = Some(RowMenu { id, entries });
-		self
-	}
-	/// Places a compact icon-only help control to the right of this row's menu.
-	pub fn help(mut self, command: Command) -> Self {
-		self.help = Some(command);
 		self
 	}
 	/// Marks this row as subordinate to the one above (indent + muted label).
@@ -731,15 +722,7 @@ impl Row {
 	) -> Option<(DropdownId, Rect, Vec<Button>)> {
 		let menu = self.menu.as_ref()?;
 		let chosen = menu.chosen()?;
-		let help_width = if self.help.is_some() {
-			CONTROL + 4.0
-		} else {
-			0.0
-		};
-		let rect = Rect {
-			w: (band.w - help_width).max(CONTROL),
-			..band
-		};
+		let rect = band;
 		let mut control = button(
 			chosen.label.clone(),
 			Command::Chrome(crate::state::ChromeCommand::ToggleDropdown(
@@ -752,21 +735,7 @@ impl Row {
 			rect,
 		);
 		control.marker = Some(icons::CHEVRON);
-		let mut controls = vec![control];
-		if let Some(command) = self.help {
-			let mut help = button(
-				"",
-				command,
-				Rect {
-					x: band.x + band.w - CONTROL,
-					w: CONTROL,
-					..band
-				},
-			);
-			help.kind = ButtonKind::Quiet;
-			controls.push(help);
-		}
-		Some((menu.id, rect, controls))
+		Some((menu.id, rect, vec![control]))
 	}
 
 	fn height(&self, stacked: bool) -> f32 {

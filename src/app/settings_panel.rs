@@ -315,13 +315,16 @@ mod tests {
 	#[test]
 	fn dialect_messages_persist_as_one_setting_and_reflow() {
 		let mut model = Model {
-			values: ReaderSettings::default(),
+			values: ReaderSettings {
+				markdown_flavor: MarkdownFlavor::Gfm,
+				..Default::default()
+			},
 			settings_preview: false,
 			..Default::default()
 		};
 		let update =
-			model.update(Message::MarkdownFlavor(MarkdownFlavor::OfmLite));
-		assert_eq!(model.values.markdown_flavor, MarkdownFlavor::OfmLite);
+			model.update(Message::MarkdownFlavor(MarkdownFlavor::Obsidian));
+		assert_eq!(model.values.markdown_flavor, MarkdownFlavor::Obsidian);
 		assert!(update.effects.iter().any(|effect| {
 			matches!(effect, Effect::Persist(Some(Setting::Dialect)))
 		}));
@@ -349,7 +352,7 @@ mod tests {
 		assert!(update.effects.iter().any(|effect| {
 			matches!(effect, Effect::Persist(Some(Setting::Dialect)))
 		}));
-		// OFM lite still forces the effective dialect regardless of stored toggles.
+		// Obsidian still forces the effective dialect regardless of stored toggles.
 		let dialect = model.values.effective_dialect();
 		assert!(!dialect.hard_breaks);
 		assert!(dialect.highlight_marks);

@@ -23,13 +23,16 @@ at the same level, without `[brackets]`.
 
 ### Added
 
-- Hide `%%` inline and block comments in OFM lite across reading, copy, search and reader exports, preserving code and original source positions.
-- Read Obsidian callouts in the OFM lite preset: built-in types and aliases, nesting and foldable bodies, with plain-text titles.
+- Hide `%%` inline and block comments in Obsidian across reading, copy, search and reader exports, preserving code and original source positions.
+- Read Obsidian callouts in the Obsidian preset: built-in types and aliases, nesting and foldable bodies, with plain-text titles.
 - Synchronize scrolling between the VS Code Markdown editor and Markview preview.
 - Export saved or unsaved Markdown from VS Code to PDF or PNG using built-in or custom templates.
 
 ### Changed
 
+- Remove the Markdown variant help button and give its space back to the dropdown.
+- Use “Markdown 变体” for the Simplified Chinese settings label and help text.
+- Rename the Markdown presets to Obsidian and GFM, default to Obsidian, and shorten dropdown labels in every locale while accepting existing `ofm-lite` settings.
 - Make tab preview corners configurable through MVSS, square by default across bundled reader themes.
 - Use upstream Comrak callout parsing and keep `%%` comment markers literal in raw HTML blocks and summaries, matching Obsidian.
 - Make the idle footer's document path and click-to-copy behavior an opt-in setting, off by default.

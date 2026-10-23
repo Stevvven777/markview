@@ -346,15 +346,18 @@ fn codeblock_wrap_round_trips_settings_and_layout() {
 }
 
 /// The dialect a parse uses follows the preset: GFM keeps the stored toggles,
-/// while OFM lite forces highlight on and hard breaks off whatever is stored.
+/// while Obsidian forces highlight on and hard breaks off whatever is stored.
 #[test]
-fn markdown_dialect_defaults_and_ofm_lite_forces_its_toggles() {
+fn markdown_dialect_defaults_and_obsidian_forces_its_toggles() {
 	let settings = ReaderSettings::default();
-	assert_eq!(settings.markdown_flavor, MarkdownFlavor::Gfm);
+	assert_eq!(settings.markdown_flavor, MarkdownFlavor::Obsidian);
 	let dialect = settings.effective_dialect();
 	assert!(!dialect.hard_breaks);
-	assert!(!dialect.highlight_marks);
+	assert!(dialect.highlight_marks);
+	assert!(dialect.ofm);
 	let mut settings = settings;
+	settings.markdown_flavor = MarkdownFlavor::Gfm;
+	assert!(!settings.effective_dialect().highlight_marks);
 	settings.hard_breaks = true;
 	settings.highlight_marks = true;
 	let dialect = settings.effective_dialect();
@@ -362,7 +365,7 @@ fn markdown_dialect_defaults_and_ofm_lite_forces_its_toggles() {
 	assert!(dialect.highlight_marks);
 	// Obsidian callouts and HTML extras never reach GFM.
 	assert!(!dialect.ofm);
-	settings.markdown_flavor = MarkdownFlavor::OfmLite;
+	settings.markdown_flavor = MarkdownFlavor::Obsidian;
 	let dialect = settings.effective_dialect();
 	assert!(!dialect.hard_breaks);
 	assert!(dialect.highlight_marks);
@@ -415,8 +418,11 @@ fn dialect_fixture_matrix_covers_the_four_reading_cases() {
 		rich.iter().any(|i| i.style.mark)
 	}
 
-	// 1) GFM default: soft break → space, `==` stays literal.
-	let gfm = ReaderSettings::default();
+	// 1) GFM: soft break → space, `==` stays literal.
+	let gfm = ReaderSettings {
+		markdown_flavor: MarkdownFlavor::Gfm,
+		..Default::default()
+	};
 	assert_eq!(gfm.markdown_flavor, MarkdownFlavor::Gfm);
 	assert!(!gfm.hard_breaks && !gfm.highlight_marks);
 	let doc = parse_settings(&gfm);
@@ -428,7 +434,7 @@ fn dialect_fixture_matrix_covers_the_four_reading_cases() {
 	// 2) GFM + hard breaks: the same newline ends the line.
 	let gfm_hard = ReaderSettings {
 		hard_breaks: true,
-		..Default::default()
+		..gfm.clone()
 	};
 	let doc = parse_settings(&gfm_hard);
 	let rich = paragraph(&doc);
@@ -439,7 +445,7 @@ fn dialect_fixture_matrix_covers_the_four_reading_cases() {
 	// 3) GFM + highlight: `==marked==` becomes a mark; soft breaks stay spaces.
 	let gfm_mark = ReaderSettings {
 		highlight_marks: true,
-		..Default::default()
+		..gfm
 	};
 	let doc = parse_settings(&gfm_mark);
 	let rich = paragraph(&doc);
@@ -447,10 +453,10 @@ fn dialect_fixture_matrix_covers_the_four_reading_cases() {
 	assert!(!has_hard_break(rich));
 	assert!(has_mark(rich));
 
-	// 4) OFM lite: highlight on and hard breaks off even when stored toggles
-	// say otherwise (the panel hides those toggles under this preset).
+	// 4) Obsidian: highlight on and hard breaks off even when stored toggles
+	// say otherwise (the panel disables those toggles under this preset).
 	let mut ofm = ReaderSettings {
-		markdown_flavor: MarkdownFlavor::OfmLite,
+		markdown_flavor: MarkdownFlavor::Obsidian,
 		hard_breaks: true,
 		highlight_marks: false,
 		..Default::default()
@@ -471,12 +477,15 @@ fn dialect_fixture_matrix_covers_the_four_reading_cases() {
 	assert!(!dialect.highlight_marks);
 }
 
-/// The parse the layout options describe is the effective dialect: OFM lite
+/// The parse the layout options describe is the effective dialect: Obsidian
 /// keeps a stored toggle from ever reaching a parse.
 #[test]
 fn layout_options_carry_the_effective_dialect() {
 	let fonts = crate::test_support::fonts();
-	let mut settings = ReaderSettings::default();
+	let mut settings = ReaderSettings {
+		markdown_flavor: MarkdownFlavor::Gfm,
+		..Default::default()
+	};
 	let options = |settings: &ReaderSettings| {
 		settings.layout_options(900.0, false, &fonts)
 	};
@@ -486,7 +495,7 @@ fn layout_options_carry_the_effective_dialect() {
 	settings.highlight_marks = true;
 	assert!(options(&settings).hard_breaks);
 	assert!(options(&settings).highlight_marks);
-	settings.markdown_flavor = MarkdownFlavor::OfmLite;
+	settings.markdown_flavor = MarkdownFlavor::Obsidian;
 	assert!(!options(&settings).hard_breaks);
 	assert!(options(&settings).highlight_marks);
 }
@@ -495,37 +504,51 @@ fn layout_options_carry_the_effective_dialect() {
 fn markdown_dialect_round_trips_and_old_files_still_load() {
 	let dir = tempfile::tempdir().unwrap();
 	let path = dir.path().join("settings.toml");
-	// A file from before the dialect existed keeps today's reading behavior.
+	// A file without a dialect uses the default Obsidian preset.
 	fs::write(&path, "font_size = 20\n").unwrap();
 	let (mut store, warning) = SettingsStore::load(Some(path.clone()));
 	assert!(warning.is_none());
-	assert_eq!(store.settings().markdown_flavor, MarkdownFlavor::Gfm);
+	assert_eq!(store.settings().markdown_flavor, MarkdownFlavor::Obsidian);
 	let dialect = store.settings().effective_dialect();
 	assert!(!dialect.hard_breaks);
-	assert!(!dialect.highlight_marks);
+	assert!(dialect.highlight_marks);
 
 	let mut ui = store.settings();
-	ui.markdown_flavor = MarkdownFlavor::OfmLite;
+	ui.markdown_flavor = MarkdownFlavor::Obsidian;
 	// The stored toggle survives the preset, ready for a switch back to GFM.
 	ui.hard_breaks = true;
 	store.changed(&ui, Some(Setting::Dialect));
 	store.flush().unwrap();
 	let text = fs::read_to_string(&path).unwrap();
-	assert!(text.contains("markdown-flavor"), "{text}");
+	assert!(text.contains("markdown-flavor = \"obsidian\""), "{text}");
 	assert!(text.contains("hard-breaks = true"), "{text}");
 	let (loaded, warning) = SettingsStore::load(Some(path.clone()));
 	assert!(warning.is_none());
 	let settings = loaded.settings();
-	assert_eq!(settings.markdown_flavor, MarkdownFlavor::OfmLite);
+	assert_eq!(settings.markdown_flavor, MarkdownFlavor::Obsidian);
 	assert!(settings.hard_breaks);
 	let dialect = settings.effective_dialect();
 	assert!(!dialect.hard_breaks);
 	assert!(dialect.highlight_marks);
+	// The previous preset name remains readable and saves under its new name.
+	fs::write(&path, "markdown-flavor = 'ofm-lite'\n").unwrap();
+	let (mut legacy, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	let settings = legacy.settings();
+	assert_eq!(settings.markdown_flavor, MarkdownFlavor::Obsidian);
+	legacy.changed(&settings, Some(Setting::Dialect));
+	legacy.flush().unwrap();
+	let text = fs::read_to_string(&path).unwrap();
+	assert!(text.contains("markdown-flavor = \"obsidian\""), "{text}");
+	fs::write(&path, "markdown-flavor = 'gfm'\n").unwrap();
+	let (loaded, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	assert_eq!(loaded.settings().markdown_flavor, MarkdownFlavor::Gfm);
 	// A flavor the reader does not know is rejected, like any other enum.
 	fs::write(&path, "markdown-flavor = 'commonmark'\n").unwrap();
 	let (loaded, warning) = SettingsStore::load(Some(path));
 	assert!(warning.is_some());
-	assert_eq!(loaded.settings().markdown_flavor, MarkdownFlavor::Gfm);
+	assert_eq!(loaded.settings().markdown_flavor, MarkdownFlavor::Obsidian);
 }
 
 #[test]
@@ -978,7 +1001,7 @@ fn settings_differing_from_default() -> ReaderSettings {
 		cjk_type: CjkType::None,
 		codeblock_theme_override: Some("fixture".into()),
 		codeblock_wrap: !default.codeblock_wrap,
-		markdown_flavor: MarkdownFlavor::OfmLite,
+		markdown_flavor: MarkdownFlavor::Gfm,
 		hard_breaks: !default.hard_breaks,
 		highlight_marks: !default.highlight_marks,
 		scroll_speed: 1.5,

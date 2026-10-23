@@ -717,7 +717,7 @@ border_width = 3.0
 padding = [0.22, 0.22, 0.22, 1.1]
 space_after = 0.8
 
-# Obsidian callouts (OFM lite) are block quotes refined by `callout` and one
+# Obsidian callouts (Obsidian) are block quotes refined by `callout` and one
 # color family; each family tints the rule on the left and the header line.
 # The families: note (note, info, todo), tip (abstract, tip), success,
 # warning (question, warning), danger (failure, danger, bug), example, quote.

@@ -279,7 +279,7 @@ fn changing_the_dialect_marks_the_open_document_as_new_content() {
 fn applying_a_dialect_change_from_disk_invalidates_search_too() {
 	let (mut app, document) = reader("==marked==\n", 760.0);
 	app.preferences.values.markdown_flavor =
-		crate::settings::MarkdownFlavor::OfmLite;
+		crate::settings::MarkdownFlavor::Gfm;
 	app.readers.session.search.document = Some(document);
 	app.readers.session.search.dirty = false;
 	let before = app.readers.session.content_version;

@@ -920,7 +920,7 @@ mod tests {
 		}
 		let dir = tempfile::tempdir().unwrap();
 		let source = dir.path().join("dialect.md");
-		// `[!example]` is no GitHub alert type, so only OFM lite reads it as a
+		// `[!example]` is no GitHub alert type, so only Obsidian reads it as a
 		// callout; GFM keeps the marker literal. `+` puts its title in reading text.
 		std::fs::write(
 			&source,
@@ -950,7 +950,7 @@ mod tests {
 				false,
 			),
 			(
-				crate::settings::MarkdownFlavor::OfmLite,
+				crate::settings::MarkdownFlavor::Obsidian,
 				true,
 				false,
 				ExportFormat::Png,
@@ -959,9 +959,9 @@ mod tests {
 				true,
 			),
 			(
-				// The stored toggles are stale under OFM lite: the preset
+				// The stored toggles are stale under Obsidian: the preset
 				// forces hard breaks off and highlight marks on.
-				crate::settings::MarkdownFlavor::OfmLite,
+				crate::settings::MarkdownFlavor::Obsidian,
 				true,
 				false,
 				ExportFormat::Pdf,
