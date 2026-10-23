@@ -36,6 +36,7 @@ pub(crate) struct State {
 	cursor: (f32, f32),
 	hover: Option<HoveredLink>,
 	hover_image: Option<String>,
+	hover_control: Option<&'static str>,
 	/// The wide block whose horizontal scrollbar the pointer is over.
 	hover_overflow: Option<(usize, usize)>,
 	scrollbar: Option<ScrollbarDrag>,
@@ -147,7 +148,14 @@ impl State {
 		self.hover_overflow = overflow;
 	}
 
+	pub(crate) fn hover_control(&self) -> Option<&'static str> {
+		self.hover_control
+	}
+	pub(crate) fn set_hover_control(&mut self, hint: Option<&'static str>) {
+		self.hover_control = hint;
+	}
 	pub(crate) fn clear_hover(&mut self) {
+		self.hover_control = None;
 		self.set_hover(None, None, None);
 	}
 
@@ -762,10 +770,23 @@ impl<P: super::SendEvent> App<P> {
 			&controls.hit,
 			markview_ui_core::Input::Move(self.interaction.pointer.cursor()),
 		);
-		let over_control = controls
-			.hit
-			.hit(self.interaction.pointer.cursor())
-			.is_some();
+		let over = controls.hit.hit(self.interaction.pointer.cursor());
+		let over_control = over.is_some();
+		let lang = self.preferences.values.lang();
+		let ofm = self.preferences.values.markdown_flavor
+			!= crate::settings::MarkdownFlavor::Gfm;
+		let hover_control = over.and_then(|widget| match &widget.message {
+			state::Command::Chrome(
+				crate::state::ChromeCommand::DialectHelp,
+			) => Some(lang.settings_dialect_tooltip()),
+			state::Command::Settings(
+				crate::state::SettingsCommand::HardBreaks,
+			)
+			| state::Command::Settings(
+				crate::state::SettingsCommand::HighlightMarks,
+			) if ofm => Some(lang.settings_dialect_ofm_forced()),
+			_ => None,
+		});
 		let holding = self.holding_pointer();
 		// The drawer covers document content, so it must not inherit the link
 		// or image hover underneath it.
@@ -807,6 +828,9 @@ impl<P: super::SendEvent> App<P> {
 		let hover_image = document_hover.image_title;
 		let hover_changed = hover_changed
 			|| hover_image.as_deref() != self.interaction.pointer.hover_image();
+		let hover_changed = hover_changed
+			|| hover_control != self.interaction.pointer.hover_control();
+		self.interaction.pointer.set_hover_control(hover_control);
 		self.interaction
 			.pointer
 			.set_hover(hover, hover_image, hover_overflow);

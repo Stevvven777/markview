@@ -47,6 +47,9 @@ pub(crate) enum SettingsCommand {
 	Align,
 	Hyphens,
 	CodeWrap,
+	MarkdownFlavor(crate::settings::MarkdownFlavor),
+	HardBreaks,
+	HighlightMarks,
 	SingleInstance,
 	RestoreSession,
 	/// Show the open document's path in the idle footer and copy it on click.
@@ -107,6 +110,7 @@ pub(crate) enum ExportCommand {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ChromeCommand {
+	DialectHelp,
 	FocusInput(TextField),
 	OpenFolder,
 	Folder,

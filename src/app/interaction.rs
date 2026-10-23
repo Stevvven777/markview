@@ -110,6 +110,35 @@ impl<P: super::SendEvent> App<P> {
 			ChromeCommand::OpenProject => {
 				self.launch(env!("CARGO_PKG_REPOSITORY"));
 			}
+			ChromeCommand::DialectHelp => {
+				let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+				let localized = match self.preferences.values.lang() {
+					crate::lang::Lang::ZhHans => {
+						Some(root.join("docs/users/settings.zh-cn.md"))
+					}
+					_ => None,
+				};
+				let english = root.join("docs/users/settings.md");
+				let path = localized.filter(|p| p.is_file()).unwrap_or(english);
+				if path.is_file() {
+					if self.interaction.panel_open() {
+						self.interaction.show_panel(PanelPage::Closed);
+					}
+					self.open_markdown(
+						path,
+						Some("markdown-dialect".into()),
+						crate::state::TabPlacement::Foreground,
+						crate::security::Security::local(
+							crate::security::Trust::Trusted,
+						),
+					);
+				} else {
+					self.launch(&format!(
+						"{}/blob/main/docs/users/settings.md#markdown-dialect",
+						env!("CARGO_PKG_REPOSITORY")
+					));
+				}
+			}
 			ChromeCommand::CopyDiagnostics => self.copy_diagnostics(),
 			ChromeCommand::Tabs
 			| ChromeCommand::SidebarTab(_)
@@ -348,6 +377,12 @@ impl<P: super::SendEvent> App<P> {
 		self.args
 			.overrides
 			.retain(|f| field.is_some_and(|changed| changed != *f));
+		// The dialect changes what the parse reads, so what the reader holds is
+		// new content even though the file is not: the reflow that follows
+		// reparses, and stale selections and search results drop off.
+		if field == Some(Setting::Dialect) {
+			self.readers.session.content_version += 1;
+		}
 		if field.is_none() || field == Some(Setting::Theme) {
 			self.args.theme = None;
 			self.args.style = None;

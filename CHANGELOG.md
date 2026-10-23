@@ -34,6 +34,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Preserve dialect settings, control hints and exports with the refactored application owners; refresh settings screenshots and tablet checks.
 - Show the taskbar button's icon from the first frame on Windows, where the shell draws it from an image the window never advertised (#19).
 - Ease wheel scrolling in the tab strip, settings and export panels, folder tree and outline like the document's own.
 - Let dropdown options answer the pointer edge to edge, closing the gap that belonged to no option between two entries.
@@ -61,6 +62,9 @@ at the same level, without `[brackets]`.
 - Parse Obsidian wikilinks with labels and heading targets, preserving literal percent characters in note paths.
 - Add a dedicated serial/parallel layout fuzz differential covering retained scenes, progressive cancellation, cache reuse and reflows with verified worker execution.
 - Add native block layout workers with ordered publication and bounded prefetch, enabled automatically in the GUI after its first readable GPU frame; retain serial Web layout and formula budgets.
+- Store a markdown flavor preset, GFM or OFM lite, with GFM-only hard-break and highlight-mark toggles in reader settings, resolved for parsing through `effective_dialect()`.
+- Render single newlines inside a paragraph as line breaks when the effective GFM hard-break toggle is on, reparsing the open document when the setting changes.
+- Render `==highlight==` marks on a themeable `mark` background when the effective highlight dialect is on, staying literal otherwise; OFM lite always highlights.
 - Add a Rust cyclomatic complexity check with a configurable maximum of 15, excluding tests and test support, with reasoned function-level exemptions and mandatory CI enforcement.
 - Add editor-side system and downloaded font indexing, family matching, and cancellable native process transport.
 - Add template font requirements as JSON and editor-managed downloads to the existing `fonts` CLI commands.
@@ -99,7 +103,11 @@ at the same level, without `[brackets]`.
 - Match Windows paths in VS Code host-test mocks so tests do not load native font services into the VM sandbox.
 - Restore fuzz harness compilation and include link command ranges and occurrence ids in layout differential checks.
 - Keep inline-link hover on the link under the pointer, so repeated links with one address and neighboring links no longer highlight together.
+- Refresh settings rendering baselines for the scrollbar after adding Markdown dialect controls.
+- Keep the standalone parse fuzz harness compatible with the dialect-aware incremental API.
 - Hide the desktop sidebar toggle when no folder is open.
+- Parse reader PDF, PNG and watch-rebuild exports with the selected markdown dialect, so OFM callouts, highlight marks and hard breaks match the window.
+- Keep a quote whose `[!type]` marker is escaped, coded or styled an ordinary quote instead of a callout.
 - Keep outgoing phone drawer controls in their animated positions when toolbar input resumes.
 - Keep modals safe over open panels, distinguish same-path tabs and separate dismiss controls, and align animated drawer hit clips with their painted rows.
 - Wait for completed layout updates when verifying worker document counts, allowing intermediate snapshots during slower test runs.
@@ -132,6 +140,7 @@ at the same level, without `[brackets]`.
 
 - Document folder browsing, supported Obsidian links, the shared Android sidebar and persistent sidebar widths.
 - Remove unused English and Chinese README detail images and their composition code.
+- Describe the OFM lite subset accurately in the settings docs and all four locales: callouts, inline HTML tags and dialect-following exports.
 
 ## 0.3.0 - 2026-10-09
 

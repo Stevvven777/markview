@@ -345,6 +345,180 @@ fn codeblock_wrap_round_trips_settings_and_layout() {
 	);
 }
 
+/// The dialect a parse uses follows the preset: GFM keeps the stored toggles,
+/// while OFM lite forces highlight on and hard breaks off whatever is stored.
+#[test]
+fn markdown_dialect_defaults_and_ofm_lite_forces_its_toggles() {
+	let settings = ReaderSettings::default();
+	assert_eq!(settings.markdown_flavor, MarkdownFlavor::Gfm);
+	let dialect = settings.effective_dialect();
+	assert!(!dialect.hard_breaks);
+	assert!(!dialect.highlight_marks);
+	let mut settings = settings;
+	settings.hard_breaks = true;
+	settings.highlight_marks = true;
+	let dialect = settings.effective_dialect();
+	assert!(dialect.hard_breaks);
+	assert!(dialect.highlight_marks);
+	settings.markdown_flavor = MarkdownFlavor::OfmLite;
+	let dialect = settings.effective_dialect();
+	assert!(!dialect.hard_breaks);
+	assert!(dialect.highlight_marks);
+}
+
+/// End-to-end fixture matrix for the four reading cases ticket 05 checks.
+///
+/// One source carries both a soft newline and a `==mark==`, so each case is
+/// the same bytes under a different `ReaderSettings` → `effective_dialect()`
+/// → parse path. Wikilinks stay out of scope.
+#[test]
+fn dialect_fixture_matrix_covers_the_four_reading_cases() {
+	use markview_commonmark::{Dialect, parse_with};
+	use markview_document::{BlockKind, InlineKind, plain_text};
+
+	const FIXTURE: &str = "line one\nline two and ==marked== text\n";
+
+	fn paragraph(
+		doc: &markview_document::Document,
+	) -> &markview_document::RichText {
+		let BlockKind::Paragraph(rich) = &doc.blocks[0].kind else {
+			panic!("expected a paragraph");
+		};
+		rich
+	}
+	fn parse_settings(
+		settings: &ReaderSettings,
+	) -> markview_document::Document {
+		let dialect = settings.effective_dialect();
+		parse_with(
+			FIXTURE,
+			Dialect {
+				hard_breaks: dialect.hard_breaks,
+				highlight_marks: dialect.highlight_marks,
+			},
+		)
+	}
+	fn has_hard_break(rich: &markview_document::RichText) -> bool {
+		rich.iter()
+			.any(|i| matches!(i.kind, InlineKind::LineBreak { .. }))
+	}
+	fn has_mark(rich: &markview_document::RichText) -> bool {
+		rich.iter().any(|i| i.style.mark)
+	}
+
+	// 1) GFM default: soft break → space, `==` stays literal.
+	let gfm = ReaderSettings::default();
+	assert_eq!(gfm.markdown_flavor, MarkdownFlavor::Gfm);
+	assert!(!gfm.hard_breaks && !gfm.highlight_marks);
+	let doc = parse_settings(&gfm);
+	let rich = paragraph(&doc);
+	assert_eq!(plain_text(rich), "line one line two and ==marked== text");
+	assert!(!has_hard_break(rich));
+	assert!(!has_mark(rich));
+
+	// 2) GFM + hard breaks: the same newline ends the line.
+	let gfm_hard = ReaderSettings {
+		hard_breaks: true,
+		..Default::default()
+	};
+	let doc = parse_settings(&gfm_hard);
+	let rich = paragraph(&doc);
+	assert_eq!(plain_text(rich), "line one\nline two and ==marked== text");
+	assert!(has_hard_break(rich));
+	assert!(!has_mark(rich));
+
+	// 3) GFM + highlight: `==marked==` becomes a mark; soft breaks stay spaces.
+	let gfm_mark = ReaderSettings {
+		highlight_marks: true,
+		..Default::default()
+	};
+	let doc = parse_settings(&gfm_mark);
+	let rich = paragraph(&doc);
+	assert_eq!(plain_text(rich), "line one line two and marked text");
+	assert!(!has_hard_break(rich));
+	assert!(has_mark(rich));
+
+	// 4) OFM lite: highlight on and hard breaks off even when stored toggles
+	// say otherwise (the panel hides those toggles under this preset).
+	let mut ofm = ReaderSettings {
+		markdown_flavor: MarkdownFlavor::OfmLite,
+		hard_breaks: true,
+		highlight_marks: false,
+		..Default::default()
+	};
+	let dialect = ofm.effective_dialect();
+	assert!(!dialect.hard_breaks);
+	assert!(dialect.highlight_marks);
+	let doc = parse_settings(&ofm);
+	let rich = paragraph(&doc);
+	assert_eq!(plain_text(rich), "line one line two and marked text");
+	assert!(!has_hard_break(rich));
+	assert!(has_mark(rich));
+
+	// Switching the stored flavor back to GFM restores the stored toggles.
+	ofm.markdown_flavor = MarkdownFlavor::Gfm;
+	let dialect = ofm.effective_dialect();
+	assert!(dialect.hard_breaks);
+	assert!(!dialect.highlight_marks);
+}
+
+/// The parse the layout options describe is the effective dialect: OFM lite
+/// keeps a stored toggle from ever reaching a parse.
+#[test]
+fn layout_options_carry_the_effective_dialect() {
+	let fonts = crate::test_support::fonts();
+	let mut settings = ReaderSettings::default();
+	let options = |settings: &ReaderSettings| {
+		settings.layout_options(900.0, false, &fonts)
+	};
+	assert!(!options(&settings).hard_breaks);
+	assert!(!options(&settings).highlight_marks);
+	settings.hard_breaks = true;
+	settings.highlight_marks = true;
+	assert!(options(&settings).hard_breaks);
+	assert!(options(&settings).highlight_marks);
+	settings.markdown_flavor = MarkdownFlavor::OfmLite;
+	assert!(!options(&settings).hard_breaks);
+	assert!(options(&settings).highlight_marks);
+}
+
+#[test]
+fn markdown_dialect_round_trips_and_old_files_still_load() {
+	let dir = tempfile::tempdir().unwrap();
+	let path = dir.path().join("settings.toml");
+	// A file from before the dialect existed keeps today's reading behavior.
+	fs::write(&path, "font_size = 20\n").unwrap();
+	let (mut store, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	assert_eq!(store.settings().markdown_flavor, MarkdownFlavor::Gfm);
+	let dialect = store.settings().effective_dialect();
+	assert!(!dialect.hard_breaks);
+	assert!(!dialect.highlight_marks);
+
+	let mut ui = store.settings();
+	ui.markdown_flavor = MarkdownFlavor::OfmLite;
+	// The stored toggle survives the preset, ready for a switch back to GFM.
+	ui.hard_breaks = true;
+	store.changed(&ui, Some(Setting::Dialect));
+	store.flush().unwrap();
+	let text = fs::read_to_string(&path).unwrap();
+	assert!(text.contains("markdown-flavor"), "{text}");
+	assert!(text.contains("hard-breaks = true"), "{text}");
+	let (loaded, warning) = SettingsStore::load(Some(path.clone()));
+	assert!(warning.is_none());
+	let settings = loaded.settings();
+	assert_eq!(settings.markdown_flavor, MarkdownFlavor::OfmLite);
+	assert!(settings.hard_breaks);
+	let dialect = settings.effective_dialect();
+	assert!(!dialect.hard_breaks);
+	assert!(dialect.highlight_marks);
+	// A flavor the reader does not know is rejected, like any other enum.
+	fs::write(&path, "markdown-flavor = 'commonmark'\n").unwrap();
+	let (loaded, warning) = SettingsStore::load(Some(path));
+	assert!(warning.is_some());
+	assert_eq!(loaded.settings().markdown_flavor, MarkdownFlavor::Gfm);
+}
+
 #[test]
 fn footer_path_defaults_off_and_round_trips() {
 	let dir = tempfile::tempdir().unwrap();
@@ -795,6 +969,9 @@ fn settings_differing_from_default() -> ReaderSettings {
 		cjk_type: CjkType::None,
 		codeblock_theme_override: Some("fixture".into()),
 		codeblock_wrap: !default.codeblock_wrap,
+		markdown_flavor: MarkdownFlavor::OfmLite,
+		hard_breaks: !default.hard_breaks,
+		highlight_marks: !default.highlight_marks,
 		scroll_speed: 1.5,
 		single_instance: !default.single_instance,
 		restore_session: !default.restore_session,
@@ -839,6 +1016,9 @@ fn changed_fields(
 		cjk_type,
 		codeblock_theme_override,
 		codeblock_wrap,
+		markdown_flavor,
+		hard_breaks,
+		highlight_marks,
 		scroll_speed,
 		single_instance,
 		restore_session,
@@ -865,6 +1045,9 @@ fn expected_changes(field: Setting) -> Vec<&'static str> {
 		Setting::CjkType => vec!["cjk_type"],
 		Setting::Language => vec!["lang"],
 		Setting::CodeblockWrap => vec!["codeblock_wrap"],
+		Setting::Dialect => {
+			vec!["markdown_flavor", "hard_breaks", "highlight_marks"]
+		}
 		Setting::ScrollSpeed => vec!["scroll_speed"],
 		Setting::SingleInstance => vec!["single_instance"],
 		Setting::RestoreSession => vec!["restore_session"],
@@ -898,6 +1081,11 @@ fn assert_copied(from: &ReaderSettings, to: &ReaderSettings, field: Setting) {
 		Setting::CodeblockWrap => {
 			assert_eq!(to.codeblock_wrap, from.codeblock_wrap);
 		}
+		Setting::Dialect => {
+			assert_eq!(to.markdown_flavor, from.markdown_flavor);
+			assert_eq!(to.hard_breaks, from.hard_breaks);
+			assert_eq!(to.highlight_marks, from.highlight_marks);
+		}
 		Setting::ScrollSpeed => assert_eq!(to.scroll_speed, from.scroll_speed),
 		Setting::SingleInstance => {
 			assert_eq!(to.single_instance, from.single_instance);
@@ -914,7 +1102,7 @@ fn assert_copied(from: &ReaderSettings, to: &ReaderSettings, field: Setting) {
 
 #[test]
 fn setting_all_keeps_the_persisted_order_and_count() {
-	assert_eq!(Setting::COUNT, 17);
+	assert_eq!(Setting::COUNT, 18);
 	assert_eq!(
 		Setting::ALL,
 		[
@@ -932,6 +1120,7 @@ fn setting_all_keeps_the_persisted_order_and_count() {
 			Setting::CjkType,
 			Setting::Language,
 			Setting::CodeblockWrap,
+			Setting::Dialect,
 			Setting::ScrollSpeed,
 			Setting::SingleInstance,
 			Setting::RestoreSession,
