@@ -563,7 +563,9 @@ fn validate_field(conditions: ConditionSet, key: &str) -> Result<()> {
 	};
 	use Condition as K;
 	let has = |condition| conditions.contains(condition);
-	let allowed = if has(K::Scrollbar) {
+	let allowed = if has(K::Preview) {
+		key == "radius"
+	} else if has(K::Scrollbar) {
 		matches!(
 			key,
 			"track"

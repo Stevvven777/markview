@@ -10,7 +10,6 @@ const WIDTH: f32 = 288.0;
 const TITLE_SIZE: f32 = 13.0;
 const DETAIL_SIZE: f32 = 11.0;
 const PADDING: f32 = 10.0;
-const RADIUS: f32 = 10.0;
 const TITLE_LINE: f32 = 17.0;
 const TITLE_GAP: f32 = 2.0;
 const DETAIL_LINE: f32 = 14.0;
@@ -164,11 +163,13 @@ pub(super) fn draw(
 	card: &Card,
 	layout: &Layout,
 ) -> Vec<Draw> {
+	let chain = Condition::Preview.chain();
+	let style = ui.stylesheet.element_rule(chain, Condition::Preview);
 	let mut out = vec![Draw::Box {
 		rect: layout.rect,
-		chain: Condition::Panel.chain(),
-		condition: Condition::Panel,
-		radius: RADIUS,
+		chain,
+		condition: Condition::Preview,
+		radius: style.radius.unwrap_or(0.0),
 		border: 1.0,
 		left_only: false,
 		decoration: None,

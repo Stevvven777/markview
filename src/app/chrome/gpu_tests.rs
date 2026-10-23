@@ -2375,92 +2375,113 @@ fn preview_card_frame() -> Result<()> {
 	let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
 		.join("artifacts/preview");
 	std::fs::create_dir_all(&directory)?;
-	let settings = ReaderSettings {
-		theme: Theme::Light,
-		stylesheet: markview_layout::style::Stylesheet::bundled(false),
-		..Default::default()
-	};
-	let options =
-		settings.layout_options(760.0, false, &crate::test_support::fonts());
-	let preview_document = markview_commonmark::parse(
-		"# A hovered document\n\nA paragraph with **bold** and _italic_ text, a [link](https://example.org) and `inline code`.\n\n- first item\n- second item\n\n> A quoted paragraph that fills the measure so the preview has ink.\n\n```rust\nfn main() {\n\tprintln!(\"Markview\");\n}\n```\n",
-	);
-	let page_document = markview_commonmark::parse(
-		"# The page behind\n\nThis document stays on screen while another tab's card hangs above it.\n",
-	);
-	let mut engine = LayoutEngine::new();
-	let preview_snapshot = engine.layout(&preview_document, &options);
-	let page = engine.layout(&page_document, &options);
-	let mut renderer = pollster::block_on(Renderer::new(None))?;
-	renderer.set_stylesheet(settings.stylesheet.clone());
-	let mut ui = crate::test_support::shaper();
-	ui.set_stylesheet(settings.stylesheet.clone());
-	let card = Card {
-		title: card_ui::title_lines(
-			&mut ui,
-			"a hovered document with a name long enough to wrap.md",
-		),
-		detail: card_ui::detail_line(
-			&mut ui,
-			"/home/reader/Documents/notes/a hovered document.md",
-		),
-		body: true,
-	};
-	let layout = card_ui::layout(
-		&card,
-		Rect {
-			x: 120.0,
-			y: 4.0,
-			w: 140.0,
-			h: 36.0,
-		},
-		(800.0, 600.0),
-	);
-	let body = layout.body.unwrap();
-	let horizontal = HashMap::new();
-	let frame = View {
-		width: 800,
-		height: 600,
-		scale: 1.0,
-		left: 20.0,
-		top: 40.0,
-		bottom: 28.0,
-		scroll: 0.0,
-		theme: settings.theme,
-		horizontal: &horizontal,
-		selection: None,
-		revision: 0,
-		hovered_link: None,
-		hovered_overflow: None,
-		held_overflow: None,
-	};
-	let background = Draw::Rect(
-		Rect {
-			x: 0.0,
-			y: 0.0,
-			w: 800.0,
-			h: TOP,
-		},
-		Paint::Styled(Condition::Toolbar, C::Background),
-	);
-	let mut overlay = vec![background];
-	overlay.extend(card_ui::draw(&mut ui, &card, &layout));
-	let preview = markview_render::Preview {
-		snapshot: &preview_snapshot,
-		scroll: 0.0,
-		rect: body,
-		theme: settings.theme,
-		horizontal: &horizontal,
-	};
-	let target = renderer.offscreen(frame.width, frame.height);
-	renderer.render_with_preview(
-		&page,
-		&frame,
-		&overlay,
-		Some(&preview),
-		&target.create_view(&Default::default()),
-	)?;
-	renderer.wait(None)?;
-	renderer.save_png(&target, &directory.join("card.png"))?;
+	for theme in ["light", "dark", "8-bit"] {
+		for radius in [0, 12] {
+			let mut stylesheet =
+				(*markview_layout::style::Stylesheet::builtin()).clone();
+			stylesheet.merge(
+				&markview_layout::style::Stylesheet::named_rules(theme)
+					.unwrap(),
+			);
+			stylesheet.merge(&markview_layout::style::Stylesheet::parse(&format!(
+				"format_version=2\nversion=1\n[[rule]]\nwhen=['ui','preview']\nradius={radius}"
+			))?);
+			let settings = ReaderSettings {
+				theme: if theme == "dark" {
+					Theme::Dark
+				} else {
+					Theme::Light
+				},
+				stylesheet: std::sync::Arc::new(stylesheet),
+				..Default::default()
+			};
+			let options = settings.layout_options(
+				760.0,
+				false,
+				&crate::test_support::fonts(),
+			);
+			let preview_document = markview_commonmark::parse(
+				"# A hovered document\n\nA paragraph with **bold** and _italic_ text, a [link](https://example.org) and `inline code`.\n\n- first item\n- second item\n\n> A quoted paragraph that fills the measure so the preview has ink.\n\n```rust\nfn main() {\n\tprintln!(\"Markview\");\n}\n```\n",
+			);
+			let page_document = markview_commonmark::parse(
+				"# The page behind\n\nThis document stays on screen while another tab's card hangs above it.\n",
+			);
+			let mut engine = LayoutEngine::new();
+			let preview_snapshot = engine.layout(&preview_document, &options);
+			let page = engine.layout(&page_document, &options);
+			let mut renderer = pollster::block_on(Renderer::new(None))?;
+			renderer.set_stylesheet(settings.stylesheet.clone());
+			let mut ui = crate::test_support::shaper();
+			ui.set_stylesheet(settings.stylesheet.clone());
+			let card = Card {
+				title: card_ui::title_lines(
+					&mut ui,
+					"a hovered document with a name long enough to wrap.md",
+				),
+				detail: card_ui::detail_line(
+					&mut ui,
+					"/home/reader/Documents/notes/a hovered document.md",
+				),
+				body: true,
+			};
+			let layout = card_ui::layout(
+				&card,
+				Rect {
+					x: 120.0,
+					y: 4.0,
+					w: 140.0,
+					h: 36.0,
+				},
+				(800.0, 600.0),
+			);
+			let body = layout.body.unwrap();
+			let horizontal = HashMap::new();
+			let frame = View {
+				width: 800,
+				height: 600,
+				scale: 1.0,
+				left: 20.0,
+				top: 40.0,
+				bottom: 28.0,
+				scroll: 0.0,
+				theme: settings.theme,
+				horizontal: &horizontal,
+				selection: None,
+				revision: 0,
+				hovered_link: None,
+				hovered_overflow: None,
+				held_overflow: None,
+			};
+			let background = Draw::Rect(
+				Rect {
+					x: 0.0,
+					y: 0.0,
+					w: 800.0,
+					h: TOP,
+				},
+				Paint::Styled(Condition::Toolbar, C::Background),
+			);
+			let mut overlay = vec![background];
+			overlay.extend(card_ui::draw(&mut ui, &card, &layout));
+			let preview = markview_render::Preview {
+				snapshot: &preview_snapshot,
+				scroll: 0.0,
+				rect: body,
+				theme: settings.theme,
+				horizontal: &horizontal,
+			};
+			let target = renderer.offscreen(frame.width, frame.height);
+			renderer.render_with_preview(
+				&page,
+				&frame,
+				&overlay,
+				Some(&preview),
+				&target.create_view(&Default::default()),
+			)?;
+			renderer.wait(None)?;
+			let output = directory.join(format!("card-{theme}-{radius}.png"));
+			renderer.save_png(&target, &output)?;
+		}
+	}
 	Ok(())
 }

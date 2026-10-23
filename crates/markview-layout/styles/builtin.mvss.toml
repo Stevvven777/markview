@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui", "pdf"]
-version = 7
+version = 8
 
 [[fontdef]]
 id = "serif"
@@ -918,6 +918,10 @@ scrim = "#10192352"
 [[rule]]
 when = ["ui", "panel"]
 background = "#FFFFFF"
+
+[[rule]]
+when = ["ui", "preview"]
+radius = 0.0
 
 [[rule]]
 when = ["ui", "toolbar"]

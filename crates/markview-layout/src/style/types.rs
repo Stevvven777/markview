@@ -60,6 +60,7 @@ pub enum Condition {
 	Toolbar,
 	Statusbar,
 	Panel,
+	Preview,
 	Button,
 	Math,
 	Em,
@@ -128,6 +129,7 @@ impl Condition {
 		(Self::Toolbar, "toolbar"),
 		(Self::Statusbar, "statusbar"),
 		(Self::Panel, "panel"),
+		(Self::Preview, "preview"),
 		(Self::Button, "button"),
 		(Self::Math, "math"),
 		(Self::Em, "em"),
@@ -194,6 +196,7 @@ impl Condition {
 			Image => chain_of(&[Body, Image]),
 			Ui => chain_of(&[Body, Ui]),
 			Toolbar | Statusbar | Panel | Button => chain_of(&[Body, Ui, self]),
+			Preview => chain_of(&[Body, Ui, Panel, Preview]),
 			Cell => chain_of(&[Body, Table, Cell]),
 			Header => chain_of(&[Body, Table, Cell, Header]),
 			Label => chain_of(&[Body, CodeBlock, Label]),
@@ -221,6 +224,7 @@ impl Condition {
 				| Self::Toolbar
 				| Self::Statusbar
 				| Self::Panel
+				| Self::Preview
 				| Self::Button
 		)
 	}
@@ -247,6 +251,7 @@ impl Condition {
 			Toolbar | Statusbar | Panel | Button => {
 				ConditionSet::of(Ui).with(self)
 			}
+			Preview => ConditionSet::of(Ui).with(Panel).with(Preview),
 			Hover => ConditionSet::of(Link).with(Hover),
 			// A callout's box is a block quote's, refined by its family.
 			Callout => ConditionSet::of(Blockquote).with(Callout),

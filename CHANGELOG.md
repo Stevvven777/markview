@@ -30,6 +30,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Make tab preview corners configurable through MVSS, square by default across bundled reader themes.
 - Use upstream Comrak callout parsing and keep `%%` comment markers literal in raw HTML blocks and summaries, matching Obsidian.
 - Make the idle footer's document path and click-to-copy behavior an opt-in setting, off by default.
 - Keep the outline drawer's scroll position and selected entry when it is closed and reopened.

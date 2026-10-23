@@ -145,7 +145,7 @@ A condition is one fact about a rendered run: the blocks that contain it, the pa
 | Block parts | `label`, `cell`, `header`, `marker`, `task_marker`, `caption`, `placeholder`, `summary` |
 | Inline | `em`, `strong`, `link`, `del`, `sup`, `sub`, `footnote_ref`, `code`, `math` |
 | State | `hover`, `error` |
-| Surfaces and UI | `img`, `selection`, `search`, `search_current`, `scrollbar`, `ui`, `toolbar`, `statusbar`, `panel`, `button` |
+| Surfaces and UI | `img`, `selection`, `search`, `search_current`, `scrollbar`, `ui`, `toolbar`, `statusbar`, `panel`, `preview`, `button` |
 | Paper | `page`, `page_header`, `page_footer`, `page_number` |
 
 An Obsidian callout (read only in the OFM lite dialect) is a `blockquote` refined by `callout` and one color family, so a theme's quote rules still shape it and `["callout_warning"] border_color` or `["callout_warning", "label"] color` tint one family. The families group Obsidian's types: `callout_note` (note, info, todo), `callout_tip` (abstract, tip), `callout_success`, `callout_warning` (question, warning), `callout_danger` (failure, danger, bug), `callout_example` and `callout_quote`. The shared fallback colors each family; the header icon is fixed per type.
@@ -218,6 +218,14 @@ This means a theme only writes the exceptions it cares about. A field omitted by
 A block's own box is the exception. Its background, border, padding, spacing, and size come only from rules that name the element or a specialization of it, so `["p"]` styles a paragraph in any context and `["blockquote", "p"]` styles a paragraph in a quote, while a container's `["blockquote"] background` never paints its children. A quote's padding and border wrap its content alone: the leading space of its first child and the trailing space of its last stay outside the box, so the bar stays centered on the text. Inline runs keep the same split: a background must come from a rule that names inline markup, so `["code"]` and `["blockquote", "code"]` paint a code chip but `["blockquote"]` does not.
 
 ## Fields
+
+The tab hover card accepts `radius` on `["ui", "preview"]`, in logical pixels. The bundled fallback uses `0.0` (square corners) for all reader themes, including Light, Dark and 8-bit. Its title, detail and outer outline inherit the panel colors.
+
+```toml
+[[rule]]
+when = ["ui", "preview"]
+radius = 10.0
+```
 
 Text conditions accept `color`, `font`, `weight`, `size`, `decoration`, and `background`. `padding` on `code` insets its chip: the left and right sides widen the run and push its neighbours along, and the top and bottom sides make the chip taller without changing the line height, so code beside CJK or punctuation is not cramped. Block conditions additionally accept `line_height`, `space_before`, `space_after`, and the container fields `padding`, `border_color`, `border_width`, and `radius`. Parts that are not containers—`label`, `marker`, `caption`, `placeholder`, and `summary`—reject container geometry. A `task_marker` is a drawn box rather than a text part, so it also takes `background`, `accent`, `border_color`, `border_width`, and `radius`. `indent` styles `list` and `enum`; `align` places an image, positions a `marker` or `task_marker` in its column, and places an ordered list's numbers; `numbering` formats those numbers; `shape` picks a bullet's graphic; `source` belongs to image conditions; `show` belongs to `error`.
 

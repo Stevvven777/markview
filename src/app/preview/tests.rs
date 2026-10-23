@@ -178,7 +178,11 @@ fn a_resting_pointer_opens_the_card_after_the_delay() {
 	let draws = app.overlay();
 	assert!(draws.iter().any(|draw| matches!(
 		draw,
-		crate::layout::Draw::Box { radius, .. } if *radius > 0.0
+		crate::layout::Draw::Box {
+			condition: markview_layout::style::Condition::Preview,
+			radius: 0.0,
+			..
+		}
 	)));
 	app.interaction.panel = crate::state::PanelPage::Tabs;
 	app.preview_tick(now + Duration::from_secs(1));

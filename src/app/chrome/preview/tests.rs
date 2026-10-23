@@ -82,24 +82,45 @@ fn a_card_without_a_body_reserves_no_preview_rectangle() {
 }
 
 #[test]
-fn the_drawn_card_names_the_body_rect_it_left_for_the_renderer() {
+fn preview_cards_use_the_theme_radius() {
 	let mut ui = crate::test_support::shaper();
 	let card = card("notes.md", true);
 	let layout = super::layout(&card, anchor(200.0, 100.0), (800.0, 600.0));
-	let body = layout.body.unwrap();
-	let draws = draw(&mut ui, &card, &layout);
-	assert!(matches!(
-		draws.first(),
-		Some(Draw::Box {
-			rect,
-			radius,
-			border: 1.0,
-			..
-		}) if *rect == layout.rect && *radius == RADIUS
-	));
-	assert!(draws.iter().any(|draw| matches!(draw, Draw::Glyph(_))));
-	assert!(draws.iter().any(|draw| matches!(
-		draw,
-		Draw::Rect(rect, _) if *rect == body
-	)));
+	for theme in markview_layout::style::Stylesheet::READER_THEMES {
+		let mut stylesheet =
+			(*markview_layout::style::Stylesheet::builtin()).clone();
+		stylesheet.merge(
+			&markview_layout::style::Stylesheet::named_rules(theme).unwrap(),
+		);
+		for radius in [0.0, 12.0] {
+			if radius > 0.0 {
+				stylesheet.merge(
+					&markview_layout::style::Stylesheet::parse(
+						"format_version=2\nversion=1\n[[rule]]\nwhen=['ui','preview']\nradius=12",
+					)
+					.unwrap(),
+				);
+			}
+			ui.set_stylesheet(std::sync::Arc::new(stylesheet.clone()));
+			let draws = draw(&mut ui, &card, &layout);
+			assert!(
+				matches!(
+					draws.first(),
+					Some(Draw::Box {
+						rect,
+						condition: Condition::Preview,
+						radius: actual,
+						border: 1.0,
+						..
+					}) if *rect == layout.rect && *actual == radius
+				),
+				"{theme}: {radius}"
+			);
+			assert!(draws.iter().any(|draw| matches!(draw, Draw::Glyph(_))));
+			assert!(draws.iter().any(|draw| matches!(
+				draw,
+				Draw::Rect(rect, _) if Some(*rect) == layout.body
+			)));
+		}
+	}
 }
