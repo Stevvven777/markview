@@ -54,7 +54,7 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: bash scripts/ci_retry.sh sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - uses: actions/download-artifact@v8
         with:
           name: markview-android-debug
@@ -68,11 +68,35 @@ jobs:
       # creation with the pinned emulator's bundled SwiftShader.
       - name: Set up Mesa and a headless display
         run: |
-          sudo apt-get update
-          sudo apt-get install -y mesa-vulkan-drivers libgl1-mesa-dri xvfb
+          bash scripts/ci_install_packages.sh mesa-vulkan-drivers libgl1-mesa-dri xvfb
           echo "VK_DRIVER_FILES=$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)" >> "$GITHUB_ENV"
           Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp > "$RUNNER_TEMP/xvfb.log" 2>&1 &
       - name: Test the reader, lifecycle and sw600dp boundary
+        id: android-tests
+        # The gate below keeps application failures fatal and permits one setup retry.
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          emulator-build: 13784423
+          cores: 4
+          ram-size: 4096M
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -gpu host -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: bash android/ci-test.sh ${{ matrix.layout }} ${{ matrix.boundary-width }}
+      - name: Allow a retry only before application tests start
+        if: steps.android-tests.outcome == 'failure'
+        run: |
+          if [[ -f "$RUNNER_TEMP/markview-android-tests-started" ]]; then
+            echo '::error::Application tests failed; refusing to retry emulator setup.'
+            exit 1
+          fi
+          echo '::warning::Emulator setup failed before application tests; retrying once.'
+      - name: Retry emulator setup and run the full suite
+        if: steps.android-tests.outcome == 'failure'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35

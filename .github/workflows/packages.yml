@@ -18,6 +18,7 @@ on:
       - dist-workspace.toml
       - .github/**
       - scripts/package_*.sh
+      - scripts/ci_*.sh
       - scripts/verify_*
       - packaging/**
       - wix/**
@@ -31,6 +32,7 @@ on:
       - dist-workspace.toml
       - .github/**
       - scripts/package_*.sh
+      - scripts/ci_*.sh
       - scripts/verify_*
       - packaging/**
       - wix/**
@@ -53,8 +55,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build system libraries
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev \
+          bash scripts/ci_install_packages.sh libfontconfig1-dev libxkbcommon-dev \
             libwayland-dev
       - uses: ./.github/actions/install-dist
       - name: Build the local archive

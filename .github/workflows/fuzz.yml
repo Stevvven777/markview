@@ -17,7 +17,7 @@ jobs:
         with:
           key: ${{ github.ref }}-fuzz
       - name: Linux native development libraries
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libwayland-dev
+        run: bash scripts/ci_install_packages.sh libfontconfig1-dev libxkbcommon-dev libwayland-dev
       # The `fuzz` feature must stay a visibility relaxation only: it
       # compiles in every configuration the libraries support (F5).
       - run: cargo check -p markview-commonmark -p markview-document -p markview-layout -p markview-pdf -p markview-render --features fuzz --locked

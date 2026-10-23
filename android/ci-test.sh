@@ -6,6 +6,7 @@ boundary_width=$2
 serial=emulator-5554
 artifacts="artifacts/android/$layout"
 mkdir -p "$artifacts"
+rm -f "$RUNNER_TEMP/markview-android-tests-started"
 retry() {
   local attempts=$1
   shift
@@ -21,9 +22,10 @@ retry() {
 }
 # The boot property lands before `adbd` is always ready, so restarting it as
 # root can race the daemon. A few short retries absorb that race.
-retry 4 adb -s "$serial" wait-for-device
-retry 4 adb -s "$serial" root
-adb -s "$serial" wait-for-device
+retry 4 timeout 30 adb -s "$serial" wait-for-device
+retry 4 timeout 30 adb -s "$serial" root
+timeout 120 adb -s "$serial" wait-for-device
+test "$(timeout 30 adb -s "$serial" shell id -u)" = 0
 adb -s "$serial" shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.gestural
 adb -s "$serial" logcat -c
 adb -s "$serial" logcat -v threadtime > "$artifacts/logcat.txt" &
@@ -38,6 +40,7 @@ finish() {
 }
 trap finish EXIT
 
+touch "$RUNNER_TEMP/markview-android-tests-started"
 python3 android/test.py --serial "$serial" --layout "$layout" --timeout 600
 adb -s "$serial" shell am force-stop io.github.szdytom.markview
 boundary_size="${boundary_width}x1600"
