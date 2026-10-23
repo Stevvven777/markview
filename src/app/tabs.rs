@@ -68,6 +68,8 @@ impl Tabs {
 	pub(super) fn new_page(&mut self, now: Instant) {
 		self.session.cancel_scroll_animation();
 		if self.session.path.is_some() {
+			self.entries[self.active].preview =
+				super::preview::Page::capture(&self.session);
 			self.entries[self.active].session =
 				std::mem::take(&mut self.session);
 			self.entries[self.active].last_active = now;
@@ -131,6 +133,8 @@ impl Tabs {
 			if self.entries.is_empty() {
 				self.entries.push(ReaderTab::new(current));
 			} else {
+				self.entries[self.active].preview =
+					super::preview::Page::capture(&self.session);
 				self.entries[self.active].session =
 					std::mem::take(&mut self.session);
 				self.entries[self.active].last_active = now;
@@ -211,12 +215,15 @@ impl Tabs {
 		}
 		self.session.cancel_scroll_animation();
 		if self.session.path.is_some() {
+			self.entries[self.active].preview =
+				super::preview::Page::capture(&self.session);
 			self.entries[self.active].session =
 				std::mem::take(&mut self.session);
 			self.entries[self.active].last_active = now;
 		}
 		self.active = index;
 		self.entries[index].last_active = now;
+		self.entries[index].preview = None;
 		self.session = std::mem::take(&mut self.entries[index].session);
 		self.session.cancel_scroll_animation();
 		if self.session.path.is_none() {
@@ -242,6 +249,7 @@ impl Tabs {
 			self.session = ReaderSession::default();
 		} else {
 			self.active = index.min(self.entries.len() - 1);
+			self.entries[self.active].preview = None;
 			self.session =
 				std::mem::take(&mut self.entries[self.active].session);
 			self.session.cancel_scroll_animation();

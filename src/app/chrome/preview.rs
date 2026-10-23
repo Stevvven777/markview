@@ -15,7 +15,7 @@ const TITLE_GAP: f32 = 2.0;
 const DETAIL_LINE: f32 = 14.0;
 const BODY_GAP: f32 = 8.0;
 /// Body height over width.
-const BODY_RATIO: f32 = 0.625;
+pub(in crate::app) const BODY_RATIO: f32 = 0.625;
 /// Space between the card and its anchor, and the window edges.
 const TOP_GAP: f32 = 4.0;
 const MARGIN: f32 = 8.0;

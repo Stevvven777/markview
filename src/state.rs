@@ -303,6 +303,7 @@ pub(crate) struct ReaderTab {
 	pub(crate) id: u64,
 	pub(crate) path: PathBuf,
 	pub(crate) session: ReaderSession,
+	pub(crate) preview: Option<crate::app::preview::Page>,
 	pub(crate) last_active: Instant,
 }
 
@@ -314,6 +315,7 @@ impl ReaderTab {
 			id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
 			path,
 			session: ReaderSession::default(),
+			preview: None,
 			last_active: Instant::now(),
 		}
 	}

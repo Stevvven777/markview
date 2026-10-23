@@ -103,8 +103,10 @@ wrapped title, detail line and optional page body, and the renderer composes
 that page from the snapshot the tab already holds, at device resolution, through
 a scaled render pass. The page already on screen is never repeated in its card,
 so the active tab previews its title and path only. No screenshot or texture is
-cached between frames; a new target only adds a `Target` arm and its card
-content.
+cached between frames. Before a tab becomes inactive, it retains the layout
+blocks intersecting the card's page slice and pins only that slice's decoded
+images. Idle document release leaves this slice available; activating or closing
+the tab drops it. A new target only adds a `Target` arm and its card content.
 
 `app/chrome.rs` groups the painter's borrowed inputs into four read-only views —
 `FrameView`, `SessionView`, `SettingsView` and `StatusView` — plus the drawn

@@ -252,3 +252,189 @@ fn the_active_tab_opens_a_text_only_card() {
 	app.select_tab(0);
 	assert!(app.preview.open().is_none());
 }
+
+#[test]
+fn an_idle_tab_keeps_its_page_preview_after_releasing_its_document() {
+	let (mut app, events) = app();
+	let dir = tempfile::tempdir().unwrap();
+	let first = dir.path().join("first.md");
+	let second = dir.path().join("second.md");
+	std::fs::write(&first, "Reading paragraph.\n\n".repeat(100)).unwrap();
+	std::fs::write(&second, "# Second\n").unwrap();
+	load(&mut app, &events, first);
+	let block = 12;
+	app.readers.session.scrolling.offset =
+		app.readers.session.snapshot.blocks[block].y + 5.0;
+	app.readers.session.horizontal.insert((block, 0), 24.0);
+	let original = app.readers.session.snapshot.clone();
+	let scroll = app.readers.session.scrolling.offset;
+	load(&mut app, &events, second);
+	let layout = app.tab_layout();
+	app.interaction
+		.pointer
+		.move_to((layout.rects[0].x + 5.0, 20.0));
+	let now = Instant::now();
+	app.hover_preview(now);
+	app.preview_tick(now + SHOW_DELAY);
+	assert!(app.preview.open().unwrap().card.body);
+
+	// Releasing an idle tab must preserve both an open card and later hovers.
+	for elapsed in [Duration::from_secs(21), Duration::from_secs(86_400)] {
+		let at = now + elapsed;
+		app.readers.release_inactive(at);
+		let session = &app.readers.entries()[0].session;
+		assert!(session.document.is_none());
+		assert!(session.snapshot.blocks.is_empty());
+		assert!(app.readers.session.document.is_some());
+		app.overlay();
+		let scene = app.preview.scene(&app.readers, Theme::Light).unwrap();
+		assert_eq!(scene.scroll, scroll);
+		assert_eq!(scene.snapshot.width, original.width);
+		assert!(scene.snapshot.blocks.len() < original.blocks.len());
+		assert_eq!(scene.snapshot.blocks[0].id, original.blocks[block].id);
+		assert_eq!(scene.horizontal.get(&(0, 0)), Some(&24.0));
+		app.dismiss_preview();
+		app.hover_preview(at);
+		app.preview_tick(at + SHOW_DELAY);
+		assert!(app.preview.open().unwrap().card.body);
+	}
+
+	// Activating the tab still reloads its full document at the saved position.
+	app.select_tab(0);
+	assert!(app.preview.open().is_none());
+	assert!(app.readers.session.layout_pending);
+	assert_eq!(app.readers.session.scrolling.offset, scroll);
+	assert!(app.readers.entries()[0].preview.is_none());
+}
+
+#[test]
+fn an_inactive_tab_pins_only_its_visible_image_pixels() {
+	use markview_layout::image::{ImageInfo, ImageSnapshot, Pixels};
+	use std::sync::Arc;
+
+	let (mut app, _events) = app();
+	let now = Instant::now();
+	app.readers.open("/tmp/images.md".into(), now);
+	let document = Arc::new(markview_commonmark::parse(format!(
+		"![Visible](visible.png)\n\n{}![Offscreen](offscreen.png)\n",
+		"Reading paragraph.\n\n".repeat(100),
+	)));
+	let mut images = ImageSnapshot {
+		generation: 42,
+		..Default::default()
+	};
+	let pixels = Arc::new(Pixels {
+		width: 1,
+		height: 1,
+		rgba: Arc::from([0, 0, 0, 255]),
+	});
+	for alias in ["visible.png", "offscreen.png"] {
+		images.entries.insert(
+			alias.into(),
+			ImageInfo {
+				version: 7,
+				size: Some((1, 1)),
+				error: None,
+			},
+		);
+		images.pixels.insert(alias.into(), 7, pixels.clone());
+	}
+	app.readers.session.snapshot = crate::layout::LayoutEngine::new()
+		.layout_with_images(
+			&document,
+			&crate::test_support::options(),
+			&images,
+		);
+	app.readers.session.document = Some(document);
+	app.readers.open("/tmp/second.md".into(), now);
+	images.pixels.replace(Default::default());
+	app.readers.release_inactive(now + Duration::from_secs(21));
+
+	let page = app.readers.entries()[0].preview.as_ref().unwrap();
+	assert_eq!(page.snapshot.images.generation, 42);
+	assert_eq!(page.snapshot.images.entries.len(), 1);
+	assert!(page.snapshot.images.entries.contains_key("visible.png"));
+	assert!(Arc::ptr_eq(
+		&page.snapshot.images.pixels.get("visible.png", 7).unwrap(),
+		&pixels
+	));
+	assert!(
+		page.snapshot
+			.images
+			.pixels
+			.get("offscreen.png", 7)
+			.is_none()
+	);
+	assert_eq!(Arc::strong_count(&pixels), 2);
+}
+
+#[test]
+fn overflowing_table_previews_pin_only_images_in_the_scrolled_clip() {
+	use markview_layout::image::{ImageInfo, ImageSnapshot, Pixels};
+	use std::sync::Arc;
+
+	let headers = (0..20).map(|_| "Column").collect::<Vec<_>>().join(" | ");
+	let cells = (0..20)
+		.map(|i| format!("![Image](image-{i}.png)"))
+		.collect::<Vec<_>>()
+		.join(" | ");
+	let document = Arc::new(markview_commonmark::parse(format!(
+		"# Images\n\n| {headers} |\n| {} |\n| {cells} |\n",
+		vec!["---"; 20].join(" | ")
+	)));
+	let mut images = ImageSnapshot::default();
+	for i in 0..20 {
+		let alias = format!("image-{i}.png");
+		images.entries.insert(
+			alias.clone(),
+			ImageInfo {
+				version: 1,
+				size: Some((100, 100)),
+				error: None,
+			},
+		);
+		images.pixels.insert(
+			alias,
+			1,
+			Arc::new(Pixels {
+				width: 1,
+				height: 1,
+				rgba: Arc::from([0, 0, 0, 255]),
+			}),
+		);
+	}
+	let options = crate::layout::LayoutOptions {
+		width: 760.0,
+		..crate::test_support::options()
+	};
+	let snapshot = crate::layout::LayoutEngine::new()
+		.layout_with_images(&document, &options, &images);
+	let (table_index, table) = snapshot
+		.blocks
+		.iter()
+		.enumerate()
+		.find(|(_, block)| !block.layout.overflow.is_empty())
+		.unwrap();
+	let overflow = &table.layout.overflow[0];
+	assert!(overflow.content_width > overflow.rect.w * 2.0);
+	for offset in [0.0, overflow.content_width - overflow.rect.w] {
+		let (mut app, _events) = app();
+		let now = Instant::now();
+		app.readers.open("/tmp/table.md".into(), now);
+		app.readers.session.snapshot = snapshot.clone();
+		app.readers.session.document = Some(document.clone());
+		app.readers.session.scrolling.offset = table.y;
+		app.readers
+			.session
+			.horizontal
+			.insert((table_index, 0), offset);
+		app.readers.open("/tmp/second.md".into(), now);
+		app.readers.release_inactive(now + Duration::from_secs(21));
+		let page = app.readers.entries()[0].preview.as_ref().unwrap();
+		let retained = page.snapshot.images.decoded();
+		assert_eq!(retained.len(), 7);
+		assert_eq!(page.snapshot.images.entries.len(), retained.len());
+		assert_eq!(retained.contains_key("image-0.png"), offset == 0.0);
+		assert_eq!(retained.contains_key("image-19.png"), offset != 0.0);
+	}
+}

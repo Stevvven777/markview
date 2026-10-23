@@ -7,17 +7,110 @@
 //!
 //! A page preview is not a screenshot: the card reserves a body rectangle, and
 //! the renderer composes the tab's layout instructions into it at device
-//! resolution. Nothing is copied or cached between frames.
+//! resolution. Idle tabs retain only the blocks and pixels the card can show.
 use super::tabs;
 use super::{
 	App, TOP,
 	chrome::preview::{self as card, Card},
 };
-use crate::{layout::Rect, render::Theme};
-use std::time::{Duration, Instant};
+use crate::{
+	layout::{Draw, LayoutSnapshot, Rect},
+	render::Theme,
+	state::ReaderSession,
+};
+use std::{
+	collections::HashMap,
+	time::{Duration, Instant},
+};
 
 /// How long the pointer must rest on a target before its preview opens.
 pub(super) const SHOW_DELAY: Duration = Duration::from_millis(100);
+
+/// The page slice retained while a tab is inactive.
+pub(crate) struct Page {
+	snapshot: LayoutSnapshot,
+	scroll: f32,
+	horizontal: HashMap<(usize, usize), f32>,
+}
+
+impl Page {
+	pub(super) fn capture(session: &ReaderSession) -> Option<Self> {
+		let source = &session.snapshot;
+		if source.blocks.is_empty() {
+			return None;
+		}
+		let scroll = session.scrolling.offset.max(0.0);
+		let bottom = scroll + source.width.max(1.0) * card::BODY_RATIO + 1.0;
+		let start = source
+			.blocks
+			.partition_point(|block| block.y + block.height() < scroll);
+		let end = source.blocks.partition_point(|block| block.y <= bottom);
+		let mut snapshot = LayoutSnapshot {
+			presentation_key: source.presentation_key,
+			content_id: source.content_id,
+			document_box: source.document_box.clone(),
+			blocks: source.blocks[start..end].to_vec(),
+			height: source.height,
+			width: source.width,
+			..Default::default()
+		};
+		snapshot.images.generation = source.images.generation;
+		// Pin visible pixels before the worker switches to another document.
+		for (block_index, block) in snapshot.blocks.iter().enumerate() {
+			let viewport = Rect {
+				x: 0.0,
+				y: scroll - block.y,
+				w: source.width.max(1.0),
+				h: bottom - scroll,
+			};
+			for (index, draw, _) in block.draws() {
+				let Draw::Image {
+					src, version, rect, ..
+				} = draw
+				else {
+					continue;
+				};
+				let Some(mut rect) = block.rect(index, *rect) else {
+					continue;
+				};
+				let (offset, clip) = block.command_view(
+					index,
+					start + block_index,
+					&session.horizontal,
+				);
+				rect.x -= offset;
+				let clip = clip
+					.map_or(Some(viewport), |clip| viewport.intersect(clip));
+				if clip.and_then(|clip| rect.intersect(clip)).is_none() {
+					continue;
+				}
+				if let Some(info) = source.images.entries.get(src) {
+					snapshot.images.entries.insert(src.clone(), info.clone());
+				}
+				if let Some(pixels) = source.images.pixels.get(src, *version) {
+					snapshot.images.pixels.insert(
+						src.clone(),
+						*version,
+						pixels,
+					);
+				}
+			}
+		}
+		let horizontal = session
+			.horizontal
+			.iter()
+			.filter(|&(&(block, _), _)| (start..end).contains(&block))
+			.map(|(&(block, command), &offset)| {
+				((block - start, command), offset)
+			})
+			.collect();
+		Some(Self {
+			snapshot,
+			scroll,
+			horizontal,
+		})
+	}
+}
 
 #[derive(Default)]
 pub(super) struct Preview {
@@ -144,16 +237,26 @@ impl Preview {
 				} else {
 					&readers.entries()[index].session
 				};
-				let snapshot = &session.snapshot;
-				if snapshot.blocks.is_empty() {
+				let page = readers.entries()[index].preview.as_ref();
+				let (snapshot, scroll, horizontal) = match page {
+					Some(page) => {
+						(&page.snapshot, page.scroll, &page.horizontal)
+					}
+					None => (
+						&session.snapshot,
+						session.scrolling.offset,
+						&session.horizontal,
+					),
+				};
+				if snapshot.blocks.is_empty() && page.is_none() {
 					return None;
 				}
 				Some(crate::render::Preview {
 					snapshot,
-					scroll: session.scrolling.offset,
+					scroll,
 					rect,
 					theme,
-					horizontal: &session.horizontal,
+					horizontal,
 				})
 			}
 		}
@@ -246,7 +349,9 @@ impl<P: super::SendEvent> App<P> {
 			&self.readers.entries()[index].session
 		};
 		// The active page already fills the window, so its card names it only.
-		let body = !active && !session.snapshot.blocks.is_empty();
+		let body = !active
+			&& (!session.snapshot.blocks.is_empty()
+				|| self.readers.entries()[index].preview.is_some());
 		self.preview.show(Open {
 			target: Target::Tab(tab),
 			card: Card {

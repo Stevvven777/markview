@@ -24,7 +24,7 @@ mod painting;
 pub(crate) mod panels;
 pub(crate) mod pointer;
 mod preferences;
-mod preview;
+pub(crate) mod preview;
 pub(crate) mod search;
 mod security;
 pub(crate) mod session;
