@@ -379,9 +379,17 @@ impl<P: super::SendEvent> App<P> {
 			.retain(|f| field.is_some_and(|changed| changed != *f));
 		// The dialect changes what the parse reads, so what the reader holds is
 		// new content even though the file is not: the reflow that follows
-		// reparses, and stale selections and search results drop off.
-		if field == Some(Setting::Dialect) {
-			self.readers.session.content_version += 1;
+		// reparses, and stale selections and search results drop off. A reset
+		// replaces the whole settings value, so compare the effective dialect
+		// there instead of relying on the field name.
+		let previous_dialect =
+			self.preferences.stored_settings().effective_dialect();
+		if field == Some(Setting::Dialect)
+			|| (field.is_none()
+				&& self.preferences.values.effective_dialect()
+					!= previous_dialect)
+		{
+			self.invalidate_parse_for_dialect_change();
 		}
 		if field.is_none() || field == Some(Setting::Theme) {
 			self.args.theme = None;
@@ -391,6 +399,34 @@ impl<P: super::SendEvent> App<P> {
 		if self.args.mode == Mode::Window {
 			self.preferences.changed(field);
 		}
+	}
+
+	/// Drops state derived from the previous parse before the dialect-triggered
+	/// request starts.
+	///
+	/// The old parse can still be queried by the search worker while the new
+	/// one is in flight. Bumping the revision and clearing the cached document
+	/// makes the subsequent `Event::Parsed` the only parse that can satisfy a
+	/// search, and marking parsing incomplete keeps reopening Find from using
+	/// the stale document in the meantime.
+	fn invalidate_parse_for_dialect_change(&mut self) {
+		self.readers.session.content_version += 1;
+		self.invalidate_search_for_new_parse();
+	}
+
+	/// Invalidates search state tied to the current parse and asks the search
+	/// worker to cancel anything already running.
+	pub(super) fn invalidate_search_for_new_parse(&mut self) {
+		let session = &mut self.readers.session;
+		session.parse_complete = false;
+		session.search.retained = session
+			.search
+			.current
+			.and_then(|i| session.search.matches.get(i))
+			.cloned();
+		session.search.document = None;
+		session.search.matches = Default::default();
+		self.search_changed();
 	}
 	pub(super) fn text_at_cursor(&self) -> Option<TextPosition> {
 		self.document_interaction()
@@ -629,12 +665,17 @@ impl<P: super::SendEvent> App<P> {
 		for field in &self.args.overrides {
 			self.preferences.values.copy_field(&previous, *field);
 		}
+		let dialect_changed = self.preferences.values.effective_dialect()
+			!= previous.effective_dialect();
+		if dialect_changed {
+			self.invalidate_parse_for_dialect_change();
+		}
 		self.services
 			.handle
 			.configure_http(&self.preferences.values);
 		self.sync_session_settings();
 		self.reload_styles();
-		if self.options() != options
+		if (dialect_changed || self.options() != options)
 			&& self.readers.session.requested_options.as_ref()
 				!= Some(&self.options())
 		{

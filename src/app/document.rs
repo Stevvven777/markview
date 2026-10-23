@@ -131,20 +131,12 @@ impl<P: super::SendEvent> App<P> {
 		session.blocked_images.clear();
 		self.interaction.overlays.modal.send(Message::Dismiss);
 		session.load_error = None;
-		session.parse_complete = false;
-		session.search.retained = session
-			.search
-			.current
-			.and_then(|i| session.search.matches.get(i))
-			.cloned();
-		session.search.document = None;
-		session.search.matches = Default::default();
 		// New content resets remote-image choices and `<details>` overrides.
 		session.load_all_images = false;
 		session.remote_notice_dismissed = false;
 		session.details_open = Default::default();
 		session.cancel_scroll_animation();
-		self.search_changed();
+		self.invalidate_search_for_new_parse();
 		self.request(follow);
 		self.export.schedule_watch_export(path);
 	}

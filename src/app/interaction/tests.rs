@@ -256,14 +256,39 @@ fn reader(source: &str, width: f32) -> (App<StubProxy>, Arc<Document>) {
 
 #[test]
 fn changing_the_dialect_marks_the_open_document_as_new_content() {
-	let (mut app, _) = reader("one\ntwo\n\nthree\n", 760.0);
+	let (mut app, document) = reader("one\ntwo\n\nthree\n", 760.0);
 	let before = app.readers.session.content_version;
+	app.readers.session.search.document = Some(document);
+	app.readers.session.search.dirty = false;
 	// Only the dialect changes what a parse reads; a layout-only setting
 	// reflows the same document instead.
 	app.setting_changed(Some(crate::settings::Setting::CodeblockWrap));
 	assert_eq!(app.readers.session.content_version, before);
+	assert!(app.readers.session.parse_complete);
 	app.setting_changed(Some(crate::settings::Setting::Dialect));
 	assert!(app.readers.session.content_version > before);
+	// A parse started for the old dialect must not satisfy a search opened
+	// while its replacement is still in flight.
+	assert!(!app.readers.session.parse_complete);
+	assert!(app.readers.session.search.document.is_none());
+	assert!(app.readers.session.search.matches.is_empty());
+	assert!(app.readers.session.search.dirty);
+}
+
+#[test]
+fn applying_a_dialect_change_from_disk_invalidates_search_too() {
+	let (mut app, document) = reader("==marked==\n", 760.0);
+	app.preferences.values.markdown_flavor =
+		crate::settings::MarkdownFlavor::OfmLite;
+	app.readers.session.search.document = Some(document);
+	app.readers.session.search.dirty = false;
+	let before = app.readers.session.content_version;
+	app.apply_saved_settings();
+	assert!(app.readers.session.content_version > before);
+	assert!(!app.readers.session.parse_complete);
+	assert!(app.readers.session.search.document.is_none());
+	assert!(app.readers.session.search.matches.is_empty());
+	assert!(app.readers.session.search.dirty);
 }
 
 #[test]
