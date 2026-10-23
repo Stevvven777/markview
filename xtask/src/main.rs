@@ -1,12 +1,14 @@
 //! Repository tasks that must stay out of the shipped crates.
 //!
 //! `cargo run -p xtask -- icons [--check]` regenerates the platform icon
-//! assets from the source SVGs.
+//! assets and reader callout vectors from the source SVGs.
 use std::process::ExitCode;
 
 mod complexity;
 mod coupling;
 mod icons;
+#[path = "../../crates/markview-icon/src/svg.rs"]
+mod svg;
 
 fn main() -> ExitCode {
 	let mut args = std::env::args().skip(1);

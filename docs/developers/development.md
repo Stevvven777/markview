@@ -130,7 +130,7 @@ these versions, verify comparisons before considering a baseline update rather
 than widening the tolerance.
 
 Release archives, installers, and the platform icons are maintained separately;
-see the [packaging guide](packaging.md). After changing `assets/markview-icon-color.svg`:
+see the [packaging guide](packaging.md). After changing `assets/markview-icon-color.svg` or `assets/callouts/*.svg` (precompiled reader vectors):
 
 ```sh
 cargo run -p xtask -- icons

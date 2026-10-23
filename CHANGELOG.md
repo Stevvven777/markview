@@ -30,6 +30,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Precompile callout SVG type icons with xtask for native vector rendering.
 - Remove the Markdown variant help button and give its space back to the dropdown.
 - Use “Markdown 变体” for the Simplified Chinese settings label and help text.
 - Rename the Markdown presets to Obsidian and GFM, default to Obsidian, and shorten dropdown labels in every locale while accepting existing `ofm-lite` settings.
