@@ -379,27 +379,10 @@ fn rows(settings: &ReaderSettings, phone: bool) -> Vec<Row> {
 			),
 		),
 	]);
-	// Hard-break and highlight toggles always sit under the dialect preset.
-	// Obsidian forces highlight on and hard breaks off through
-	// effective_dialect(); under that preset the controls stay visible but
-	// greyed, showing the effective values rather than ignored stored ones.
+	// Only highlight marks are fixed by the Obsidian preset.
 	let gfm = settings.markdown_flavor == MarkdownFlavor::Gfm;
 	let dialect = settings.effective_dialect();
 	rows.extend([
-		Row::new(
-			t.settings_hard_breaks(),
-			vec![action(
-				if dialect.hard_breaks {
-					t.settings_on()
-				} else {
-					t.settings_off()
-				},
-				dialect.hard_breaks,
-				Command::Settings(crate::state::SettingsCommand::HardBreaks),
-			)],
-		)
-		.nested()
-		.enabled(gfm),
 		Row::new(
 			t.settings_highlight_marks(),
 			vec![action(
@@ -416,6 +399,18 @@ fn rows(settings: &ReaderSettings, phone: bool) -> Vec<Row> {
 		)
 		.nested()
 		.enabled(gfm),
+		Row::new(
+			t.settings_hard_breaks(),
+			vec![action(
+				if dialect.hard_breaks {
+					t.settings_on()
+				} else {
+					t.settings_off()
+				},
+				dialect.hard_breaks,
+				Command::Settings(crate::state::SettingsCommand::HardBreaks),
+			)],
+		),
 	]);
 	rows
 }

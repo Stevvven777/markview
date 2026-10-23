@@ -777,9 +777,6 @@ impl<P: super::SendEvent> App<P> {
 			!= crate::settings::MarkdownFlavor::Gfm;
 		let hover_control = over.and_then(|widget| match &widget.message {
 			state::Command::Settings(
-				crate::state::SettingsCommand::HardBreaks,
-			)
-			| state::Command::Settings(
 				crate::state::SettingsCommand::HighlightMarks,
 			) if ofm => Some(lang.settings_dialect_obsidian_forced()),
 			_ => None,

@@ -304,9 +304,8 @@ fn reader_dialects_reach_the_exported_layout() {
 		highlight_marks: true,
 		..Default::default()
 	};
-	// The stored toggles are stale under Obsidian: the preset forces hard
-	// breaks off and highlight marks on.
-	let stale_ofm = ReaderSettings {
+	// Obsidian enables highlights and preserves the hard-break choice.
+	let ofm_breaks = ReaderSettings {
 		markdown_flavor: MarkdownFlavor::Obsidian,
 		hard_breaks: true,
 		highlight_marks: false,
@@ -324,7 +323,7 @@ fn reader_dialects_reach_the_exported_layout() {
 			false,
 		),
 		(&gfm_breaks, "\n", true, false),
-		(&stale_ofm, " ", true, true),
+		(&ofm_breaks, "\n", true, true),
 	] {
 		let options = Config::from_settings(
 			&settings(ExportFormat::Png),

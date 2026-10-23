@@ -11,11 +11,14 @@
 
 **设置 → 通用 → 语言与代码** 决定 Markview 如何解析 Markdown。
 
-- **GFM（GitHub 风格 Markdown）。** 软换行仍为空格。在此预设下可分别开关「单个换行视为硬换行」与 `==高亮==`。详见
+- **GFM（GitHub 风格 Markdown）。** 可开关 `==高亮==`。详见
   [GFM 规范](https://github.github.com/gfm/)。
 - **Obsidian（默认）。** 对
   [Obsidian Flavored Markdown](https://help.obsidian.md/obsidian-flavored-markdown)
-  的受限阅读：强制开启高亮、软换行仍为空格，因此两个开关会保留在界面中但呈禁用（灰色）。
+  的受限阅读：强制开启高亮，因此高亮开关会保留在界面中但呈禁用（灰色）。
+
+**单个换行视为硬换行** 独立于 Markdown 变体，默认关闭。在设置中切换到 Obsidian 时会将其关闭，
+之后可在任一变体下手动开启。保存的 `hard-breaks` 选项在重新打开应用和导出文档时同样生效。
 
 配置值为 `markdown-flavor = "obsidian"`，旧值 `"ofm-lite"` 仍兼容；已明确选择 `"gfm"` 的配置保持不变。
 

@@ -75,14 +75,17 @@ Android stores settings in its private app files directory; see
 
 **Settings → Generic → Language & code** chooses how Markview reads Markdown.
 
-- **GFM (GitHub Flavored Markdown).** Soft newlines stay spaces.
-  Under this preset you can independently toggle single-newline hard breaks
-  and `==highlight==` marks. See the
+- **GFM (GitHub Flavored Markdown).** You can toggle `==highlight==` marks.
+  See the
   [GFM specification](https://github.github.com/gfm/).
 - **Obsidian (the default).** A restricted reading of
   [Obsidian Flavored Markdown](https://help.obsidian.md/obsidian-flavored-markdown):
-  highlight marks are forced on and soft newlines stay spaces, so the two
-  toggles stay visible but are disabled.
+  highlight marks are forced on, so the highlight toggle stays visible but is disabled.
+
+**Single newline as hard break** is independent of the Markdown preset and is off
+by default. Switching to Obsidian in Settings turns it off; you can enable it
+again in either preset. A saved `hard-breaks` choice also applies when reopening
+the app or exporting a document.
 
 Settings store this preset as `markdown-flavor = "obsidian"`; the former
 `"ofm-lite"` value is still accepted. An explicit `"gfm"` choice is preserved.

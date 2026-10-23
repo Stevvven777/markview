@@ -345,10 +345,9 @@ fn codeblock_wrap_round_trips_settings_and_layout() {
 	);
 }
 
-/// The dialect a parse uses follows the preset: GFM keeps the stored toggles,
-/// while Obsidian forces highlight on and hard breaks off whatever is stored.
+/// Hard breaks follow the stored choice; Obsidian always enables highlights.
 #[test]
-fn markdown_dialect_defaults_and_obsidian_forces_its_toggles() {
+fn markdown_dialect_defaults_and_hard_breaks_are_independent() {
 	let settings = ReaderSettings::default();
 	assert_eq!(settings.markdown_flavor, MarkdownFlavor::Obsidian);
 	let dialect = settings.effective_dialect();
@@ -367,7 +366,7 @@ fn markdown_dialect_defaults_and_obsidian_forces_its_toggles() {
 	assert!(!dialect.ofm);
 	settings.markdown_flavor = MarkdownFlavor::Obsidian;
 	let dialect = settings.effective_dialect();
-	assert!(!dialect.hard_breaks);
+	assert!(dialect.hard_breaks);
 	assert!(dialect.highlight_marks);
 	assert!(dialect.ofm);
 	assert!(
@@ -377,13 +376,9 @@ fn markdown_dialect_defaults_and_obsidian_forces_its_toggles() {
 	);
 }
 
-/// End-to-end fixture matrix for the four reading cases ticket 05 checks.
-///
-/// One source carries both a soft newline and a `==mark==`, so each case is
-/// the same bytes under a different `ReaderSettings` → `effective_dialect()`
-/// → parse path. Wikilinks stay out of scope.
+/// The same source reads with each preset and independent hard breaks.
 #[test]
-fn dialect_fixture_matrix_covers_the_four_reading_cases() {
+fn dialect_fixture_matrix_covers_independent_hard_breaks() {
 	use markview_commonmark::{Dialect, parse_with};
 	use markview_document::{BlockKind, InlineKind, plain_text};
 
@@ -453,32 +448,36 @@ fn dialect_fixture_matrix_covers_the_four_reading_cases() {
 	assert!(!has_hard_break(rich));
 	assert!(has_mark(rich));
 
-	// 4) Obsidian: highlight on and hard breaks off even when stored toggles
-	// say otherwise (the panel disables those toggles under this preset).
+	// Obsidian always highlights; hard breaks follow the stored choice.
 	let mut ofm = ReaderSettings {
 		markdown_flavor: MarkdownFlavor::Obsidian,
-		hard_breaks: true,
 		highlight_marks: false,
 		..Default::default()
 	};
-	let dialect = ofm.effective_dialect();
-	assert!(!dialect.hard_breaks);
-	assert!(dialect.highlight_marks);
-	let doc = parse_settings(&ofm);
-	let rich = paragraph(&doc);
-	assert_eq!(plain_text(rich), "line one line two and marked text");
-	assert!(!has_hard_break(rich));
-	assert!(has_mark(rich));
+	for hard_breaks in [false, true] {
+		ofm.hard_breaks = hard_breaks;
+		let doc = parse_settings(&ofm);
+		let rich = paragraph(&doc);
+		assert_eq!(
+			plain_text(rich),
+			if hard_breaks {
+				"line one\nline two and marked text"
+			} else {
+				"line one line two and marked text"
+			}
+		);
+		assert_eq!(has_hard_break(rich), hard_breaks);
+		assert!(has_mark(rich));
+	}
 
-	// Switching the stored flavor back to GFM restores the stored toggles.
+	// Switching to GFM preserves hard breaks and uses the stored highlight choice.
 	ofm.markdown_flavor = MarkdownFlavor::Gfm;
 	let dialect = ofm.effective_dialect();
 	assert!(dialect.hard_breaks);
 	assert!(!dialect.highlight_marks);
 }
 
-/// The parse the layout options describe is the effective dialect: Obsidian
-/// keeps a stored toggle from ever reaching a parse.
+/// Layout options preserve hard breaks in both presets.
 #[test]
 fn layout_options_carry_the_effective_dialect() {
 	let fonts = crate::test_support::fonts();
@@ -496,7 +495,7 @@ fn layout_options_carry_the_effective_dialect() {
 	assert!(options(&settings).hard_breaks);
 	assert!(options(&settings).highlight_marks);
 	settings.markdown_flavor = MarkdownFlavor::Obsidian;
-	assert!(!options(&settings).hard_breaks);
+	assert!(options(&settings).hard_breaks);
 	assert!(options(&settings).highlight_marks);
 }
 
@@ -515,7 +514,7 @@ fn markdown_dialect_round_trips_and_old_files_still_load() {
 
 	let mut ui = store.settings();
 	ui.markdown_flavor = MarkdownFlavor::Obsidian;
-	// The stored toggle survives the preset, ready for a switch back to GFM.
+	// Hard breaks remain enabled after reloading an Obsidian configuration.
 	ui.hard_breaks = true;
 	store.changed(&ui, Some(Setting::Dialect));
 	store.flush().unwrap();
@@ -528,7 +527,7 @@ fn markdown_dialect_round_trips_and_old_files_still_load() {
 	assert_eq!(settings.markdown_flavor, MarkdownFlavor::Obsidian);
 	assert!(settings.hard_breaks);
 	let dialect = settings.effective_dialect();
-	assert!(!dialect.hard_breaks);
+	assert!(dialect.hard_breaks);
 	assert!(dialect.highlight_marks);
 	// The previous preset name remains readable and saves under its new name.
 	fs::write(&path, "markdown-flavor = 'ofm-lite'\n").unwrap();

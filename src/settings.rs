@@ -64,9 +64,9 @@ pub enum TabStyle {
 
 /// The Markdown dialect a document is read in.
 ///
-/// The preset settles the toggles it owns, so Obsidian always reads with
-/// highlight marks and without hard breaks, while GFM leaves both to the
-/// reader's own choices. See [`ReaderSettings::effective_dialect`].
+/// Obsidian always reads with highlight marks, while GFM leaves them to the
+/// reader's choice. Hard breaks are independent of the preset.
+/// See [`ReaderSettings::effective_dialect`].
 #[derive(
 	Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
 )]
@@ -118,8 +118,7 @@ pub struct ReaderSettings {
 	pub paragraph_indent: f32,
 	pub cjk_type: CjkType,
 	pub markdown_flavor: MarkdownFlavor,
-	/// Single newlines render as hard line breaks; stored, but in force only
-	/// under GFM.
+	/// Single newlines render as hard line breaks in either Markdown preset.
 	pub hard_breaks: bool,
 	/// Parse and render `==highlight==`; stored, but in force only under GFM.
 	pub highlight_marks: bool,
@@ -312,9 +311,8 @@ impl ReaderSettings {
 		self.lang.unwrap_or_default()
 	}
 
-	/// The dialect a parse uses: the preset settles the toggles it owns, so
-	/// Obsidian always reads with highlight marks and without hard breaks,
-	/// while GFM keeps the stored choices.
+	/// The dialect a parse uses: Obsidian always enables highlight marks,
+	/// while hard breaks follow the stored choice in either preset.
 	pub fn effective_dialect(&self) -> EffectiveDialect {
 		match self.markdown_flavor {
 			MarkdownFlavor::Gfm => EffectiveDialect {
@@ -323,7 +321,7 @@ impl ReaderSettings {
 				ofm: false,
 			},
 			MarkdownFlavor::Obsidian => EffectiveDialect {
-				hard_breaks: false,
+				hard_breaks: self.hard_breaks,
 				highlight_marks: true,
 				ofm: true,
 			},

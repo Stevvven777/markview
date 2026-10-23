@@ -937,7 +937,7 @@ fn markdown_dialect_preset_lists_gfm_and_obsidian() {
 }
 
 #[test]
-fn dialect_toggles_stay_visible_and_disable_under_obsidian() {
+fn hard_breaks_stay_enabled_under_obsidian() {
 	let mut shaper = crate::test_support::shaper();
 	let gfm = ReaderSettings {
 		markdown_flavor: MarkdownFlavor::Gfm,
@@ -960,7 +960,7 @@ fn dialect_toggles_stay_visible_and_disable_under_obsidian() {
 
 	let ofm = ReaderSettings {
 		markdown_flavor: MarkdownFlavor::Obsidian,
-		// Stored values the preset ignores: UI must show effective dialect.
+		// Hard breaks are independent; only highlights are fixed by the preset.
 		hard_breaks: true,
 		highlight_marks: false,
 		..Default::default()
@@ -974,8 +974,8 @@ fn dialect_toggles_stay_visible_and_disable_under_obsidian() {
 				== Command::Settings(crate::state::SettingsCommand::HardBreaks)
 		})
 		.expect("hard breaks stay visible");
-	assert!(!hard.enabled);
-	assert_eq!(hard.label, "Off");
+	assert!(hard.enabled);
+	assert_eq!(hard.label, "On");
 	let highlight = ofm_form
 		.buttons
 		.iter()
@@ -988,8 +988,7 @@ fn dialect_toggles_stay_visible_and_disable_under_obsidian() {
 		.expect("highlight stays visible");
 	assert!(!highlight.enabled);
 	assert_eq!(highlight.label, "On");
-	// Disabled toggles remain in the hit list once scrolled into view, so hover
-	// can explain the force without letting a tap change them.
+	// The independent toggle remains available after scrolling into view.
 	let scroll = ofm_form.reveal(
 		Command::Settings(crate::state::SettingsCommand::HardBreaks)
 			.widget_id(),
@@ -1001,7 +1000,7 @@ fn dialect_toggles_stay_visible_and_disable_under_obsidian() {
 			.any(|b| b.action
 				== Command::Settings(
 					crate::state::SettingsCommand::HardBreaks
-				) && !b.enabled)
+				) && b.enabled)
 	);
 	// The preset control remains, labelled as Obsidian.
 	let scroll = ofm_form.reveal(
@@ -1028,7 +1027,7 @@ fn dialect_toggles_stay_visible_and_disable_under_obsidian() {
 }
 
 #[test]
-fn dialect_toggles_are_nested_without_gfm_section_title() {
+fn hard_breaks_are_independent_and_only_highlights_are_nested() {
 	let settings = ReaderSettings {
 		markdown_flavor: MarkdownFlavor::Gfm,
 		..Default::default()
@@ -1041,7 +1040,10 @@ fn dialect_toggles_are_nested_without_gfm_section_title() {
 		]
 		.contains(&row.label.as_str())
 		{
-			assert!(row.nested, "toggles subordinate to dialect preset");
+			assert_eq!(
+				row.nested,
+				row.label == settings.lang().settings_highlight_marks()
+			);
 			assert!(row.enabled);
 			assert!(row.section.is_none());
 			found += 1;
@@ -1061,8 +1063,9 @@ fn dialect_toggles_are_nested_without_gfm_section_title() {
 		]
 		.contains(&row.label.as_str())
 		{
-			assert!(row.nested);
-			assert!(!row.enabled);
+			let highlight = row.label == ofm.lang().settings_highlight_marks();
+			assert_eq!(row.nested, highlight);
+			assert_eq!(row.enabled, !highlight);
 			assert!(row.section.is_none());
 			found += 1;
 		}

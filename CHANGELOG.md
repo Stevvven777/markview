@@ -30,6 +30,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Make single-newline hard breaks independent of the Markdown preset; switching to Obsidian in Settings turns them off, with the option to enable them again.
 - Route single-instance opens by folder: open new folders in new windows, reuse an existing folder's window, and send other files to a folder-free window or create one.
 - Unify GFM alerts and Obsidian callouts with precompiled SVG type icons, softly tinted surfaces, square corners by default with MVSS rounding, and consistent foldable headers.
 - Remove the Markdown variant help button and give its space back to the dropdown.

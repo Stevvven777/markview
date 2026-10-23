@@ -220,6 +220,11 @@ impl Component for Model {
 				Setting::FooterPath
 			}
 			Message::MarkdownFlavor(value) => {
+				if self.values.markdown_flavor != value
+					&& value == MarkdownFlavor::Obsidian
+				{
+					self.values.hard_breaks = false;
+				}
 				self.values.markdown_flavor = value;
 				Setting::Dialect
 			}
@@ -317,6 +322,7 @@ mod tests {
 		let mut model = Model {
 			values: ReaderSettings {
 				markdown_flavor: MarkdownFlavor::Gfm,
+				hard_breaks: true,
 				..Default::default()
 			},
 			settings_preview: false,
@@ -325,6 +331,7 @@ mod tests {
 		let update =
 			model.update(Message::MarkdownFlavor(MarkdownFlavor::Obsidian));
 		assert_eq!(model.values.markdown_flavor, MarkdownFlavor::Obsidian);
+		assert!(!model.values.hard_breaks);
 		assert!(update.effects.iter().any(|effect| {
 			matches!(effect, Effect::Persist(Some(Setting::Dialect)))
 		}));
@@ -343,6 +350,7 @@ mod tests {
 
 		let update = model.update(Message::HardBreaks);
 		assert!(model.values.hard_breaks);
+		assert!(model.values.effective_dialect().hard_breaks);
 		assert!(update.effects.iter().any(|effect| {
 			matches!(effect, Effect::Persist(Some(Setting::Dialect)))
 		}));
@@ -352,9 +360,16 @@ mod tests {
 		assert!(update.effects.iter().any(|effect| {
 			matches!(effect, Effect::Persist(Some(Setting::Dialect)))
 		}));
-		// Obsidian still forces the effective dialect regardless of stored toggles.
+		// Only highlights are forced by the Obsidian preset.
 		let dialect = model.values.effective_dialect();
-		assert!(!dialect.hard_breaks);
+		assert!(dialect.hard_breaks);
 		assert!(dialect.highlight_marks);
+
+		model.update(Message::MarkdownFlavor(MarkdownFlavor::Obsidian));
+		assert!(model.values.hard_breaks);
+		model.update(Message::MarkdownFlavor(MarkdownFlavor::Gfm));
+		assert!(model.values.effective_dialect().hard_breaks);
+		model.update(Message::MarkdownFlavor(MarkdownFlavor::Obsidian));
+		assert!(!model.values.effective_dialect().hard_breaks);
 	}
 }

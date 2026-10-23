@@ -954,18 +954,17 @@ mod tests {
 				true,
 				false,
 				ExportFormat::Png,
-				" ",
+				"\n",
 				true,
 				true,
 			),
 			(
-				// The stored toggles are stale under Obsidian: the preset
-				// forces hard breaks off and highlight marks on.
+				// Obsidian preserves hard breaks and enables highlights.
 				crate::settings::MarkdownFlavor::Obsidian,
 				true,
 				false,
 				ExportFormat::Pdf,
-				" ",
+				"\n",
 				true,
 				true,
 			),
