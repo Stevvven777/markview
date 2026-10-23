@@ -471,6 +471,7 @@ impl<P: SendEvent> App<P> {
 	}
 
 	pub(super) fn open_folder(&mut self, root: PathBuf, select: bool) {
+		self.sync_instance_folder(Some(&root));
 		self.folder.pending_root = Some(root.clone());
 		self.folder.scan_navigation_revision = self.folder.navigation_revision;
 		let generation =
@@ -542,6 +543,8 @@ impl<P: SendEvent> App<P> {
 				self.status.set_error(true);
 			}
 		}
+		let root = self.folder.root().cloned();
+		self.sync_instance_folder(root.as_deref());
 		self.refresh_hover();
 		self.redraw();
 	}

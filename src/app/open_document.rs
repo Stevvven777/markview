@@ -103,8 +103,9 @@ mod forwarding_tests {
 			assert!(pending.result.is_ok());
 			assert_eq!(rx.recv_timeout(timeout).unwrap(), Some(path));
 		}
-		drop(listener);
+		drop(rx);
 		pending.receive(Event::Open(Some(PathBuf::from("undelivered.md"))));
 		assert!(pending.result.is_err());
+		drop(listener);
 	}
 }

@@ -88,7 +88,7 @@ fn enabling_a_surviving_independent_window_registers_it_for_later_launches() {
 	app.action(Command::Settings(SettingsCommand::SingleInstance));
 	assert!(started.elapsed() < Duration::from_secs(1));
 	assert!(app.preferences.values.single_instance);
-	assert!(app.instance.is_none());
+	assert!(!app.instance.as_ref().unwrap().owns_session);
 	assert!(matches!(
 		original_rx.try_recv(),
 		Err(mpsc::TryRecvError::Empty)
@@ -1659,6 +1659,57 @@ fn forwarded_files_open_tabs_and_reuse_existing_tabs() {
 	app.handle_user_event(&StubLoop, Event::Activate(Some(first.clone())));
 	assert_eq!(app.readers.entries().len(), count);
 	assert_eq!(app.readers.session.path.as_ref(), Some(&first));
+}
+
+#[test]
+fn picked_files_follow_folder_windows_and_reuse_the_local_folder_free_window() {
+	use crate::app::single_instance::{Start, start};
+	use std::sync::mpsc;
+	use std::time::Duration;
+
+	let dir = tempfile::tempdir().unwrap();
+	let lock = dir.path().join("instance.lock");
+	let root = dir.path().join("notes");
+	std::fs::create_dir(&root).unwrap();
+	let Start::Primary(primary) =
+		start(&lock, true, Some(root.clone())).unwrap()
+	else {
+		panic!()
+	};
+	let (tx, rx) = mpsc::channel();
+	let _listener = primary.listen(move |event| {
+		let Event::Activate(path) = event else {
+			panic!()
+		};
+		tx.send(path).is_ok()
+	});
+	let (mut app, _) = reader(SOURCE, 400.0);
+	app.instance_path = Some(lock.clone());
+	app.preferences.values.single_instance = true;
+	app.register_instance();
+	let original = app.readers.session.path.clone();
+	let inside = root.join("inside.md");
+	app.handle_user_event(&StubLoop, Event::Open(Some(inside.clone())));
+	assert_eq!(
+		rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+		Some(inside)
+	);
+	assert_eq!(app.readers.session.path, original);
+	let outside = dir.path().join("outside.md");
+	app.handle_user_event(&StubLoop, Event::Open(Some(outside.clone())));
+	assert_eq!(app.readers.session.path.as_ref(), Some(&outside));
+	let other = dir.path().join("other");
+	std::fs::create_dir(&other).unwrap();
+	app.open_folder(other.clone(), false);
+	assert!(matches!(
+		start(&lock, true, Some(other.join("pending.md"))).unwrap(),
+		Start::Forwarded(_)
+	));
+	app.folder_loaded(1, false, Err(anyhow::anyhow!("scan failed")));
+	assert!(matches!(
+		start(&lock, true, Some(other)).unwrap(),
+		Start::Primary(_)
+	));
 }
 
 #[test]

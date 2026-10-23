@@ -147,7 +147,7 @@ fn lock_ownership_setting_linkage_debounce_and_shutdown_save() {
 	independent.action(Command::Settings(SettingsCommand::RestoreSession));
 	independent.restore_session();
 	assert!(independent.preferences.values.single_instance);
-	assert!(independent.instance.is_none());
+	assert!(!independent.owns_session());
 	assert!(independent.readers.entries().is_empty());
 	independent.flush_session();
 	independent.action(Command::Settings(SettingsCommand::SingleInstance));
@@ -164,6 +164,7 @@ fn lock_ownership_setting_linkage_debounce_and_shutdown_save() {
 	owner
 		.readers
 		.open(document(dir.path(), "b.md"), Instant::now());
+	drop(independent);
 	drop(owner);
 	let Start::Primary(_primary) =
 		single_instance::start(&dir.path().join("instance.lock"), false, None)

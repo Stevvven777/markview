@@ -20,10 +20,12 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 const READ_POLL: Duration = Duration::from_millis(100);
 const MAX_REQUEST: usize = 1024 * 1024;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Endpoint {
 	address: SocketAddr,
 	token: String,
+	#[serde(default)]
+	folder: Option<std::ffi::OsString>,
 }
 #[derive(Serialize, Deserialize)]
 struct Request {
@@ -37,10 +39,16 @@ pub(super) enum Start {
 	Independent,
 }
 
-pub(super) struct Remote(Endpoint);
+pub(super) struct Remote {
+	lock_path: PathBuf,
+}
 impl Remote {
 	pub(super) fn forward(&self, path: Option<&Path>) -> Result<()> {
-		forward(&self.0, path)
+		if let Some(endpoint) = find(&self.lock_path, path)? {
+			forward(&endpoint, path)
+		} else {
+			spawn(path)
+		}
 	}
 }
 
@@ -48,6 +56,116 @@ pub(super) struct Primary {
 	_lock: File,
 	listener: TcpListener,
 	endpoint: Endpoint,
+	endpoint_path: PathBuf,
+	owns_session: bool,
+}
+
+fn private_file(path: &Path) -> io::Result<File> {
+	let mut options = OpenOptions::new();
+	options.read(true).write(true).create(true).truncate(false);
+	markview_platform::private_file_options(&mut options);
+	options.open(path)
+}
+
+fn registry_guard(lock_path: &Path) -> io::Result<File> {
+	std::fs::create_dir_all(lock_path.parent().unwrap())?;
+	let guard = private_file(&lock_path.with_extension("routing"))?;
+	guard.lock()?;
+	Ok(guard)
+}
+
+struct Windows {
+	endpoints: Vec<Endpoint>,
+	free: (File, PathBuf),
+}
+
+fn lock_paths(lock_path: &Path) -> io::Result<Vec<PathBuf>> {
+	let directory = lock_path.with_extension("windows");
+	std::fs::create_dir_all(&directory)?;
+	let mut paths = vec![lock_path.to_owned()];
+	for entry in std::fs::read_dir(&directory)? {
+		let path = entry?.path();
+		if path.extension().is_some_and(|ext| ext == "lock") {
+			paths.push(path);
+		}
+	}
+	paths[1..].sort();
+	Ok(paths)
+}
+
+fn windows(lock_path: &Path) -> Result<Windows> {
+	let mut endpoints = Vec::new();
+	let mut free = None;
+	for path in lock_paths(lock_path)? {
+		let lock = private_file(&path)?;
+		match lock.try_lock() {
+			Ok(()) => {
+				if free.is_none() {
+					free = Some((lock, path));
+				}
+			}
+			Err(std::fs::TryLockError::WouldBlock) => {
+				endpoints.push(serde_json::from_slice(&std::fs::read(
+					path.with_extension("json"),
+				)?)?);
+			}
+			Err(std::fs::TryLockError::Error(error)) => {
+				return Err(error.into());
+			}
+		}
+	}
+	let free = match free {
+		Some(free) => free,
+		None => {
+			let path = lock_path
+				.with_extension("windows")
+				.join(format!("{}.lock", endpoints.len()));
+			let lock = private_file(&path)?;
+			lock.lock()?;
+			(lock, path)
+		}
+	};
+	Ok(Windows { endpoints, free })
+}
+
+fn normalized(path: &Path) -> PathBuf {
+	path.canonicalize().unwrap_or_else(|_| {
+		std::path::absolute(path).unwrap_or_else(|_| path.to_owned())
+	})
+}
+
+fn select(endpoints: &[Endpoint], path: Option<&Path>) -> Option<Endpoint> {
+	let Some(path) = path else {
+		return endpoints.first().cloned();
+	};
+	let path = normalized(path);
+	let directory = path.is_dir();
+	endpoints
+		.iter()
+		.filter_map(|endpoint| {
+			let rank = match &endpoint.folder {
+				Some(folder) => {
+					let folder = Path::new(folder);
+					if (directory && path == folder)
+						|| (!directory && path.starts_with(folder))
+					{
+						folder.components().count() + 1
+					} else {
+						return None;
+					}
+				}
+				None if !directory => 0,
+				None => return None,
+			};
+			Some((rank, endpoint))
+		})
+		.max_by_key(|(rank, _)| *rank)
+		.map(|(_, endpoint)| endpoint.clone())
+}
+
+fn find(lock_path: &Path, path: Option<&Path>) -> Result<Option<Endpoint>> {
+	let _guard = registry_guard(lock_path)?;
+	Ok(select(&windows(lock_path)?.endpoints, path))
 }
 
 pub(super) fn start(
@@ -55,53 +173,50 @@ pub(super) fn start(
 	enabled: bool,
 	path: Option<PathBuf>,
 ) -> Result<Start> {
-	let directory = lock_path.parent().unwrap();
-	std::fs::create_dir_all(directory)?;
-	let mut options = OpenOptions::new();
-	options.read(true).write(true).create(true).truncate(false);
-	markview_platform::private_file_options(&mut options);
-	let lock = options.open(lock_path)?;
-	let endpoint_path = lock_path.with_extension("json");
 	let deadline = Instant::now() + TIMEOUT;
 	loop {
-		match lock.try_lock() {
-			Ok(()) => {
-				return Ok(Start::Primary(create_primary(
-					lock,
-					directory,
-					&endpoint_path,
-				)?));
-			}
-			Err(std::fs::TryLockError::WouldBlock) if !enabled => {
-				return Ok(Start::Independent);
-			}
-			Err(std::fs::TryLockError::WouldBlock) => {
-				// The owner may still be publishing its endpoint or starting its loop.
-				if let Ok(remote) =
-					std::fs::read(&endpoint_path).and_then(|bytes| {
-						serde_json::from_slice::<Endpoint>(&bytes)
-							.map(Remote)
-							.map_err(std::io::Error::other)
-					}) && remote.forward(path.as_deref()).is_ok()
-				{
-					return Ok(Start::Forwarded(remote));
-				}
-				if Instant::now() >= deadline {
-					bail!("Cannot contact the running Markview instance");
-				}
-				thread::sleep(Duration::from_millis(25));
-			}
-			Err(std::fs::TryLockError::Error(error)) => {
-				return Err(error.into());
-			}
+		let _guard = registry_guard(lock_path)?;
+		let windows = windows(lock_path)?;
+		if !enabled && !windows.endpoints.is_empty() {
+			return Ok(Start::Independent);
 		}
+		if enabled
+			&& let Some(endpoint) = select(&windows.endpoints, path.as_deref())
+		{
+			if forward(&endpoint, path.as_deref()).is_ok() {
+				return Ok(Start::Forwarded(Remote {
+					lock_path: lock_path.to_owned(),
+				}));
+			}
+			if Instant::now() >= deadline {
+				bail!("Cannot contact the running Markview instance");
+			}
+			drop(windows);
+			drop(_guard);
+			thread::sleep(Duration::from_millis(25));
+			continue;
+		}
+		let owns_session = windows.endpoints.is_empty();
+		return Ok(Start::Primary(create_primary(
+			windows.free,
+			path.as_deref(),
+			owns_session,
+		)?));
 	}
 }
 
+fn publish(endpoint: &Endpoint, path: &Path) -> Result<()> {
+	let mut metadata = tempfile::NamedTempFile::new_in(path.parent().unwrap())?;
+	serde_json::to_writer(&mut metadata, endpoint)?;
+	metadata.flush()?;
+	metadata.persist(path)?;
+	Ok(())
+}
+
 fn create_primary(
-	lock: std::fs::File,
-	directory: &Path,
-	endpoint_path: &Path,
+	(lock, lock_path): (File, PathBuf),
+	path: Option<&Path>,
+	owns_session: bool,
 ) -> Result<Primary> {
 	let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
 	let mut secret = [0; 32];
@@ -109,16 +224,30 @@ fn create_primary(
 	let endpoint = Endpoint {
 		address: listener.local_addr()?,
 		token: base64::engine::general_purpose::STANDARD.encode(secret),
+		folder: path
+			.filter(|path| path.is_dir())
+			.map(|path| normalized(path).into_os_string()),
 	};
-	let mut metadata = tempfile::NamedTempFile::new_in(directory)?;
-	serde_json::to_writer(&mut metadata, &endpoint)?;
-	metadata.flush()?;
-	metadata.persist(endpoint_path)?;
+	let endpoint_path = lock_path.with_extension("json");
+	publish(&endpoint, &endpoint_path)?;
 	Ok(Primary {
 		_lock: lock,
 		listener,
 		endpoint,
+		endpoint_path,
+		owns_session,
 	})
+}
+
+fn spawn(path: Option<&Path>) -> Result<()> {
+	let mut child = std::process::Command::new(std::env::current_exe()?);
+	child.arg("--background-child");
+	if let Some(path) = path {
+		child.arg("--").arg(path);
+	}
+	markview_platform::detach(&mut child);
+	child.spawn().context("Cannot start a reader window")?;
+	Ok(())
 }
 
 impl<P: super::SendEvent> super::App<P> {
@@ -132,17 +261,64 @@ impl<P: super::SendEvent> super::App<P> {
 		let Some(lock) = &self.instance_path else {
 			return;
 		};
-		// An existing window only claims a free lock; it never forwards itself.
-		match start(lock, false, None) {
-			Ok(Start::Primary(primary)) => {
+		let register = || -> Result<Primary> {
+			let _guard = registry_guard(lock)?;
+			let windows = windows(lock)?;
+			create_primary(
+				windows.free,
+				self.folder.root().map(|p| p.as_path()),
+				windows.endpoints.is_empty(),
+			)
+		};
+		match register() {
+			Ok(primary) => {
 				let proxy = self.proxy.clone();
 				self.instance =
 					Some(primary.listen(move |event| proxy.try_send(event)));
 			}
-			Ok(Start::Independent) => {}
-			Ok(Start::Forwarded(_)) => unreachable!(),
 			Err(error) => {
 				log::warn!("Instance discovery unavailable: {error:#}")
+			}
+		}
+	}
+
+	pub(super) fn route_open(&mut self, path: PathBuf) {
+		let route = || -> Result<bool> {
+			if markview_platform::touch_layout()
+				|| !self.preferences.values.single_instance
+			{
+				return Ok(false);
+			}
+			let Some(lock) = &self.instance_path else {
+				return Ok(false);
+			};
+			if let Some(endpoint) = find(lock, Some(&path))? {
+				if self.instance.as_ref().is_some_and(|instance| {
+					instance.address == endpoint.address
+				}) {
+					return Ok(false);
+				}
+				forward(&endpoint, Some(&path))?;
+			} else {
+				spawn(Some(&path))?;
+			}
+			Ok(true)
+		};
+		match route() {
+			Ok(false) => self.open(path),
+			Ok(true) => {}
+			Err(error) => self.notify(&error.to_string(), true, 4),
+		}
+	}
+
+	pub(super) fn sync_instance_folder(&mut self, root: Option<&Path>) {
+		if let Some(instance) = &mut self.instance {
+			instance.endpoint.folder =
+				root.map(|root| normalized(root).into_os_string());
+			if let Err(error) =
+				publish(&instance.endpoint, &instance.endpoint_path)
+			{
+				log::warn!("Cannot update window folder: {error:#}");
 			}
 		}
 	}
@@ -222,6 +398,9 @@ impl Primary {
 		let stop = Arc::new(AtomicBool::new(false));
 		let stopping = stop.clone();
 		let address = self.endpoint.address;
+		let endpoint = self.endpoint.clone();
+		let endpoint_path = self.endpoint_path.clone();
+		let owns_session = self.owns_session;
 		let thread = thread::spawn(move || {
 			for stream in self.listener.incoming() {
 				if stopping.load(Ordering::Acquire) {
@@ -258,6 +437,9 @@ impl Primary {
 			drop(self._lock);
 		});
 		Listener {
+			endpoint,
+			endpoint_path,
+			owns_session,
 			stop,
 			address,
 			thread: Some(thread),
@@ -266,6 +448,9 @@ impl Primary {
 }
 
 pub(super) struct Listener {
+	endpoint: Endpoint,
+	endpoint_path: PathBuf,
+	pub(super) owns_session: bool,
 	stop: Arc<AtomicBool>,
 	address: SocketAddr,
 	thread: Option<JoinHandle<()>>,
@@ -293,6 +478,99 @@ mod tests {
 				panic!()
 			};
 			tx.send(path).is_ok()
+		}
+	}
+
+	fn window(
+		lock: &Path,
+		path: &Path,
+	) -> (Listener, mpsc::Receiver<Option<PathBuf>>) {
+		let Start::Primary(primary) =
+			start(lock, true, Some(path.to_owned())).unwrap()
+		else {
+			panic!("expected a new window for {}", path.display())
+		};
+		let (tx, rx) = mpsc::channel();
+		(primary.listen(proxy(tx)), rx)
+	}
+
+	#[test]
+	fn folders_get_separate_windows_and_files_follow_their_folder() {
+		let dir = tempfile::tempdir().unwrap();
+		let lock = dir.path().join("instance.lock");
+		let root = dir.path().join("notes");
+		let nested = root.join("nested");
+		let sibling = dir.path().join("notes-other");
+		std::fs::create_dir_all(&nested).unwrap();
+		std::fs::create_dir(&sibling).unwrap();
+		let (first, first_rx) = window(&lock, &root);
+		let (second, second_rx) = window(&lock, &sibling);
+		let (third, third_rx) = window(&lock, &nested);
+		assert!(first.owns_session);
+		assert!(!second.owns_session && !third.owns_session);
+		let Start::Forwarded(remote) =
+			start(&lock, true, Some(root.join("."))).unwrap()
+		else {
+			panic!()
+		};
+		assert_eq!(
+			first_rx.recv_timeout(TIMEOUT).unwrap(),
+			Some(root.join("."))
+		);
+		for (path, rx) in [
+			(root.join("first.md"), &first_rx),
+			(sibling.join("second.md"), &second_rx),
+			(nested.join("third.md"), &third_rx),
+		] {
+			remote.forward(Some(&path)).unwrap();
+			assert_eq!(rx.recv_timeout(TIMEOUT).unwrap(), Some(path));
+		}
+		let outside = dir.path().join("outside.md");
+		let (loose, loose_rx) = window(&lock, &outside);
+		let new_folder = dir.path().join("new-folder");
+		std::fs::create_dir(&new_folder).unwrap();
+		let (_fourth, _) = window(&lock, &new_folder);
+		for (path, rx) in [
+			(dir.path().join("another.md"), &loose_rx),
+			(root.join("inside.md"), &first_rx),
+		] {
+			assert!(matches!(
+				start(&lock, true, Some(path.clone())).unwrap(),
+				Start::Forwarded(_)
+			));
+			assert_eq!(rx.recv_timeout(TIMEOUT).unwrap(), Some(path));
+		}
+		assert!(loose_rx.try_recv().is_err());
+		drop(loose);
+		drop(first);
+		let path = nested.join("still-open.md");
+		assert!(matches!(
+			start(&lock, true, Some(path.clone())).unwrap(),
+			Start::Forwarded(_)
+		));
+		assert_eq!(third_rx.recv_timeout(TIMEOUT).unwrap(), Some(path));
+		let (_replacement, _) = window(&lock, &outside);
+	}
+
+	#[test]
+	fn folder_aliases_reuse_the_window() {
+		if !markview_platform::test_support::special_files() {
+			return;
+		}
+		let dir = tempfile::tempdir().unwrap();
+		let lock = dir.path().join("instance.lock");
+		let root = dir.path().join("notes");
+		let alias = dir.path().join("alias");
+		std::fs::create_dir(&root).unwrap();
+		std::fs::write(root.join("note.md"), "# Note").unwrap();
+		markview_platform::test_support::symlink(&root, &alias).unwrap();
+		let (_listener, rx) = window(&lock, &root);
+		for path in [alias.clone(), alias.join("note.md")] {
+			assert!(matches!(
+				start(&lock, true, Some(path.clone())).unwrap(),
+				Start::Forwarded(_)
+			));
+			assert_eq!(rx.recv_timeout(TIMEOUT).unwrap(), Some(path));
 		}
 	}
 

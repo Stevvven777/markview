@@ -279,7 +279,7 @@ impl<P: super::SendEvent> App<P> {
 			Event::Open(path) => {
 				self.dialog_open = false;
 				if let Some(path) = path {
-					self.open(path);
+					self.route_open(path);
 				}
 			}
 			Event::AndroidOpenUrl(url) => self.open_web_page(url),

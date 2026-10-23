@@ -271,7 +271,11 @@ impl Tabs {
 
 impl<P> App<P> {
 	fn owns_session(&self) -> bool {
-		markview_platform::touch_layout() || self.instance.is_some()
+		markview_platform::touch_layout()
+			|| self
+				.instance
+				.as_ref()
+				.is_some_and(|instance| instance.owns_session)
 	}
 	pub(super) fn flush_session(&mut self) {
 		self.persistence.deadline = None;
