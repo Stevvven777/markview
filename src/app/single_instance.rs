@@ -129,9 +129,14 @@ fn windows(lock_path: &Path) -> Result<Windows> {
 }
 
 fn normalized(path: &Path) -> PathBuf {
-	path.canonicalize().unwrap_or_else(|_| {
-		std::path::absolute(path).unwrap_or_else(|_| path.to_owned())
-	})
+	let path = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+	// Missing files still inherit their existing ancestor's canonical prefix.
+	for ancestor in path.ancestors() {
+		if let Ok(root) = ancestor.canonicalize() {
+			return root.join(path.strip_prefix(ancestor).unwrap());
+		}
+	}
+	path
 }
 
 fn select(endpoints: &[Endpoint], path: Option<&Path>) -> Option<Endpoint> {
@@ -565,7 +570,12 @@ mod tests {
 		std::fs::write(root.join("note.md"), "# Note").unwrap();
 		markview_platform::test_support::symlink(&root, &alias).unwrap();
 		let (_listener, rx) = window(&lock, &root);
-		for path in [alias.clone(), alias.join("note.md")] {
+		for path in [
+			alias.clone(),
+			alias.join("note.md"),
+			alias.join("missing.md"),
+			alias.join("missing/note.md"),
+		] {
 			assert!(matches!(
 				start(&lock, true, Some(path.clone())).unwrap(),
 				Start::Forwarded(_)

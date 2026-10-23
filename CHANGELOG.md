@@ -45,6 +45,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Route missing files to their folder windows consistently on Windows and macOS and through symbolic links.
 - Keep alert and callout left borders as thick as ordinary blockquotes, following the active theme and MVSS overrides.
 - Keep inactive tabs' page previews available after idle document data is released, retaining only the preview's layout blocks and image pixels inside its scrolled clip.
 - Use the document background throughout tab hover previews and remove the inner frame.
