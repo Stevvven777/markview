@@ -1,13 +1,16 @@
 //! Semantic Markdown; raw HTML is limited to a small supported subset.
 use crate::{
 	container::{
-		ContainerHost, ContainerStack, block_of, clamp_range, opaque_len,
+		ContainerHost, ContainerStack, block_of, clamp_range, details_block_of,
+		opaque_len,
 	},
 	html,
 };
 use comrak::{
 	Arena, Options,
-	nodes::{AstNode, ListType, NodeValue, TableAlignment},
+	nodes::{
+		AstNode, CalloutFold, ListType, NodeCallout, NodeValue, TableAlignment,
+	},
 	parse_document,
 };
 use std::{
@@ -20,9 +23,9 @@ use std::{
 };
 
 use super::{
-	Block, BlockKind, CellAlign, Document, Inline, InlineKind, Link, ListItem,
-	RichText, TextStyle, content_identity, fingerprint, front_matter,
-	incremental, plain_text, semantic_key,
+	Block, BlockKind, Callout, CalloutKind, CellAlign, Document, Inline,
+	InlineKind, Link, ListItem, RichText, TextStyle, content_identity,
+	fingerprint, front_matter, incremental, plain_text, semantic_key,
 };
 
 /// The reading dialect a parse uses: which Markdown extensions are on and
@@ -198,6 +201,9 @@ impl Reader<'_> {
 		// that the matching closing tag ends; unsupported markup stays source.
 		let mut style = style.clone();
 		let mut scopes: Vec<(String, TextStyle)> = Vec::new();
+		// Set while the previous sibling was a hidden `%%` comment, so the
+		// doubled whitespace it leaves behind collapses like Obsidian's.
+		let mut after_comment = false;
 		for child in node.children() {
 			let source = self.range(child);
 			if from > 0 && source.end <= from {
@@ -365,6 +371,15 @@ impl Reader<'_> {
 					child_style.mark = true;
 					None
 				}
+				// A hidden `%%inline%%` comment contributes no run; inside a
+				// code scope it stays visible source instead.
+				NodeValue::CommentInline(comment) => {
+					if !style.code {
+						after_comment = true;
+						continue;
+					}
+					Some(InlineKind::Text(format!("%%{}%%", comment.literal)))
+				}
 				NodeValue::Link(l) => {
 					child_style.link =
 						Some(Link::new(l.url.clone(), source.start));
@@ -393,7 +408,17 @@ impl Reader<'_> {
 				}
 				_ => None,
 			};
-			if let Some(kind) = kind {
+			if let Some(mut kind) = kind {
+				// Obsidian collapses the doubled whitespace a hidden comment
+				// leaves: one space of the pair goes with the comment.
+				if after_comment
+					&& let InlineKind::Text(text) = &mut kind
+					&& matches!(text.as_bytes().first(), Some(b' ' | b'\t'))
+					&& Self::comment_gap_collapses(out)
+				{
+					text.remove(0);
+				}
+				after_comment = false;
 				out.push(Inline {
 					kind,
 					style: child_style,
@@ -410,6 +435,54 @@ impl Reader<'_> {
 				);
 			}
 		}
+		if after_comment
+			&& depth == 0
+			&& let Some(Inline {
+				kind: InlineKind::Text(text),
+				..
+			}) = out.last_mut()
+			&& matches!(text.as_bytes().last(), Some(b' ' | b'\t'))
+		{
+			text.pop();
+		}
+	}
+
+	/// Whether a leading space after a hidden comment collapses: the run
+	/// stands at the paragraph's start or follows another space.
+	fn comment_gap_collapses(out: &RichText) -> bool {
+		out.last().is_none_or(|inline| {
+			matches!(&inline.kind, InlineKind::Text(text)
+				if matches!(text.as_bytes().last(), Some(b' ' | b'\t')))
+		})
+	}
+
+	/// The node's source with hidden `%%` comment spans cut out, for the
+	/// depth-limit fallback that embeds raw Markdown.
+	fn visible_source<'a>(&self, node: &'a AstNode<'a>) -> String {
+		let whole = self.range(node);
+		let mut hidden: Vec<Range<usize>> = node
+			.descendants()
+			.filter(|descendant| {
+				matches!(
+					descendant.data.borrow().value,
+					NodeValue::CommentInline(_)
+						| NodeValue::MultilineComment(_)
+				)
+			})
+			.map(|descendant| self.range(descendant))
+			.collect();
+		if hidden.is_empty() {
+			return self.source[whole.clone()].to_string();
+		}
+		hidden.sort_by_key(|range| range.start);
+		let mut text = String::new();
+		let mut cursor = whole.start;
+		for range in hidden {
+			text.push_str(&self.source[cursor..range.start]);
+			cursor = range.end;
+		}
+		text.push_str(&self.source[cursor..whole.end]);
+		text
 	}
 
 	fn text_after(
@@ -459,6 +532,7 @@ impl Reader<'_> {
 				NodeValue::Code(c) => {
 					text.push_str(&self.text_after(&c.literal, source, from))
 				}
+				NodeValue::CodeBlock(c) => text.push_str(&c.literal),
 				NodeValue::Math(m) => {
 					text.push_str(&self.text_after(&m.literal, source, from))
 				}
@@ -678,6 +752,62 @@ impl Reader<'_> {
 			})
 	}
 
+	/// Comrak's callout metadata, plain-text title and body.
+	fn callout_kind<'a>(
+		&mut self,
+		node: &'a AstNode<'a>,
+		metadata: &NodeCallout,
+		source: &Range<usize>,
+		depth: usize,
+	) -> BlockKind {
+		let title = node.children().find(|child| {
+			matches!(child.data.borrow().value, NodeValue::CalloutTitle)
+		});
+		let callout = Callout {
+			kind: CalloutKind::parse(&metadata.callout_type),
+			title: title.map_or_else(
+				|| metadata.default_title(),
+				|title| self.flattened_from(title, 0).trim().to_owned(),
+			),
+			fold: match metadata.fold {
+				CalloutFold::None => None,
+				CalloutFold::Expanded => Some(true),
+				CalloutFold::Collapsed => Some(false),
+			},
+		};
+		let mut blocks = self.blocks(node, depth + 1);
+		if let Some(open) = callout.fold {
+			// A foldable callout's body is one disclosure, so it toggles like
+			// a `<details>` element.
+			let ordinal = self.details_ordinal;
+			self.details_ordinal += 1;
+			let summary = vec![Inline {
+				kind: InlineKind::Text(callout.header()),
+				style: TextStyle::default(),
+				source: source.clone(),
+			}];
+			blocks = vec![details_block_of(
+				self.source,
+				open,
+				ordinal,
+				summary,
+				blocks,
+				source.clone(),
+			)];
+		}
+		BlockKind::Quote {
+			label: None,
+			callout: Some(callout),
+			blocks,
+		}
+	}
+
+	#[cfg_attr(
+		any(),
+		markview::allow_complexity(
+			reason = "Keep the block-kind dispatch with the hidden-comment paragraph and block-comment skips in one ordered walk; the same source ranges feed fingerprints and anchors."
+		)
+	)]
 	fn child_block<'a>(
 		&mut self,
 		child: &'a AstNode<'a>,
@@ -685,10 +815,13 @@ impl Reader<'_> {
 	) -> Child {
 		let source = self.range(child);
 		let data = child.data.borrow();
+		if matches!(data.value, NodeValue::CalloutTitle) {
+			return Child::Skip;
+		}
 		let kind = if depth >= self.limits.block_depth {
 			BlockKind::Code {
 				language: "nested Markdown".into(),
-				text: self.source[source.clone()].to_string(),
+				text: self.visible_source(child),
 			}
 		} else {
 			match &data.value {
@@ -700,7 +833,18 @@ impl Reader<'_> {
 					};
 					kind
 				}
-				NodeValue::Paragraph => BlockKind::Paragraph(self.rich(child)),
+				// A line-start `%%` comment is a block of its own whose whole
+				// span stays hidden.
+				NodeValue::MultilineComment(_) => return Child::Skip,
+				NodeValue::Paragraph => {
+					let text = self.rich(child);
+					// A paragraph can hold only a hidden `%%` comment; the
+					// source line then reads as no paragraph at all.
+					if text.is_empty() && self.dialect.ofm {
+						return Child::Skip;
+					}
+					BlockKind::Paragraph(text)
+				}
 				NodeValue::Heading(h) => {
 					let text = self.rich(child);
 					BlockKind::Heading {
@@ -726,10 +870,15 @@ impl Reader<'_> {
 				NodeValue::ThematicBreak => BlockKind::Rule,
 				NodeValue::BlockQuote => BlockKind::Quote {
 					label: None,
+					callout: None,
 					blocks: self.blocks(child, depth + 1),
 				},
+				NodeValue::Callout(callout) => {
+					self.callout_kind(child, callout, &source, depth)
+				}
 				NodeValue::Alert(a) => BlockKind::Quote {
 					label: Some(format!("{:?}", a.alert_type)),
+					callout: None,
 					blocks: self.blocks(child, depth + 1),
 				},
 				NodeValue::List(l) => BlockKind::List {
@@ -1175,9 +1324,9 @@ fn container_markers<'a>(node: &'a AstNode<'a>) -> Vec<ContainerMarker> {
 			NodeValue::FootnoteDefinition(_) => {
 				markers.push(ContainerMarker::Indent(4))
 			}
-			NodeValue::BlockQuote | NodeValue::Alert(_) => {
-				markers.push(ContainerMarker::Quote)
-			}
+			NodeValue::BlockQuote
+			| NodeValue::Alert(_)
+			| NodeValue::Callout(_) => markers.push(ContainerMarker::Quote),
 			_ => {}
 		}
 	}
@@ -1412,7 +1561,11 @@ fn markdown_options(dialect: Dialect) -> Options<'static> {
 	options.extension.tasklist = true;
 	options.extension.autolink = true;
 	options.extension.footnotes = true;
-	options.extension.alerts = true;
+	// OFM callouts and GFM alerts share syntax but have different semantics.
+	options.extension.alerts = !dialect.ofm;
+	options.extension.ofm_callouts = dialect.ofm;
+	// `%%` comments parse as skipped nodes with original source positions.
+	options.extension.ofm_comments = dialect.ofm;
 	options.extension.math_dollars = true;
 	options.extension.math_latex = true;
 	options.extension.math_code = true;
