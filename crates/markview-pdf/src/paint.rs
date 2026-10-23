@@ -18,7 +18,7 @@ use krilla::{
 	metadata::Metadata,
 	num::NormalizedF32,
 	page::PageSettings,
-	paint::{Fill, FillRule, Paint as KrillaPaint, Stroke},
+	paint::{Fill, FillRule, LineCap, LineJoin, Paint as KrillaPaint, Stroke},
 	surface::Surface,
 	text::{Font, GlyphId, KrillaGlyph},
 };
@@ -664,8 +664,37 @@ impl Painter<'_> {
 				}
 			}
 			Draw::Glyph(_) => {}
-			// Icons belong to the reader's chrome, which paper never paints.
-			Draw::Icon { .. } => {}
+			Draw::Icon {
+				paths,
+				paint,
+				x,
+				y,
+				size,
+			} => {
+				for figure in *paths {
+					let Some(path) = vector_path(figure.commands, |dx, dy| {
+						frame.math_point((*x, *y), *size, (dx, dy))
+					}) else {
+						continue;
+					};
+					let fill = self.fill(*paint);
+					if figure.fill {
+						surface.set_fill(Some(fill));
+					} else {
+						surface.set_fill(None);
+						surface.set_stroke(Some(Stroke {
+							paint: fill.paint,
+							opacity: fill.opacity,
+							width: frame.size(*size * figure.stroke_width),
+							line_cap: LineCap::Round,
+							line_join: LineJoin::Round,
+							..Stroke::default()
+						}));
+					}
+					surface.draw_path(&path);
+					surface.set_stroke(None);
+				}
+			}
 			Draw::Rect(rect, paint) => {
 				if let Some(rect) = frame.rect(*rect) {
 					self.solid(surface, rect, *paint);
@@ -989,46 +1018,13 @@ impl Painter<'_> {
 					color,
 				} => {
 					self.flush_math_run(surface, &mut run);
-					let mut builder = PathBuilder::new();
-					// Path commands are em units from the item's own origin,
-					// which is in turn offset inside the formula's box.
+					// Formula vertices are relative to the item's origin in em units.
 					let origin = (x + *px as f32 * size, y + *py as f32 * size);
-					let at = |dx: f64, dy: f64| {
+					let path = vector_path(commands, |dx, dy| {
 						frame.math_point(origin, size, (dx, dy))
-					};
-					for command in commands {
-						match *command {
-							PathCommand::MoveTo { x, y } => {
-								let (x, y) = at(x, y);
-								builder.move_to(x, y);
-							}
-							PathCommand::LineTo { x, y } => {
-								let (x, y) = at(x, y);
-								builder.line_to(x, y);
-							}
-							PathCommand::QuadTo { x1, y1, x, y } => {
-								let (x, y) = at(x, y);
-								let (x1, y1) = at(x1, y1);
-								builder.quad_to(x1, y1, x, y);
-							}
-							PathCommand::CubicTo {
-								x1,
-								y1,
-								x2,
-								y2,
-								x,
-								y,
-							} => {
-								let (x, y) = at(x, y);
-								let (x1, y1) = at(x1, y1);
-								let (x2, y2) = at(x2, y2);
-								builder.cubic_to(x1, y1, x2, y2, x, y);
-							}
-							PathCommand::Close => builder.close(),
-						}
-					}
+					});
 					let (color, alpha) = self.math_color(*color, paint);
-					let Some(path) = builder.finish() else {
+					let Some(path) = path else {
 						continue;
 					};
 					if *fill {
@@ -1393,6 +1389,46 @@ fn edge(builder: &mut PathBuilder, rect: Rect, first: bool, last: bool) {
 		builder.move_to(left, bottom);
 		builder.line_to(right, bottom);
 	}
+}
+
+/// Projects shared vector commands into page coordinates.
+fn vector_path(
+	commands: &[PathCommand],
+	at: impl Fn(f64, f64) -> (f32, f32),
+) -> Option<Path> {
+	let mut builder = PathBuilder::new();
+	for command in commands {
+		match *command {
+			PathCommand::MoveTo { x, y } => {
+				let (x, y) = at(x, y);
+				builder.move_to(x, y);
+			}
+			PathCommand::LineTo { x, y } => {
+				let (x, y) = at(x, y);
+				builder.line_to(x, y);
+			}
+			PathCommand::QuadTo { x1, y1, x, y } => {
+				let (x, y) = at(x, y);
+				let (x1, y1) = at(x1, y1);
+				builder.quad_to(x1, y1, x, y);
+			}
+			PathCommand::CubicTo {
+				x1,
+				y1,
+				x2,
+				y2,
+				x,
+				y,
+			} => {
+				let (x, y) = at(x, y);
+				let (x1, y1) = at(x1, y1);
+				let (x2, y2) = at(x2, y2);
+				builder.cubic_to(x1, y1, x2, y2, x, y);
+			}
+			PathCommand::Close => builder.close(),
+		}
+	}
+	builder.finish()
 }
 
 #[cfg(test)]

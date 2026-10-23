@@ -3817,10 +3817,10 @@ fn a_callout_draws_its_family_color_and_header() {
 		condition,
 		crate::style::ColorField::BorderColor,
 	));
-	assert!(close(border, rgba(0xC76A00)), "{border:?}");
+	assert!(close(border, rgba(0x94621C)), "{border:?}");
 	// The header is drawn in the family color, ahead of the body text.
 	let header = snapshot.blocks[0].layout.draws.iter().any(|d| {
-		matches!(d, Draw::Glyph(g) if close(sheet.paint(g.paint), rgba(0xC76A00)))
+		matches!(d, Draw::Glyph(g) if close(sheet.paint(g.paint), rgba(0x94621C)))
 	});
 	assert!(header, "no header glyphs in the callout color");
 	// A plain quote keeps the quote box.

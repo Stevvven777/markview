@@ -176,8 +176,7 @@ pub enum BlockKind {
 		text: String,
 	},
 	Quote {
-		label: Option<String>,
-		/// An Obsidian callout (`> [!type] Title`) rather than a plain quote.
+		/// A GFM alert or Obsidian callout rather than a plain quote.
 		callout: Option<Callout>,
 		blocks: Vec<Block>,
 	},
@@ -219,8 +218,7 @@ pub enum BlockKind {
 	},
 }
 
-/// The Obsidian callout types. Every alias the Obsidian documentation lists
-/// reads as one of these, and an unknown type reads as [`CalloutKind::Note`].
+/// GFM alert and Obsidian callout types. Unknown Obsidian types use `Note`.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum CalloutKind {
 	Note,
@@ -228,9 +226,13 @@ pub enum CalloutKind {
 	Info,
 	Todo,
 	Tip,
+	/// GFM important; Obsidian treats `important` as a `Tip` alias.
+	Important,
 	Success,
 	Question,
 	Warning,
+	/// GFM caution; Obsidian treats `caution` as a `Warning` alias.
+	Caution,
 	Failure,
 	Danger,
 	Bug,
@@ -257,28 +259,9 @@ impl CalloutKind {
 			_ => Self::Note,
 		}
 	}
-
-	/// The symbol drawn before the title, after Obsidian's Lucide icons.
-	pub fn icon(self) -> &'static str {
-		match self {
-			Self::Note => "\u{270E}",
-			Self::Abstract => "\u{2630}",
-			Self::Info => "\u{2139}",
-			Self::Todo => "\u{2611}",
-			Self::Tip => "\u{2726}",
-			Self::Success => "\u{2714}",
-			Self::Question => "?",
-			Self::Warning => "\u{26A0}",
-			Self::Failure => "\u{2718}",
-			Self::Danger => "\u{03DF}",
-			Self::Bug => "\u{1F41B}",
-			Self::Example => "\u{2261}",
-			Self::Quote => "\u{275D}",
-		}
-	}
 }
 
-/// An Obsidian callout's header.
+/// A GFM alert or Obsidian callout's header.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Callout {
 	pub kind: CalloutKind,
@@ -287,13 +270,6 @@ pub struct Callout {
 	/// `Some(open)` for a foldable `[!x]+` / `[!x]-` callout. Its body is
 	/// then one `<details>`-style disclosure whose summary is the title.
 	pub fold: Option<bool>,
-}
-
-impl Callout {
-	/// The header line: icon and title.
-	pub fn header(&self) -> String {
-		format!("{} {}", self.kind.icon(), self.title)
-	}
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -669,9 +645,9 @@ pub fn semantic_key(kind: &BlockKind) -> u64 {
 		| BlockKind::Footnote {
 			label: _, blocks, ..
 		} => {
-			// The variants' labels have different types, so hash them separately.
-			if let BlockKind::Quote { label, callout, .. } = kind {
-				(label, callout).hash(&mut hash);
+			// Hash each container's metadata separately.
+			if let BlockKind::Quote { callout, .. } = kind {
+				callout.hash(&mut hash);
 			}
 			if let BlockKind::Footnote { label, column, .. } = kind {
 				(label, column).hash(&mut hash);

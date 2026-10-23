@@ -118,6 +118,20 @@ pub fn cases() -> Vec<Case> {
 		case.rules = "[[rule]]\nwhen=['details']\npadding=0.6\nborder_width=1\nborder_color='#557799'\nbackground='#eef3f8'\nradius=7\nspace_before=0.4\nspace_after=0.7\n[[rule]]\nwhen=['list_item']\npadding=0.3\nborder_width=1\nborder_color='#bb8866'\n".into();
 		cases.push(case);
 	}
+	for theme in ["light", "dark", "print"] {
+		let mut case = Case::new("callouts", 3000.);
+		case.name = format!("callouts-{theme}");
+		case.theme = theme;
+		cases.push(case);
+	}
+	let mut rounded = Case::new("callouts", 3000.);
+	rounded.name = "callouts-rounded".into();
+	rounded.rules = "[[rule]]\nwhen=['callout']\nradius=6\n".into();
+	cases.push(rounded);
+	let mut narrow = Case::new("callouts", 3800.);
+	narrow.name = "callouts-narrow".into();
+	narrow.width = 320.;
+	cases.push(narrow);
 	// Keep the original eight baselines as independent regression cases.
 	for fixture in ["prose", "lists", "table", "code", "math", "images"] {
 		let mut case = Case::new(fixture, 640.);

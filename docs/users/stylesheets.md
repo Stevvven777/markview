@@ -148,7 +148,17 @@ A condition is one fact about a rendered run: the blocks that contain it, the pa
 | Surfaces and UI | `img`, `selection`, `search`, `search_current`, `scrollbar`, `ui`, `toolbar`, `statusbar`, `panel`, `preview`, `button` |
 | Paper | `page`, `page_header`, `page_footer`, `page_number` |
 
-An Obsidian callout (read only in the Obsidian dialect) is a `blockquote` refined by `callout` and one color family, so a theme's quote rules still shape it and `["callout_warning"] border_color` or `["callout_warning", "label"] color` tint one family. The families group Obsidian's types: `callout_note` (note, info, todo), `callout_tip` (abstract, tip), `callout_success`, `callout_warning` (question, warning), `callout_danger` (failure, danger, bug), `callout_example` and `callout_quote`. The shared fallback colors each family; the header icon is fixed per type.
+GFM alerts and Obsidian callouts share the `callout` container, refined by one color family and the theme's `blockquote` rules. Use `["callout_warning"] border_color` and `background` for its surface, and `["callout_warning", "label"] color`, `font` and `weight` for the title and SVG icon, including foldable titles. The families are `callout_note` (note, info, todo), `callout_tip` (abstract, tip), `callout_success`, `callout_warning` (question, warning), `callout_danger` (failure, danger, bug, GFM caution), `callout_example` (example, GFM important) and `callout_quote`. Obsidian keeps its own aliases: `important` means tip and `caution` means warning. Icons are precompiled vector geometry and never enter copied or searched text.
+
+Alerts and callouts have square corners by default. Set `radius` on `callout` to round them in the reader and exports:
+
+```toml
+[[rule]]
+when = ["callout"]
+radius = 6.0
+```
+
+For individual corners, set `corner_radii = [top_left, top_right, bottom_right, bottom_left]`; this overrides `radius`.
 
 `page` paints the exported sheet; the other three style page furniture. They never apply to the reader window, and a theme that ignores them still exports: the PDF falls back to the body appearance.
 

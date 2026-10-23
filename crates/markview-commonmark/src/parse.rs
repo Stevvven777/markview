@@ -782,7 +782,7 @@ impl Reader<'_> {
 			let ordinal = self.details_ordinal;
 			self.details_ordinal += 1;
 			let summary = vec![Inline {
-				kind: InlineKind::Text(callout.header()),
+				kind: InlineKind::Text(callout.title.clone()),
 				style: TextStyle::default(),
 				source: source.clone(),
 			}];
@@ -796,7 +796,6 @@ impl Reader<'_> {
 			)];
 		}
 		BlockKind::Quote {
-			label: None,
 			callout: Some(callout),
 			blocks,
 		}
@@ -869,7 +868,6 @@ impl Reader<'_> {
 				}
 				NodeValue::ThematicBreak => BlockKind::Rule,
 				NodeValue::BlockQuote => BlockKind::Quote {
-					label: None,
 					callout: None,
 					blocks: self.blocks(child, depth + 1),
 				},
@@ -877,8 +875,23 @@ impl Reader<'_> {
 					self.callout_kind(child, callout, &source, depth)
 				}
 				NodeValue::Alert(a) => BlockKind::Quote {
-					label: Some(format!("{:?}", a.alert_type)),
-					callout: None,
+					callout: Some(Callout {
+						kind: match a.alert_type {
+							comrak::nodes::AlertType::Note => CalloutKind::Note,
+							comrak::nodes::AlertType::Tip => CalloutKind::Tip,
+							comrak::nodes::AlertType::Important => {
+								CalloutKind::Important
+							}
+							comrak::nodes::AlertType::Warning => {
+								CalloutKind::Warning
+							}
+							comrak::nodes::AlertType::Caution => {
+								CalloutKind::Caution
+							}
+						},
+						title: format!("{:?}", a.alert_type),
+						fold: None,
+					}),
 					blocks: self.blocks(child, depth + 1),
 				},
 				NodeValue::List(l) => BlockKind::List {

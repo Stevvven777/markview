@@ -95,9 +95,15 @@ fn markdown_matches_rendering_baselines() -> Result<()> {
 		let name = &case.name;
 		assert!(names.insert(name.clone()), "Duplicate case {name}");
 		let (width, height, scale) = (case.width, case.height, case.scale);
-		let doc = markview_commonmark::parse(fs::read_to_string(
-			root.join(format!("tests/fixtures/{}.md", case.fixture)),
-		)?);
+		let doc = markview_commonmark::parse_with(
+			fs::read_to_string(
+				root.join(format!("tests/fixtures/{}.md", case.fixture)),
+			)?,
+			markview_commonmark::Dialect {
+				ofm: case.fixture == "callouts",
+				..Default::default()
+			},
+		);
 		let mut options = case.options(root)?;
 		if let Some(states) = case.disclosures {
 			fn disclosures(blocks: &[document::Block], ids: &mut Vec<u64>) {

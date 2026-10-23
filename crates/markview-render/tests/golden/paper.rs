@@ -40,9 +40,15 @@ pub fn frames(
 	options.force_open = true;
 	options.hide_front_matter = true;
 	options.stylesheet = Arc::new(sheet);
-	let doc = markview_commonmark::parse(fs::read_to_string(
-		root.join("tests/fixtures/theme-sampler.md"),
-	)?);
+	let doc = markview_commonmark::parse_with(
+		fs::read_to_string(
+			root.join(format!("tests/fixtures/{}.md", case.fixture)),
+		)?,
+		markview_commonmark::Dialect {
+			ofm: case.fixture == "callouts",
+			..Default::default()
+		},
+	);
 	let mut engine =
 		LayoutEngine::with_executor(Arc::new(Direct), Arc::new(|| {}));
 	engine.layout_with_images(&doc, &options, images);
@@ -68,6 +74,8 @@ pub fn frames(
 	})?;
 	let name = if case.variant == "mvss-page" {
 		"pdf-custom".into()
+	} else if case.fixture == "callouts" {
+		format!("pdf-callouts-{}", case.theme)
 	} else {
 		format!("pdf-{}", case.theme)
 	};

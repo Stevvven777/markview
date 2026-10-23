@@ -2414,10 +2414,9 @@ fn gfm_keeps_github_alerts_and_plain_quotes() {
 	let doc = parse("> [!NOTE]\n> Alert.\n\n> [!faq] Not an alert\n> Quote.\n");
 	assert!(matches!(
 		&doc.blocks[0].kind,
-		BlockKind::Quote { label: Some(l), callout: None, .. } if l == "Note"
+		BlockKind::Quote { callout: Some(c), .. } if c.kind == CalloutKind::Note && c.title == "Note"
 	));
 	let BlockKind::Quote {
-		label: None,
 		callout: None,
 		blocks,
 	} = &doc.blocks[1].kind

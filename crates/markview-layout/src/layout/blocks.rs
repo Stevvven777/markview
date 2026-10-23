@@ -229,8 +229,10 @@ pub(crate) fn callout_family(kind: CalloutKind) -> Condition {
 		K::Abstract | K::Tip => Condition::CalloutTip,
 		K::Success => Condition::CalloutSuccess,
 		K::Question | K::Warning => Condition::CalloutWarning,
-		K::Failure | K::Danger | K::Bug => Condition::CalloutDanger,
-		K::Example => Condition::CalloutExample,
+		K::Caution | K::Failure | K::Danger | K::Bug => {
+			Condition::CalloutDanger
+		}
+		K::Important | K::Example => Condition::CalloutExample,
 		K::Quote => Condition::CalloutQuote,
 	}
 }
@@ -750,40 +752,63 @@ impl BlockContext<'_> {
 					style: TextStyle::default(),
 					source: block.source.clone(),
 				}]);
-				self.disclosure(block, &label, blocks, x, y, width, opts, out)
+				self.disclosure(
+					block, &label, blocks, None, x, y, width, opts, out,
+				)
 			}
-			BlockKind::Quote {
-				label,
-				callout,
-				blocks,
-			} => {
-				let mut top = y;
-				// A foldable callout's header is its disclosure's summary.
-				if let Some(callout) = callout
-					&& callout.fold.is_none()
-				{
-					let header = opts
-						.stylesheet
-						.text(&self.shaper.appearance, Condition::Label);
-					out.draws.extend(self.shaper.label(
-						&callout.header(),
-						opts.font_size * header.size,
+			BlockKind::Quote { callout, blocks } => {
+				let Some(callout) = callout else {
+					return self
+						.framed_children(blocks, x, y, width, opts, out);
+				};
+				if callout.fold.is_some() {
+					let disclosure = &blocks[0];
+					let BlockKind::Details {
+						summary, blocks, ..
+					} = &disclosure.kind
+					else {
+						unreachable!("foldable callouts contain a disclosure");
+					};
+					return self.disclosure(
+						disclosure,
+						summary,
+						blocks,
+						Some(callout.kind),
 						x,
-						top + size,
-						header.paint,
-					));
-					top += size * self.shaper.appearance.line_height;
-				} else if let Some(label) = label {
-					out.draws.extend(self.shaper.label(
-						label,
-						size * 0.8,
-						x,
-						top + size,
-						Paint::Styled(Condition::Blockquote, ColorField::Color),
-					));
-					top += size * self.shaper.appearance.line_height;
+						y,
+						width,
+						opts,
+						out,
+					);
 				}
-				top - y + self.framed_children(blocks, x, top, width, opts, out)
+				let title = vec![Inline {
+					kind: InlineKind::Text(callout.title.clone()),
+					style: TextStyle::default(),
+					source: block.source.clone(),
+				}];
+				let header = self.callout_header(
+					callout.kind,
+					&title,
+					x,
+					y,
+					width,
+					opts,
+					out,
+				);
+				let gap = if blocks.is_empty() {
+					0.0
+				} else {
+					size * DETAILS_GAP
+				};
+				header
+					+ gap + self.framed_children(
+					blocks,
+					x,
+					y + header + gap,
+					width,
+					opts,
+					out,
+				)
 			}
 			BlockKind::List {
 				start,
@@ -1224,10 +1249,77 @@ impl BlockContext<'_> {
 			}
 			BlockKind::Details {
 				summary, blocks, ..
-			} => self.disclosure(block, summary, blocks, x, y, width, opts, out),
+			} => self.disclosure(
+				block, summary, blocks, None, x, y, width, opts, out,
+			),
 		};
 		out.height = out.height.max(y + height);
 		out.width = out.width.max(x + width);
+		height
+	}
+
+	#[expect(
+		clippy::too_many_arguments,
+		reason = "Header geometry and layout inputs"
+	)]
+	fn callout_header(
+		&mut self,
+		kind: CalloutKind,
+		title: &RichText,
+		x: f32,
+		y: f32,
+		width: f32,
+		opts: &LayoutOptions,
+		out: &mut BlockLayout,
+	) -> f32 {
+		use super::callout_icons as icons;
+		use CalloutKind as K;
+		let paths = match kind {
+			K::Note => icons::NOTE,
+			K::Abstract => icons::ABSTRACT,
+			K::Info => icons::INFO,
+			K::Todo => icons::TODO,
+			K::Tip => icons::TIP,
+			K::Important => icons::IMPORTANT,
+			K::Success => icons::SUCCESS,
+			K::Question => icons::QUESTION,
+			K::Warning => icons::WARNING,
+			K::Caution => icons::CAUTION,
+			K::Failure => icons::FAILURE,
+			K::Danger => icons::DANGER,
+			K::Bug => icons::BUG,
+			K::Example => icons::EXAMPLE,
+			K::Quote => icons::QUOTE,
+		};
+		let parent = self.shaper.appearance.clone();
+		self.shaper.appearance =
+			opts.stylesheet.text(&parent, Condition::Label);
+		let size = opts.font_size * self.shaper.appearance.size;
+		let line = size * self.shaper.appearance.line_height;
+		out.draws.push(Draw::Icon {
+			paths,
+			paint: self.shaper.appearance.paint,
+			x,
+			y: y + (line - size) * 0.5,
+			size,
+		});
+		let column = size * 1.45;
+		let height = self
+			.rich(
+				title,
+				x + column,
+				y,
+				(width - column).max(1.0),
+				size,
+				false,
+				CellAlign::Left,
+				false,
+				false,
+				opts,
+				out,
+			)
+			.max(line);
+		self.shaper.appearance = parent;
 		height
 	}
 
@@ -1242,6 +1334,7 @@ impl BlockContext<'_> {
 		block: &Block,
 		summary: &RichText,
 		blocks: &[Block],
+		icon: Option<CalloutKind>,
 		x: f32,
 		y: f32,
 		width: f32,
@@ -1254,8 +1347,14 @@ impl BlockContext<'_> {
 			_ => false,
 		};
 		let parent = self.shaper.appearance.clone();
-		self.shaper.appearance =
-			opts.stylesheet.text(&parent, Condition::Summary);
+		self.shaper.appearance = opts.stylesheet.text(
+			&parent,
+			if icon.is_some() {
+				Condition::Label
+			} else {
+				Condition::Summary
+			},
+		);
 		let size = opts.font_size * self.shaper.appearance.size;
 		let line = size * self.shaper.appearance.line_height;
 		let paint = self.shaper.appearance.paint;
@@ -1270,8 +1369,19 @@ impl BlockContext<'_> {
 			paint,
 		});
 		let links_start = out.links.len();
-		let mut height = self
-			.rich(
+		let mut height = if let Some(kind) = icon {
+			self.shaper.appearance = parent.clone();
+			self.callout_header(
+				kind,
+				summary,
+				x + column,
+				y,
+				(width - column).max(1.0),
+				opts,
+				out,
+			)
+		} else {
+			self.rich(
 				summary,
 				x + column,
 				y,
@@ -1284,7 +1394,8 @@ impl BlockContext<'_> {
 				opts,
 				out,
 			)
-			.max(line);
+			.max(line)
+		};
 		let summary_height = height;
 		// The body is the element's ordinary content, so it must not
 		// inherit the summary's weight, color or condition chain.

@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui"]
-version = 5
+version = 6
 
 [meta]
 name = "Rosewood"
@@ -220,3 +220,32 @@ color = "#EFE1E6"
 when = ["h6"]
 font = [{ family = "serif" }, { family = "serif[cjk]", min_weight = 500 }, { family = "serif[cjk]" }, { family = "emoji", weight = 400 }]
 color = "#EFE1E6"
+
+# Lighter type accents keep callout headers readable on dark paper.
+[[rule]]
+when = ["callout_note", "label"]
+color = "#91BCE3"
+
+[[rule]]
+when = ["callout_tip", "label"]
+color = "#7FC6C9"
+
+[[rule]]
+when = ["callout_success", "label"]
+color = "#90C5A0"
+
+[[rule]]
+when = ["callout_warning", "label"]
+color = "#E0BB79"
+
+[[rule]]
+when = ["callout_danger", "label"]
+color = "#E39AA1"
+
+[[rule]]
+when = ["callout_example", "label"]
+color = "#BDA6E3"
+
+[[rule]]
+when = ["callout_quote", "label"]
+color = "#ACB8C7"

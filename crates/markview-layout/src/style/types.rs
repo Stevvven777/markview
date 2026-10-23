@@ -18,10 +18,10 @@ pub enum Condition {
 	#[default]
 	Body,
 	Blockquote,
-	/// An Obsidian callout: a block quote refined by one of the color
+	/// A GFM alert or Obsidian callout, refined by one of the color
 	/// families below, which follow it so they are more local.
 	Callout,
-	/// Callout color families; each groups the types Obsidian colors alike.
+	/// Shared callout color families.
 	CalloutNote,
 	CalloutTip,
 	CalloutSuccess,

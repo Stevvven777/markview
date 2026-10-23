@@ -1,6 +1,6 @@
 format_version = 2
 targets = ["ui", "pdf"]
-version = 8
+version = 9
 
 [[fontdef]]
 id = "serif"
@@ -717,69 +717,83 @@ border_width = 3.0
 padding = [0.22, 0.22, 0.22, 1.1]
 space_after = 0.8
 
-# Obsidian callouts (Obsidian) are block quotes refined by `callout` and one
-# color family; each family tints the rule on the left and the header line.
-# The families: note (note, info, todo), tip (abstract, tip), success,
-# warning (question, warning), danger (failure, danger, bug), example, quote.
+# Alerts and callouts share a quiet surface and a type-colored header.
+[[rule]]
+when = ["callout"]
+padding = [0.65, 0.85, 0.65, 0.85]
+border_width = 2.0
+border_edges = [0, 0, 0, 2]
+radius = 0.0
+space_after = 0.9
+
 [[rule]]
 when = ["callout", "label"]
-size = 1.0
+font = [{ family = "sans-serif" }, { family = "sans-serif[cjk]", min_weight = 500 }, { family = "sans-serif[cjk]" }, { family = "emoji", weight = 400 }]
+weight = 600
+size = 0.95
 
 [[rule]]
 when = ["callout_note"]
-border_color = "#086DDD"
+border_color = "#356A9A"
+background = "#356A9A0D"
 
 [[rule]]
 when = ["callout_note", "label"]
-color = "#086DDD"
+color = "#356A9A"
 
 [[rule]]
 when = ["callout_tip"]
-border_color = "#00838F"
+border_color = "#227C82"
+background = "#227C820D"
 
 [[rule]]
 when = ["callout_tip", "label"]
-color = "#00838F"
+color = "#227C82"
 
 [[rule]]
 when = ["callout_success"]
-border_color = "#2E7D32"
+border_color = "#347451"
+background = "#3474510D"
 
 [[rule]]
 when = ["callout_success", "label"]
-color = "#2E7D32"
+color = "#347451"
 
 [[rule]]
 when = ["callout_warning"]
-border_color = "#C76A00"
+border_color = "#94621C"
+background = "#94621C0D"
 
 [[rule]]
 when = ["callout_warning", "label"]
-color = "#C76A00"
+color = "#94621C"
 
 [[rule]]
 when = ["callout_danger"]
-border_color = "#D1343F"
+border_color = "#B04D55"
+background = "#B04D550D"
 
 [[rule]]
 when = ["callout_danger", "label"]
-color = "#D1343F"
+color = "#B04D55"
 
 [[rule]]
 when = ["callout_example"]
-border_color = "#7852EE"
+border_color = "#7356A6"
+background = "#7356A60D"
 
 [[rule]]
 when = ["callout_example", "label"]
-color = "#7852EE"
+color = "#7356A6"
 
 [[rule]]
 when = ["callout_quote"]
-border_color = "#7A7A7A"
+border_color = "#667383"
+background = "#6673830D"
 
 [[rule]]
 when = ["callout_quote", "label"]
-color = "#7A7A7A"
+color = "#667383"
 
 # A `<details>` frame and its summary weight are theme-neutral, so they live in
 # the shared fallback; each reader theme supplies its own surface colors.

@@ -2,6 +2,7 @@
 mod anchor;
 mod blocks;
 mod cache;
+mod callout_icons;
 pub(crate) mod code;
 mod highlights;
 mod images;
