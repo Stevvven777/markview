@@ -1,6 +1,7 @@
 import { Viewer, type FontSet, type ImageRequest } from "@markview/viewer";
 import { FontLoader } from "@markview/fonts";
 import { browserResources, decodeImage } from "@markview/resources";
+import { PreviewScrollSync } from "./scroll-sync-webview";
 import { PreviewScrollbar } from "./scrollbar";
 declare global {
   interface Window {
@@ -15,6 +16,7 @@ interface DocumentMessage {
   uri: string;
   version: number;
   markdown: string;
+  maxLine?: number;
   fonts: string[];
   theme: "light" | "dark";
   base: string;
@@ -43,6 +45,7 @@ const send = (type: string, extra = {}) =>
     version: current?.version,
     ...extra,
   });
+const sync = new PreviewScrollSync(send);
 const fail = (error: unknown) => {
   status.textContent = String(error);
   send("error", { error: String(error) });
@@ -62,6 +65,11 @@ async function update(message: DocumentMessage, ticket: number) {
   }
   if (ticket !== generation || disposed) return;
   current = message;
+  sync.document(
+    message.version,
+    message.markdown,
+    message.maxLine ?? message.markdown.split("\n").length - 1,
+  );
   if (!viewer) {
     viewer = await Viewer.mount(
       document.querySelector<HTMLElement>("#reader")!,
@@ -69,10 +77,13 @@ async function update(message: DocumentMessage, ticket: number) {
         markdown: message.markdown,
         fonts,
         initialization: { wasmUrl },
+        scrollMode: "external",
         markview: { theme: message.theme, fontSize: 18, width: 760 },
         onLink: (target) => send("link", { target }),
         onError: fail,
+        onUserInput: () => sync.control(),
         onStats: (stats) => {
+          sync.frame();
           scrollbar?.update();
           if (
             !stats.pending &&
@@ -83,12 +94,14 @@ async function update(message: DocumentMessage, ticket: number) {
             send("rendered", { blocks: stats.blocks });
           }
         },
-        onReadingPosition: (position) =>
+        onReadingPosition: (position) => {
+          sync.reading(position);
           host.setState({
             uri: current?.uri,
             base: current?.base,
             offset: position.offset,
-          }),
+          });
+        },
         resources: {
           onResources: (events) => {
             for (const event of events)
@@ -116,7 +129,11 @@ async function update(message: DocumentMessage, ticket: number) {
       viewer = undefined;
       return;
     }
-    scrollbar = new PreviewScrollbar(viewer, (y) => viewer?.scrollTo(y));
+    sync.attach(viewer);
+    scrollbar = new PreviewScrollbar(viewer, (y) => {
+      sync.control();
+      viewer?.scrollTo(y);
+    });
     if (message.offset !== undefined) viewer.scrollToSource(message.offset);
   } else {
     if (viewer.getMarkdown() !== message.markdown)
@@ -143,6 +160,8 @@ window.addEventListener("message", (event) => {
           : undefined,
       )
       .catch(fail);
+  } else if (message.type === "source-scroll") {
+    if (message.uri === current?.uri) sync.source(message);
   } else if (message.type === "resource") {
     const request = resources.get(message.id);
     resources.delete(message.id);

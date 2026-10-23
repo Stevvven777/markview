@@ -23,6 +23,7 @@ at the same level, without `[brackets]`.
 
 ### Added
 
+- Synchronize scrolling between the VS Code Markdown editor and Markview preview.
 - Export saved or unsaved Markdown from VS Code to PDF or PNG using built-in or custom templates.
 
 ### Changed

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { EditorScrollSync } from "./scroll-sync";
 import { needsEmojiFont } from "../shared/preview-fonts";
 import { Services } from "../shared/service";
 import { resourceDirectory } from "../shared/resources";
@@ -45,6 +46,12 @@ export function activate(
     let emojiFonts = false;
     const resources = new Set<AbortController>();
     const subscriptions: vscode.Disposable[] = [];
+    const scrollSync = new EditorScrollSync(
+      panel,
+      document,
+      subscriptions,
+      saved?.offset !== undefined,
+    );
     async function publish() {
       const ticket = ++generation;
       const markdown = document.getText(),
@@ -81,6 +88,7 @@ export function activate(
         uri: identity,
         version,
         markdown,
+        maxLine: scrollSync.maxLine(),
         base,
         offset: saved?.offset,
         fonts: fonts.map((file) =>
@@ -109,6 +117,7 @@ export function activate(
           }
           if (message.uri !== identity || message.version !== document.version)
             return;
+          if (scrollSync.receive(message)) return;
           if (message.type === "link" && typeof message.target === "string") {
             if (message.target.startsWith("#")) return;
             const target = vscode.Uri.parse(

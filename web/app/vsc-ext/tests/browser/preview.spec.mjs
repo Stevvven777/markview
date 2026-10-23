@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { build } from "esbuild";
+import { runInNewContext } from "node:vm";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 const root = process.cwd();
@@ -8,7 +10,7 @@ async function open(page, restoredOffset = 0) {
     if (!name)
       return route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><link rel="stylesheet" href="/preview.css"><span id="status"></span><main id="reader"></main><script>window.messages=[];window.markviewHost={postMessage:message=>messages.push(message),setState:state=>window.saved=state};</script><script type="module" src="/preview.js" data-wasm="/markview_web_bg.wasm"></script>`,
+        body: `<!doctype html><link rel="stylesheet" href="/preview.css"><span id="status"></span><main id="reader"></main><script>window.messages=[];window.markviewHost={postMessage:message=>{messages.push(message);window.scrollHost?.(message)},setState:state=>window.saved=state};</script><script type="module" src="/preview.js" data-wasm="/markview_web_bg.wasm"></script>`,
       });
     const file =
       name === "font.otf"
@@ -43,6 +45,7 @@ async function open(page, restoredOffset = 0) {
     theme: "light",
     base: "/tmp",
     offset: restoredOffset,
+    maxLine: 100,
   };
   await publish(page, message);
   return message;
@@ -116,4 +119,296 @@ test("latest update wins during initialization and saved reading position restor
     });
   await rendered(page, 12);
   expect(await page.evaluate(() => saved.uri)).toBe("file:///test.md");
+});
+
+test("source scroll reaches both ends without feedback and preview gestures can reverse immediately", async ({
+  page,
+}) => {
+  const message = await open(page);
+  await rendered(page, 1);
+  async function source(line, generation) {
+    await publish(page, {
+      type: "source-scroll",
+      uri: message.uri,
+      version: 1,
+      line,
+      maxLine: 100,
+      inputTime: Date.now(),
+      request: { origin: "source", documentVersion: 1, generation },
+    });
+  }
+  const bar = page.getByRole("scrollbar");
+  await source(100, 1);
+  await expect
+    .poll(async () => Number(await bar.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(100);
+  await expect
+    .poll(async () =>
+      Math.abs(
+        Number(await bar.getAttribute("aria-valuenow")) -
+          Number(await bar.getAttribute("aria-valuemax")),
+      ),
+    )
+    .toBeLessThanOrEqual(1);
+  expect(
+    await page.evaluate(
+      () =>
+        messages.filter((message) => message.type === "preview-scroll").length,
+    ),
+  ).toBe(0);
+  await source(0, 2);
+  await expect
+    .poll(async () => Number(await bar.getAttribute("aria-valuenow")))
+    .toBe(0);
+  await page.locator("canvas").hover();
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 80);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          messages.filter((message) => message.type === "preview-scroll")
+            .length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const before = await page.evaluate(
+    () =>
+      messages.filter((message) => message.type === "preview-scroll").at(-1)
+        .line,
+  );
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -80);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          messages.filter((message) => message.type === "preview-scroll").at(-1)
+            .line,
+      ),
+    )
+    .toBeLessThan(before);
+  await bar.focus();
+  await page.keyboard.press("End");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          messages.filter((message) => message.type === "preview-scroll").at(-1)
+            .line,
+      ),
+    )
+    .toBeCloseTo(100, 0);
+  await page.keyboard.press("Home");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          messages.filter((message) => message.type === "preview-scroll").at(-1)
+            .line,
+      ),
+    )
+    .toBe(0);
+});
+
+test("code-block positions and stale source requests stay in the same mapping", async ({
+  page,
+}) => {
+  const message = await open(page);
+  await rendered(page, 1);
+  const markdown =
+    "# Code\n\n```js\n" +
+    Array.from({ length: 100 }, (_, i) => `console.log('line ${i}');`).join(
+      "\n",
+    ) +
+    "\n```\n\nAfter the code.\n" +
+    "More reading.\n\n".repeat(30);
+  await publish(page, { ...message, version: 2, markdown });
+  await rendered(page, 2);
+  await publish(page, {
+    type: "source-scroll",
+    uri: message.uri,
+    version: 2,
+    line: 50,
+    maxLine: 140,
+    inputTime: Date.now(),
+    request: { origin: "source", documentVersion: 2, generation: 20 },
+  });
+  const bar = page.getByRole("scrollbar");
+  await expect
+    .poll(async () => Number(await bar.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(100);
+  const y = Number(await bar.getAttribute("aria-valuenow"));
+  await publish(page, {
+    type: "source-scroll",
+    uri: message.uri,
+    version: 1,
+    line: 0,
+    maxLine: 100,
+    inputTime: Date.now() + 10,
+    request: { origin: "source", documentVersion: 1, generation: 21 },
+  });
+  await publish(page, {
+    type: "source-scroll",
+    uri: message.uri,
+    version: 2,
+    line: 0,
+    maxLine: 140,
+    inputTime: Date.now() + 20,
+    request: { origin: "source", documentVersion: 2, generation: 19 },
+  });
+  await page.locator("canvas").hover();
+  await page.mouse.wheel(0, 20);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          messages.filter(
+            (message) =>
+              message.type === "preview-scroll" && message.version === 2,
+          ).length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const line = await page.evaluate(
+    () =>
+      messages
+        .filter(
+          (message) =>
+            message.type === "preview-scroll" && message.version === 2,
+        )
+        .at(-1).line,
+  );
+  expect(line).toBeGreaterThan(48);
+  expect(line).toBeLessThan(60);
+  expect(
+    Number(await bar.getAttribute("aria-valuenow")),
+  ).toBeGreaterThanOrEqual(y);
+});
+
+test("fast preview swipes retain their full delta despite asynchronous editor reveal feedback", async ({
+  page,
+}) => {
+  const bundle = await build({
+    entryPoints: ["vscode/src/preview/scroll-sync.ts"],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    write: false,
+    external: ["vscode"],
+  });
+  class Position {
+    constructor(line, character = 0) {
+      this.line = line;
+      this.character = character;
+    }
+    isEqual(other) {
+      return this.line === other.line && this.character === other.character;
+    }
+  }
+  class Range {
+    constructor(start, end) {
+      this.start = start;
+      this.end = end;
+    }
+  }
+  const text = "# Preview\n\n" + "A paragraph of readable text.\n\n".repeat(60);
+  const lines = text.split("\n");
+  const document = {
+    uri: { toString: () => "file:///test.md" },
+    version: 1,
+    lineCount: lines.length,
+    lineAt: (line) => ({ text: lines[line] }),
+  };
+  let visible,
+    revealCount = 0;
+  const sourceMessages = [];
+  const editor = {
+    document,
+    visibleRanges: [new Range(new Position(0), new Position(19))],
+    revealRange(range) {
+      revealCount++;
+      for (const top of [Math.max(0, range.start.line - 1), range.start.line]) {
+        editor.visibleRanges = [
+          new Range(
+            new Position(top),
+            new Position(Math.min(lines.length - 1, top + 19)),
+          ),
+        ];
+        visible({ textEditor: editor, visibleRanges: editor.visibleRanges });
+      }
+    },
+  };
+  const disposable = { dispose() {} };
+  const vscode = {
+    Position,
+    Range,
+    TextEditorRevealType: { AtTop: 1 },
+    window: {
+      visibleTextEditors: [editor],
+      onDidChangeTextEditorSelection: () => disposable,
+      onDidChangeTextEditorVisibleRanges: (fn) => {
+        visible = fn;
+        return disposable;
+      },
+    },
+  };
+  const module = { exports: {} };
+  runInNewContext(bundle.outputFiles[0].text, {
+    module,
+    exports: module.exports,
+    require: () => vscode,
+  });
+  const bridge = new module.exports.EditorScrollSync(
+    {
+      webview: {
+        postMessage: async (message) => {
+          sourceMessages.push(message);
+          await publish(page, message);
+          return true;
+        },
+      },
+    },
+    document,
+    [],
+    false,
+  );
+  await page.exposeFunction("scrollHost", (message) => bridge.receive(message));
+  await open(page);
+  await rendered(page, 1);
+  await expect.poll(() => sourceMessages.length).toBe(1);
+  await page.locator("canvas").hover();
+  const bar = page.getByRole("scrollbar");
+  async function swipe(deltaY, count) {
+    await page.locator("canvas").evaluate(
+      (canvas, { deltaY, count }) => {
+        for (let i = 0; i < count; i++)
+          canvas.dispatchEvent(
+            new WheelEvent("wheel", {
+              deltaY,
+              deltaMode: 0,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+      },
+      { deltaY, count },
+    );
+  }
+  await swipe(50, 12);
+  await expect
+    .poll(async () => Number(await bar.getAttribute("aria-valuenow")))
+    .toBe(600);
+  await expect.poll(() => revealCount).toBeGreaterThan(0);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  expect(Number(await bar.getAttribute("aria-valuenow"))).toBe(600);
+  expect(sourceMessages.length).toBe(1);
+  await swipe(-50, 10);
+  await expect
+    .poll(async () => Number(await bar.getAttribute("aria-valuenow")))
+    .toBe(100);
+  expect(sourceMessages.length).toBe(1);
 });

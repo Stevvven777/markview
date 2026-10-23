@@ -60,6 +60,9 @@ test("export commands snapshot unsaved text, select templates, reveal success an
     ProgressLocation: { Notification: 1 },
     workspace: { getConfiguration: () => config, isTrusted: true },
     window: {
+      visibleTextEditors: [],
+      onDidChangeTextEditorVisibleRanges: () => disposable,
+      onDidChangeTextEditorSelection: () => disposable,
       registerWebviewPanelSerializer: () => disposable,
       activeTextEditor: { document },
       showQuickPick: async () => "PNG",

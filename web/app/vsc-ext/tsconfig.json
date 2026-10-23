@@ -11,7 +11,8 @@
     "paths": {
       "@markview/viewer": ["../../packages/markview/src/index.ts"],
       "@markview/fonts": ["../../packages/fonts/src/index.ts"],
-      "@markview/resources": ["../../packages/resources/src/index.ts"]
+      "@markview/resources": ["../../packages/resources/src/index.ts"],
+      "@markview/scroll-sync": ["../../packages/scroll-sync/src/index.ts"]
     },
     "baseUrl": "."
   },
