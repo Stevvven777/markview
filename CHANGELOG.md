@@ -21,6 +21,17 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+## 0.4.1 - 2026-10-23
+
+**Highlights**:
+
+- Read Obsidian callouts with built-in types, nested content and foldable bodies.
+- Hide Obsidian `%%` comments while reading, copying, searching and exporting.
+- Open different folders in separate windows and reuse each folder's existing window.
+- Synchronize scrolling between the VS Code Markdown editor and Markview preview.
+- Export saved or unsaved Markdown from VS Code to PDF or PNG with built-in or custom templates.
+- Scroll smoothly through tabs, settings, export panels, the folder tree and outline.
+
 ### Added
 
 - Hide `%%` inline and block comments in Obsidian across reading, copy, search and reader exports, preserving code and original source positions.
