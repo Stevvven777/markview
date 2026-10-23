@@ -197,43 +197,6 @@ pub(super) fn draw(
 		layout.detail.y + DETAIL_SIZE,
 		Paint::Styled(Condition::Panel, C::Muted),
 	));
-	if let Some(body) = layout.body {
-		out.push(Draw::Rect(
-			body,
-			Paint::Styled(Condition::Panel, C::HoverBackground),
-		));
-		// The body scene is composed after the chrome, so its border sits just
-		// outside it to stay visible.
-		let border = Paint::Styled(Condition::Panel, C::BorderColor);
-		for edge in [
-			Rect {
-				x: body.x - 1.0,
-				y: body.y - 1.0,
-				w: body.w + 2.0,
-				h: 1.0,
-			},
-			Rect {
-				x: body.x - 1.0,
-				y: body.y + body.h,
-				w: body.w + 2.0,
-				h: 1.0,
-			},
-			Rect {
-				x: body.x - 1.0,
-				y: body.y - 1.0,
-				w: 1.0,
-				h: body.h + 2.0,
-			},
-			Rect {
-				x: body.x + body.w,
-				y: body.y - 1.0,
-				w: 1.0,
-				h: body.h + 2.0,
-			},
-		] {
-			out.push(Draw::Rect(edge, border));
-		}
-	}
 	out
 }
 

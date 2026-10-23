@@ -39,6 +39,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Use the document background throughout tab hover previews and remove the inner frame.
 - Retry CI dependency installation and emulator setup failures while keeping application test failures fatal.
 - Preserve dialect settings, control hints and exports with the refactored application owners; refresh settings screenshots and tablet checks.
 - Show the taskbar button's icon from the first frame on Windows, where the shell draws it from an image the window never advertised (#19).

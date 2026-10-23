@@ -82,7 +82,7 @@ fn a_card_without_a_body_reserves_no_preview_rectangle() {
 }
 
 #[test]
-fn preview_cards_use_the_theme_radius() {
+fn preview_cards_use_the_theme_radius_without_a_body_frame() {
 	let mut ui = crate::test_support::shaper();
 	let card = card("notes.md", true);
 	let layout = super::layout(&card, anchor(200.0, 100.0), (800.0, 600.0));
@@ -116,11 +116,10 @@ fn preview_cards_use_the_theme_radius() {
 				),
 				"{theme}: {radius}"
 			);
-			assert!(draws.iter().any(|draw| matches!(draw, Draw::Glyph(_))));
-			assert!(draws.iter().any(|draw| matches!(
-				draw,
-				Draw::Rect(rect, _) if Some(*rect) == layout.body
-			)));
+			assert!(
+				draws[1..].iter().all(|draw| matches!(draw, Draw::Glyph(_)))
+			);
+			assert!(draws.len() > 1);
 		}
 	}
 }

@@ -208,14 +208,18 @@ impl Renderer {
 					y: rect.y + dy,
 					..*rect
 				};
-				let background = self.color(
+				let background = if *condition
+					== markview_layout::style::Condition::Preview
+				{
+					Paint::Background
+				} else {
 					Paint::Scoped(
 						*chain,
 						*condition,
 						markview_layout::style::ColorField::Background,
-					),
-					view.theme,
-				);
+					)
+				};
+				let background = self.color(background, view.theme);
 				if let Some(decoration) = decoration {
 					let border_color = self.color(
 						Paint::Scoped(

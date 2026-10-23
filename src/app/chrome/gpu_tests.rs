@@ -2481,6 +2481,27 @@ fn preview_card_frame() -> Result<()> {
 			renderer.wait(None)?;
 			let output = directory.join(format!("card-{theme}-{radius}.png"));
 			renderer.save_png(&target, &output)?;
+			let image = image::open(output)?.to_rgba8();
+			let background = settings
+				.stylesheet
+				.color(Condition::Body, C::Background)
+				.map(|channel| (channel * 255.0).round() as u8);
+			for (x, y) in [
+				(body.x - 1.0, body.y + 12.0),
+				(body.x + body.w, body.y + 12.0),
+				(body.x + 12.0, body.y - 1.0),
+				(body.x + 12.0, body.y + body.h),
+				(body.x + body.w - 2.0, body.y + body.h - 2.0),
+			] {
+				let actual = image.get_pixel(x as u32, y as u32).0;
+				assert!(
+					actual
+						.iter()
+						.zip(background)
+						.all(|(a, b)| a.abs_diff(b) <= 1),
+					"{theme}, radius {radius}, ({x}, {y}): {actual:?} != {background:?}"
+				);
+			}
 		}
 	}
 	Ok(())
