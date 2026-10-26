@@ -22,3 +22,5 @@ Fonts are resolved through the existing native font catalog and local font index
 Only local trusted workspaces are supported.
 
 Right-click a Markdown editor to export PDF or PNG, or choose a built-in or custom MVSS template before exporting.
+
+The preview keeps the edited source position visible after reflow and wrapped input. It scrolls only when that position leaves the viewport; a new reading gesture cancels the movement.

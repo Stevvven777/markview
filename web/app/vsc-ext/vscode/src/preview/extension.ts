@@ -52,6 +52,7 @@ export function activate(
       subscriptions,
       saved?.offset !== undefined,
     );
+    let edit: ReturnType<EditorScrollSync["edit"]>;
     async function publish() {
       const ticket = ++generation;
       const markdown = document.getText(),
@@ -89,6 +90,7 @@ export function activate(
         version,
         markdown,
         maxLine: scrollSync.maxLine(),
+        edit: edit?.version === version ? edit : undefined,
         base,
         offset: saved?.offset,
         fonts: fonts.map((file) =>
@@ -117,6 +119,8 @@ export function activate(
           }
           if (message.uri !== identity || message.version !== document.version)
             return;
+          if (message.type === "rendered" && message.version === edit?.version)
+            edit = undefined;
           if (scrollSync.receive(message)) return;
           if (message.type === "link" && typeof message.target === "string") {
             if (message.target.startsWith("#")) return;
@@ -175,6 +179,25 @@ export function activate(
       }),
       vscode.workspace.onDidChangeTextDocument((event) => {
         if (event.document !== document) return;
+        let delta = 0;
+        const ends = [...event.contentChanges]
+          .sort((a, b) => a.rangeOffset - b.rangeOffset)
+          .map((change) => {
+            const end = change.rangeOffset + delta + change.text.length;
+            delta += change.text.length - change.rangeLength;
+            return end;
+          });
+        const editor = vscode.window.activeTextEditor;
+        const caret =
+          editor?.document === document && ends.length
+            ? document.offsetAt(editor.selection.active)
+            : 0;
+        const offset = ends.reduce(
+          (best, end) =>
+            Math.abs(end - caret) < Math.abs(best - caret) ? end : best,
+          ends[0] ?? caret,
+        );
+        edit = ends.length ? scrollSync.edit(offset) : undefined;
         resources.forEach((controller) => controller.abort());
         update();
       }),

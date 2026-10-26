@@ -1,6 +1,12 @@
 import type { Viewer, ReadingPosition } from "@markview/viewer";
 import { ScrollMap, type SyncRequest } from "@markview/scroll-sync";
 
+export interface EditPosition {
+  offset: number;
+  inputTime: number;
+  version: number;
+}
+
 export interface SourceScroll {
   type: "source-scroll";
   uri: string;
@@ -24,10 +30,17 @@ export class PreviewScrollSync {
   private ownsInput = false;
   private version = -1;
   private hovering?: boolean;
+  private edit?: EditPosition;
+  private motion?: { from: number; to: number; started: number };
 
   constructor(private send: (type: string, extra?: object) => void) {}
 
-  document(version: number, markdown: string, maxLine: number) {
+  document(
+    version: number,
+    markdown: string,
+    maxLine: number,
+    edit?: EditPosition,
+  ) {
     if (this.version !== version) {
       this.starts = [0];
       for (let i = 0; i < markdown.length; i++)
@@ -35,6 +48,14 @@ export class PreviewScrollSync {
       this.pending = undefined;
       this.map = undefined;
       this.version = version;
+      this.edit = undefined;
+      this.motion = undefined;
+    }
+    if (edit?.version === version && edit.inputTime >= this.inputTime) {
+      this.inputTime = edit.inputTime;
+      this.ownsInput = false;
+      this.pending = undefined;
+      this.edit = edit;
     }
     if (this.maxLine !== maxLine) {
       this.maxLine = maxLine;
@@ -58,6 +79,8 @@ export class PreviewScrollSync {
   control() {
     this.inputTime = Math.max(Date.now(), this.inputTime + 1);
     this.pending = undefined;
+    this.edit = undefined;
+    this.motion = undefined;
     if (!this.ownsInput)
       this.send("preview-control", { inputTime: this.inputTime });
     this.ownsInput = true;
@@ -74,6 +97,8 @@ export class PreviewScrollSync {
     this.generation = message.request.generation;
     this.ownsInput = false;
     this.pending = message;
+    this.edit = undefined;
+    this.motion = undefined;
     if (this.maxLine !== message.maxLine) {
       this.maxLine = message.maxLine;
       this.map = undefined;
@@ -115,15 +140,46 @@ export class PreviewScrollSync {
   }
 
   frame() {
-    if (
-      !this.viewer ||
-      this.viewer.reader.markview.stats().pending ||
-      !this.pending
-    )
-      return;
-    const message = this.pending;
-    this.pending = undefined;
-    this.viewer.scrollTo(this.mapping().map("source", message.line));
+    const viewer = this.viewer;
+    if (!viewer || viewer.reader.markview.stats().pending) return;
+    if (this.pending) {
+      const message = this.pending;
+      this.pending = undefined;
+      viewer.scrollTo(this.mapping().map("source", message.line));
+    }
+    if (this.edit) {
+      const geometry = viewer.sourceToPreview(
+        Math.min(
+          this.edit.offset,
+          Math.max(0, viewer.getMarkdown().length - 1),
+        ),
+      );
+      this.edit = undefined;
+      if (geometry) {
+        const engine = viewer.reader.markview,
+          from = engine.scroll(),
+          height = viewer.element.clientHeight;
+        const { y: top, height: lineHeight } = geometry.rect;
+        const margin = Math.min(height / 4, Math.max(24, lineHeight * 2));
+        const target =
+          top < from
+            ? top - margin
+            : top + lineHeight > from + height
+              ? top + lineHeight - height + margin
+              : from;
+        const to = Math.max(0, Math.min(engine.maxScroll(), target));
+        if (Math.abs(from - to) > 1)
+          this.motion = { from, to, started: performance.now() };
+      }
+    }
+    if (this.motion) {
+      const t = Math.min(1, (performance.now() - this.motion.started) / 100);
+      viewer.scrollTo(
+        this.motion.from +
+          (this.motion.to - this.motion.from) * (1 - (1 - t) ** 3),
+      );
+      if (t === 1) this.motion = undefined;
+    }
   }
 
   reading(position: ReadingPosition) {

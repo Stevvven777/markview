@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Keep the edited Markdown position visible after preview reflow, with cancellable scrolling only when needed.
+
 ## 0.4.1 - 2026-10-23
 
 **Highlights**:

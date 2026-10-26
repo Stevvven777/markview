@@ -412,3 +412,74 @@ test("fast preview swipes retain their full delta despite asynchronous editor re
     .toBe(100);
   expect(sourceMessages.length).toBe(1);
 });
+
+test("editing after a long code block follows the wrapped caret only when it leaves the viewport", async ({
+  page,
+}) => {
+  const message = await open(page);
+  await rendered(page, 1);
+  const source =
+    "# Writing\n\n```js\n" + "console.log('code');\n".repeat(120) + "```\n\n";
+  await publish(page, { ...message, version: 2, markdown: source });
+  await rendered(page, 2);
+  const bar = page.getByRole("scrollbar");
+  const markdown = source + "New wrapped paragraph ".repeat(250);
+  await publish(page, {
+    ...message,
+    version: 3,
+    markdown,
+    edit: { version: 3, offset: markdown.length, inputTime: Date.now() },
+  });
+  await rendered(page, 3);
+  await expect
+    .poll(async () =>
+      Math.abs(
+        Number(await bar.getAttribute("aria-valuenow")) -
+          Number(await bar.getAttribute("aria-valuemax")),
+      ),
+    )
+    .toBeLessThanOrEqual(1);
+  const current = Number(await bar.getAttribute("aria-valuenow"));
+  const updated = markdown + " a";
+  await publish(page, {
+    ...message,
+    version: 4,
+    markdown: updated,
+    edit: { version: 4, offset: updated.length, inputTime: Date.now() },
+  });
+  await rendered(page, 4);
+  await expect
+    .poll(async () =>
+      Math.abs(
+        Number(await bar.getAttribute("aria-valuenow")) -
+          Number(await bar.getAttribute("aria-valuemax")),
+      ),
+    )
+    .toBeLessThanOrEqual(1);
+  expect(
+    Number(await bar.getAttribute("aria-valuenow")) - current,
+  ).toBeLessThan(100);
+  await page.screenshot({ path: "test-results/edit-follow-wrapped.png" });
+  await publish(page, {
+    ...message,
+    version: 5,
+    markdown:
+      "# Writing\n\nVisible paragraph.\n\n" + "A paragraph.\n\n".repeat(80),
+    edit: { version: 5, offset: 18, inputTime: Date.now() },
+  });
+  await rendered(page, 5);
+  await expect
+    .poll(async () => Number(await bar.getAttribute("aria-valuenow")))
+    .toBeLessThan(100);
+  const before = Number(await bar.getAttribute("aria-valuenow"));
+  await publish(page, {
+    ...message,
+    version: 6,
+    markdown:
+      "# Writing\n\nVisible paragraph changed.\n\n" +
+      "A paragraph.\n\n".repeat(80),
+    edit: { version: 6, offset: 20, inputTime: Date.now() },
+  });
+  await rendered(page, 6);
+  expect(Number(await bar.getAttribute("aria-valuenow"))).toBe(before);
+});
