@@ -374,3 +374,16 @@ per-reader `fonts` for independent instances.
 compatibility directory. The old demo contract is historical and its exclusions
 of editing/outlines do not constrain this iteration. Public source/navigation
 API lives in this guide and [source navigation and TOC](mvaac-source-api.md).
+
+### Markdown dialect
+
+`MarkviewOptions.markdownFlavor` selects `"gfm"` (the compatibility default) or
+`"obsidian"`. `hardBreaks` controls single-newline hard breaks independently;
+`highlightMarks` enables `==highlight==` in GFM and is forced on in Obsidian.
+The Obsidian preset uses the core reader's supported callouts, comments and
+inline HTML extensions; it does not implement full vault semantics.
+
+Changing these options with `setOptions()` reparses the current source, including
+the newest source in an unfinished layout. Existing layout handles become stale
+and source geometry receives a new document version. Layout-only changes do not
+reparse the document.
