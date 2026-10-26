@@ -101,3 +101,11 @@ Errors go to stderr and return a nonzero exit status. A host can create the
 path supplied by `--cancel-file` to request cancellation at export checkpoints.
 Hosts that require cancellation to preserve the destination should export to
 a temporary output, wait for successful completion, and then replace it.
+
+### Markdown dialect for buffer exports
+
+`markview export --stdin --markdown-flavor obsidian` uses the core reader's
+supported Obsidian syntax. The default remains `gfm`; this command does not load
+saved reader settings. `--highlight-marks` enables `==highlight==` in GFM, while
+Obsidian always enables it. `--hard-breaks` treats single newlines as hard breaks
+in either preset and is off by default. These options apply to both PDF and PNG.

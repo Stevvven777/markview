@@ -127,8 +127,9 @@ upstream OFM extension.
 ```
 
 Exports follow the reader: in-app PDF and PNG export parse with the selected
-dialect and unfold callout bodies. Command-line `markview export` uses the
-default GFM dialect and does not load the reader's dialect settings.
+dialect and unfold callout bodies. Command-line `markview export` defaults to GFM and does not load the reader's
+dialect settings; use `--markdown-flavor`, `--hard-breaks` and
+`--highlight-marks` to select them explicitly.
 
 ## Network and image cache
 
