@@ -483,3 +483,88 @@ test("editing after a long code block follows the wrapped caret only when it lea
   await rendered(page, 6);
   expect(Number(await bar.getAttribute("aria-valuenow"))).toBe(before);
 });
+
+test("reading options and templates update the existing viewer, including code wrapping", async ({
+  page,
+}) => {
+  const { decodePng } = await import("../../../../tests/png.mjs");
+  const message = await open(page);
+  await rendered(page, 1);
+  const bar = page.locator(".preview-scrollbar");
+  const initial = Number(await bar.getAttribute("aria-valuemax"));
+  await publish(page, {
+    ...message,
+    version: 2,
+    options: {
+      fontSize: 30,
+      width: 300,
+      justify: false,
+      hyphenate: false,
+      paragraphIndent: 1,
+    },
+  });
+  await rendered(page, 2);
+  await expect
+    .poll(async () => Number(await bar.getAttribute("aria-valuemax")))
+    .toBeGreaterThan(initial);
+  async function background() {
+    const png = decodePng(await page.locator("canvas").screenshot());
+    const offset = (2 * png.width + 2) * png.channels;
+    return Array.from(png.data.subarray(offset, offset + 3));
+  }
+  const custom =
+    'format_version=2\nversion=1\ntargets=["ui"]\n[[rule]]\nwhen=["body"]\nbackground="#123456"\ncolor="#ffffff"\nline_height=2.0';
+  await publish(page, {
+    ...message,
+    version: 3,
+    template: "custom",
+    stylesheet: custom,
+  });
+  await rendered(page, 3);
+  await expect.poll(background).toEqual([18, 52, 86]);
+  await publish(page, {
+    ...message,
+    version: 4,
+    template: "custom",
+    stylesheet: custom.replace('["ui"]', '["pdf"]'),
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => messages.filter((message) => message.type === "error").length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  expect(await background()).toEqual([18, 52, 86]);
+  await publish(page, { ...message, version: 5, template: "celadon" });
+  await expect.poll(background).not.toEqual([18, 52, 86]);
+  const markdown = "```text\n" + "a long code line ".repeat(100) + "\n```\n";
+  await publish(page, {
+    ...message,
+    version: 6,
+    markdown,
+    options: { width: 300 },
+    codeWrap: false,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        messages.some(
+          (message) => message.type === "rendered" && message.version === 6,
+        ),
+      ),
+    )
+    .toBe(true);
+  const flat = Number(await bar.getAttribute("aria-valuemax"));
+  await publish(page, {
+    ...message,
+    version: 7,
+    markdown,
+    options: { width: 300 },
+    codeWrap: true,
+  });
+  await expect
+    .poll(async () => Number(await bar.getAttribute("aria-valuemax")))
+    .toBeGreaterThan(flat);
+  await page.screenshot({ path: "test-results/reading-options.png" });
+});

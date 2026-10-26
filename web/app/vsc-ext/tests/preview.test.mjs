@@ -69,6 +69,7 @@ test("side preview publishes unsaved edits, changes theme, deduplicates panels a
       postMessage: async (message) => messages.push(message),
     },
     reveal: () => revealed++,
+    onDidChangeViewState: () => disposable,
     onDidDispose: (fn) => {
       close = fn;
       return disposable;
@@ -84,6 +85,7 @@ test("side preview publishes unsaved edits, changes theme, deduplicates panels a
     ViewColumn: { Beside: 2 },
     ColorThemeKind: { Dark: 2, HighContrast: 3 },
     workspace: {
+      getConfiguration: () => ({ get: (_key, fallback) => fallback }),
       onDidChangeTextDocument: (fn) => {
         changed = fn;
         return disposable;
@@ -129,6 +131,14 @@ test("side preview publishes unsaved edits, changes theme, deduplicates panels a
     Buffer,
     AbortController,
     Services: class {
+      readingTemplate(uri) {
+        assert.equal(uri, document.uri);
+        return { id: "default", name: "Default" };
+      }
+      async previewStylesheet() {
+        return undefined;
+      }
+      changed = { event: () => disposable };
       directories() {
         return [];
       }

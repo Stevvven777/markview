@@ -26,12 +26,7 @@ export function activate(
     );
     const template: Template | undefined = withTemplate
       ? await services.pickTemplate()
-      : {
-          id: vscode.workspace
-            .getConfiguration("markview", document.uri)
-            .get("exportTemplate", "default"),
-          name: "Default",
-        };
+      : await services.template("pdf", document.uri);
     if (!template) return;
     return services.withTemplate(template, async (template) => {
       const chosen =

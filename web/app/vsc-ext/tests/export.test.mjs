@@ -92,6 +92,10 @@ test("export commands snapshot unsaved text, select templates, reveal success an
       id === "vscode" ? vscode : createRequire(import.meta.url)(id),
     AbortController,
     Services: class {
+      async template(_destination, uri) {
+        assert.equal(uri, document.uri);
+        return { id: "celadon", name: "Celadon" };
+      }
       async pickTemplate() {
         return { id: "van-gogh", name: "Van Gogh" };
       }
@@ -116,6 +120,7 @@ test("export commands snapshot unsaved text, select templates, reveal success an
   await commands.get("markview.export.pdf")();
   assert.equal(calls[0][1], "# unsaved");
   assert.equal(calls[0][3], "pdf");
+  assert.equal(calls[0][5].id, "celadon");
   assert.equal(reveals[0][0], "revealFileInOS");
   document.isUntitled = true;
   document.uri = { scheme: "untitled", fsPath: "Untitled-1" };

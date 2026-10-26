@@ -14,8 +14,11 @@ export function activate(context: vscode.ExtensionContext) {
     { dispose: () => panel?.dispose() },
     vscode.commands.registerCommand("markview.fonts", async () => {
       try {
+        const document =
+          vscode.window.activeTextEditor?.document.uri ??
+          services.previewDocument;
         if (!panel || panel.disposed) panel = new FontPanel(services);
-        await panel.show(undefined, "ui");
+        await panel.show(undefined, "ui", document);
       } catch (error) {
         void vscode.window.showErrorMessage(`Markview: ${String(error)}`);
       }

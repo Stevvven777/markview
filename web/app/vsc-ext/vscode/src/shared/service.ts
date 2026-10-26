@@ -1,12 +1,16 @@
 import * as vscode from "vscode";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { FontClient } from "./font-client";
 import { FontIndex } from "./fonts";
+import { TemplateSettings } from "./template-settings";
 import type { Template } from "./types";
 
 export class Services extends FontClient implements vscode.Disposable {
   readonly changed = new vscode.EventEmitter<void>();
+  private templates = new TemplateSettings(() => this.changed.fire());
   readonly fonts: FontIndex;
+  previewDocument?: vscode.Uri;
   constructor(readonly context: vscode.ExtensionContext) {
     super(
       context.asAbsolutePath(
@@ -28,30 +32,54 @@ export class Services extends FontClient implements vscode.Disposable {
       .getConfiguration("markview")
       .get<string[]>("fontDirectories", []);
   }
-  readingTemplate(): Template {
-    const file = vscode.workspace
-      .getConfiguration("markview")
-      .get<string>("previewStyleFile", "");
-    return file
-      ? { id: "custom", name: path.basename(file), path: file }
-      : { id: "default", name: "阅读字体" };
+  async template(destination: string, uri?: vscode.Uri): Promise<Template> {
+    const inherited = await this.templates.resolve(uri, destination);
+    const config = vscode.workspace.getConfiguration("markview", uri);
+    const prefix = destination === "ui" ? "preview" : "export";
+    const file = config.get<string>(`${prefix}StyleFile`, "");
+    const id = config.get<string>(`${prefix}Template`, "default");
+    const template =
+      inherited ??
+      (file
+        ? { id: "custom", name: path.basename(file), path: file }
+        : { id, name: id });
+    if (template.path) this.templates.watch(template.path);
+    return template;
   }
-  async pickTemplate(): Promise<Template | undefined> {
-    const { templates } = await this.catalog();
+  readingTemplate(uri?: vscode.Uri): Promise<Template> {
+    return this.template("ui", uri);
+  }
+  async previewStylesheet(template: Template): Promise<string | undefined> {
+    const file = template.path;
+    return file ? readFile(file, "utf8") : undefined;
+  }
+  async pickTemplate(destination = "pdf"): Promise<Template | undefined> {
+    const { templates } = await this.catalog(undefined, destination);
+    const ui = destination === "ui";
+    const bundled = [
+      "light",
+      "dark",
+      "celadon",
+      "blueprint",
+      "rosewood",
+      "8-bit",
+    ];
     const choice = await vscode.window.showQuickPick(
       [
         {
-          label: "默认导出样式",
+          label: ui ? "跟随 VS Code 主题" : "默认导出样式",
           template: { id: "default", name: "Default" } as Template,
         },
-        ...templates.map((template) => ({
-          label: template.name,
-          description: template.id,
-          template,
-        })),
+        ...templates
+          .filter((template) => !ui || bundled.includes(template.id))
+          .map((template) => ({
+            label: template.name,
+            description: template.id,
+            template,
+          })),
         { label: "自定义 .mvss.toml…", template: undefined },
       ],
-      { title: "选择导出模板" },
+      { title: ui ? "选择阅读模板" : "选择导出模板" },
     );
     if (!choice) return;
     if (choice.template) return choice.template;
@@ -75,6 +103,7 @@ export class Services extends FontClient implements vscode.Disposable {
     this.changed.fire();
   }
   dispose() {
+    this.templates.dispose();
     this.changed.dispose();
   }
 }

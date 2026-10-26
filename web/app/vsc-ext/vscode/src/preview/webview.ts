@@ -1,4 +1,9 @@
-import { Viewer, type FontSet, type ImageRequest } from "@markview/viewer";
+import {
+  Viewer,
+  type FontSet,
+  type ImageRequest,
+  type MarkviewOptions,
+} from "@markview/viewer";
 import { FontLoader } from "@markview/fonts";
 import { browserResources, decodeImage } from "@markview/resources";
 import { PreviewScrollSync, type EditPosition } from "./scroll-sync-webview";
@@ -18,6 +23,10 @@ interface DocumentMessage {
   markdown: string;
   maxLine?: number;
   edit?: EditPosition;
+  options?: MarkviewOptions;
+  template?: string;
+  stylesheet?: string;
+  codeWrap?: boolean;
   fonts: string[];
   theme: "light" | "dark";
   base: string;
@@ -65,6 +74,7 @@ async function update(message: DocumentMessage, ticket: number) {
     fontKey = key;
   }
   if (ticket !== generation || disposed) return;
+  const previous = current;
   current = message;
   sync.document(
     message.version,
@@ -80,7 +90,7 @@ async function update(message: DocumentMessage, ticket: number) {
         fonts,
         initialization: { wasmUrl },
         scrollMode: "external",
-        markview: { theme: message.theme, fontSize: 18, width: 760 },
+        markview: { ...message.options, theme: message.theme },
         onLink: (target) => send("link", { target }),
         onError: fail,
         onUserInput: () => sync.control(),
@@ -140,7 +150,34 @@ async function update(message: DocumentMessage, ticket: number) {
   } else {
     if (viewer.getMarkdown() !== message.markdown)
       viewer.setMarkdown(message.markdown);
-    viewer.setOptions({ theme: message.theme });
+    if (
+      previous?.theme !== message.theme ||
+      JSON.stringify(previous?.options) !== JSON.stringify(message.options)
+    )
+      viewer.setOptions({ ...message.options, theme: message.theme });
+  }
+  if (
+    !previous ||
+    previous.template !== message.template ||
+    previous.stylesheet !== message.stylesheet ||
+    previous.codeWrap !== message.codeWrap ||
+    previous.theme !== message.theme
+  ) {
+    viewer.registerStylesheet(
+      "vscode-config",
+      `format_version=2\nversion=1\n[[rule]]\nwhen=["code_block"]\nwrap=${message.codeWrap ?? false}`,
+    );
+    if (message.stylesheet)
+      viewer.registerStylesheet("vscode-custom", message.stylesheet);
+    const base =
+      message.template && !["default", "custom"].includes(message.template)
+        ? `bundled:${message.template}`
+        : `bundled:${message.theme}`;
+    viewer.setStylesheets([
+      "vscode-config",
+      ...(message.stylesheet ? ["vscode-custom"] : []),
+      base,
+    ]);
   }
   host.setState({
     uri: message.uri,
