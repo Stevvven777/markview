@@ -19,6 +19,15 @@ pub(crate) struct Command {
 	allow_network: Vec<crate::security::Resource>,
 	#[arg(long, value_parser = ["pdf", "png"], default_value = "pdf")]
 	format: String,
+	/// Markdown preset, independent of the reader window's saved settings.
+	#[arg(long, value_parser = ["gfm", "obsidian"], default_value = "gfm")]
+	markdown_flavor: String,
+	/// Read single newlines as hard breaks in either preset.
+	#[arg(long)]
+	hard_breaks: bool,
+	/// Enable highlight marks in GFM; Obsidian always enables them.
+	#[arg(long)]
+	highlight_marks: bool,
 	#[arg(short, long)]
 	output: Option<PathBuf>,
 	#[arg(long)]
@@ -41,6 +50,15 @@ fn progress(phase: &str, fraction: f64) {
 	report(json!({"type":"progress", "phase":phase, "fraction":fraction}));
 }
 impl Command {
+	fn dialect(&self) -> crate::settings::EffectiveDialect {
+		let ofm = self.markdown_flavor == "obsidian";
+		crate::settings::EffectiveDialect {
+			hard_breaks: self.hard_breaks,
+			highlight_marks: self.highlight_marks || ofm,
+			ofm,
+		}
+	}
+
 	fn cancelled(&self) -> Result<()> {
 		if self.cancel_file.as_ref().is_some_and(|path| path.exists()) {
 			bail!("Cancelled");
@@ -61,6 +79,7 @@ impl Command {
 		let output =
 			self.output.as_ref().context("export requires --output")?;
 		config.scale = self.scale;
+		config = config.with_dialect(self.dialect());
 		let prepared = config.prepare()?;
 		let mut text = String::new();
 		std::io::stdin()

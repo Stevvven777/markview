@@ -25,6 +25,7 @@ at the same level, without `[brackets]`.
 
 - Keep the edited Markdown position visible after preview reflow, with cancellable scrolling only when needed.
 - Configure VS Code reading typography and inherit reading/export templates from parent directory settings, with live preview and matching font management.
+- Select GFM or Obsidian syntax, hard breaks and highlight marks for CLI buffer exports.
 
 ## 0.4.1 - 2026-10-23
 

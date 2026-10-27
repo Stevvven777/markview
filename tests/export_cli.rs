@@ -437,3 +437,67 @@ fn file_and_buffer_exports_use_downloaded_fonts_unless_pinned() {
 		}
 	}
 }
+
+#[test]
+fn buffer_dialects_share_pdf_and_png_parsing_without_reader_settings() {
+	let dir = tempfile::tempdir().unwrap();
+	let source = "# Dialect\n\nVisible %%SECRET%% text and ==marked==.\n\n```text\n%%CODE%%\n```\n\n> [!warning] Title\n> Body.\n";
+	for (flavor, secret, marks) in
+		[("gfm", true, true), ("obsidian", false, false)]
+	{
+		let output = dir.path().join(format!("{flavor}.pdf"));
+		success(run(
+			&[
+				"--output",
+				output.to_str().unwrap(),
+				"--markdown-flavor",
+				flavor,
+			],
+			source,
+		));
+		let pdf = lopdf::Document::load(output).unwrap();
+		let pages = pdf.get_pages().keys().copied().collect::<Vec<_>>();
+		let text = pdf.extract_text(&pages).unwrap();
+		assert_eq!(text.contains("SECRET"), secret, "{flavor}: {text}");
+		assert_eq!(text.contains("==marked=="), marks, "{flavor}: {text}");
+		assert!(text.contains("%%CODE%%"), "{text}");
+	}
+	let marked = dir.path().join("highlight.pdf");
+	success(run(
+		&["--output", marked.to_str().unwrap(), "--highlight-marks"],
+		"==marked==",
+	));
+	let pdf = lopdf::Document::load(marked).unwrap();
+	let text = pdf.extract_text(&[1]).unwrap();
+	assert!(text.contains("marked") && !text.contains("=="), "{text}");
+	for flavor in ["gfm", "obsidian"] {
+		let mut heights = Vec::new();
+		for hard in [false, true] {
+			let output = dir.path().join(format!("{flavor}-{hard}.png"));
+			let mut args = vec![
+				"--format",
+				"png",
+				"--output",
+				output.to_str().unwrap(),
+				"--markdown-flavor",
+				flavor,
+			];
+			if hard {
+				args.push("--hard-breaks");
+			}
+			let done = success(run(&args, "alpha\nbeta\ngamma\n"));
+			heights.push(done["height"].as_u64().unwrap());
+		}
+		assert!(heights[1] > heights[0], "{flavor}: {heights:?}");
+	}
+	let rejected = run(
+		&[
+			"--markdown-flavor",
+			"unknown",
+			"--output",
+			dir.path().join("bad.pdf").to_str().unwrap(),
+		],
+		"body",
+	);
+	assert!(!rejected.status.success());
+}
