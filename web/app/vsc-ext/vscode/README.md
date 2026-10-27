@@ -17,10 +17,22 @@ The preview renders unsaved edits with MVaaC/WASM, follows the editor color them
 supports selection/copy, local and remote images, links and a visible scrollbar.
 Saved reading position is restored when VS Code reloads the window.
 
-This slice does not add synchronized scrolling or configurable reading templates.
 Fonts are resolved through the existing native font catalog and local font index.
 Only local trusted workspaces are supported.
 
 Right-click a Markdown editor to export PDF or PNG, or choose a built-in or custom MVSS template before exporting.
 
 The preview keeps the edited source position visible after reflow and wrapped input. It scrolls only when that position leaves the viewport; a new reading gesture cancels the movement.
+
+Choose a reading template with **Markview: 选择阅读模板…**. VS Code settings expose font size, column width, justification, hyphenation, paragraph indentation and code wrapping. Custom `.mvss.toml` files must support the `ui` destination and reload when edited.
+
+Template settings inherit from the nearest `.vscode/settings.json`, starting beside the Markdown file and continuing through parent directories, including outside the opened workspace. A directory without template settings inherits from its parent; reading and export choices inherit independently. `previewTemplate`/`previewStyleFile` and `exportTemplate`/`exportStyleFile` each form one choice, so a child preset replaces an inherited custom file. An explicit `"default"` resets inheritance for that destination. Relative stylesheet paths resolve from the directory containing `.vscode`.
+
+```jsonc
+{
+  "markview.previewTemplate": "celadon",
+  "markview.exportStyleFile": "styles/paper.mvss.toml"
+}
+```
+
+Configuration lookup stops at the filesystem root or an access-denied error, then falls back to VS Code settings and defaults. Untitled documents use VS Code settings. Invalid configurations and missing selected stylesheets are reported rather than skipped. Configuration and stylesheet changes update the preview and font manager automatically.

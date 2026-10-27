@@ -2,6 +2,7 @@ export interface Template {
   id: string;
   name: string;
   path?: string;
+  source?: string;
 }
 export interface Definition {
   id: string;

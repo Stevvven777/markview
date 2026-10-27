@@ -16,6 +16,8 @@ export class FontPanel implements vscode.Disposable {
   private destination = "ui";
   private template: Template = { id: "default", name: "阅读字体" };
   private rows: FontStatus[] = [];
+  private document?: vscode.Uri;
+  private selected?: Template;
   private generation = 0;
   private download?: AbortController;
   private subscriptions: vscode.Disposable[] = [];
@@ -64,15 +66,16 @@ export class FontPanel implements vscode.Disposable {
       }),
     );
   }
-  async show(template?: Template, destination = "pdf") {
+  async show(
+    template?: Template,
+    destination = "pdf",
+    document = this.document,
+  ) {
     this.panel.reveal();
     if (this.download) return;
     this.destination = destination;
-    this.template =
-      template ??
-      (destination === "ui"
-        ? this.services.readingTemplate()
-        : { id: "default", name: "默认导出样式" });
+    this.document = document;
+    this.selected = template;
     await this.refresh();
   }
   private notify(message: string, busy: boolean, fraction?: number) {
@@ -87,8 +90,11 @@ export class FontPanel implements vscode.Disposable {
   private async refresh() {
     if (this.disposed) return;
     const generation = ++this.generation;
-    if (this.destination === "ui")
-      this.template = this.services.readingTemplate();
+    const template =
+      this.selected ??
+      (await this.services.template(this.destination, this.document));
+    if (this.disposed || generation !== this.generation) return;
+    this.template = template;
     const catalog = await this.services.catalog(
       this.template,
       this.destination,

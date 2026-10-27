@@ -34,12 +34,12 @@
     "commands": [
       {
         "command": "markview.fonts",
-        "title": "字体管理…",
+        "title": "\u5b57\u4f53\u7ba1\u7406\u2026",
         "category": "Markview"
       },
       {
         "command": "markview.preview.open",
-        "title": "打开侧边预览",
+        "title": "\u6253\u5f00\u4fa7\u8fb9\u9884\u89c8",
         "category": "Markview",
         "icon": {
           "light": "media/preview-light.svg",
@@ -48,17 +48,22 @@
       },
       {
         "command": "markview.export.pdf",
-        "title": "导出 PDF…",
+        "title": "\u5bfc\u51fa PDF\u2026",
         "category": "Markview"
       },
       {
         "command": "markview.export.png",
-        "title": "导出 PNG…",
+        "title": "\u5bfc\u51fa PNG\u2026",
         "category": "Markview"
       },
       {
         "command": "markview.export.template",
-        "title": "使用模板导出…",
+        "title": "\u4f7f\u7528\u6a21\u677f\u5bfc\u51fa\u2026",
+        "category": "Markview"
+      },
+      {
+        "command": "markview.preview.template",
+        "title": "\u9009\u62e9\u9605\u8bfb\u6a21\u677f\u2026",
         "category": "Markview"
       }
     ],
@@ -76,12 +81,14 @@
         "markview.previewStyleFile": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to a custom MVSS stylesheet supporting the ui destination."
+          "description": "Custom MVSS reading stylesheet. In directory settings, relative paths resolve from the directory containing .vscode. Use an absolute path in user settings.",
+          "scope": "resource"
         },
         "markview.exportTemplate": {
           "type": "string",
           "default": "default",
-          "description": "Default export template ID."
+          "description": "Default export template ID.",
+          "scope": "resource"
         },
         "markview.exportFontSize": {
           "type": "number",
@@ -94,6 +101,63 @@
           "default": 2,
           "minimum": 0.1,
           "description": "PNG output scale."
+        },
+        "markview.previewTemplate": {
+          "type": "string",
+          "enum": [
+            "default",
+            "light",
+            "dark",
+            "celadon",
+            "blueprint",
+            "rosewood",
+            "8-bit"
+          ],
+          "default": "default",
+          "description": "Bundled reading template. Default follows the VS Code theme; previewStyleFile takes precedence.",
+          "scope": "resource"
+        },
+        "markview.fontSize": {
+          "type": "number",
+          "default": 18,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Reading font size in pixels."
+        },
+        "markview.width": {
+          "type": "number",
+          "default": 760,
+          "minimum": 100,
+          "maximum": 8192,
+          "description": "Maximum reading column width in pixels."
+        },
+        "markview.justify": {
+          "type": "boolean",
+          "default": true,
+          "description": "Justify reading paragraphs."
+        },
+        "markview.hyphenate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hyphenate words at line breaks."
+        },
+        "markview.paragraphIndent": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "First-line reading paragraph indent in em."
+        },
+        "markview.codeWrap": {
+          "type": "boolean",
+          "default": false,
+          "description": "Wrap long code-block lines in the preview."
+        },
+        "markview.exportStyleFile": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Custom MVSS export stylesheet. In directory settings, relative paths resolve from the directory containing .vscode. Takes precedence over exportTemplate. Use an absolute path in user settings."
         }
       }
     },

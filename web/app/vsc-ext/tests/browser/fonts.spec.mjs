@@ -88,7 +88,10 @@ async function manager(page, extraRows = [], holdDownload = false) {
     },
   };
   const services = {
-    readingTemplate: () => ({ id: "default", name: "阅读字体" }),
+    template: async (_destination, document) => {
+      expect(document?.fsPath).toBe("/project/chapter/draft.md");
+      return { id: "default", name: "阅读字体" };
+    },
     context: { extensionUri: "/extension" },
     changed: {
       event: (fn) => {
@@ -151,6 +154,10 @@ async function manager(page, extraRows = [], holdDownload = false) {
     AbortController,
   });
   const instance = new module.exports.FontPanel(services);
+  await instance.show(undefined, "ui", {
+    scheme: "file",
+    fsPath: "/project/chapter/draft.md",
+  });
   await page.exposeFunction("fontHost", (message) => receive(message));
   await page.addInitScript(() => {
     window.acquireVsCodeApi = () => ({

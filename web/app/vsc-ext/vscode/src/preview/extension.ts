@@ -37,12 +37,14 @@ export function activate(
       );
     panel.title = `预览 · ${path.basename(document.uri.path)}`;
     panels.set(identity, panel);
+    services.previewDocument = document.uri;
     const media = vscode.Uri.joinPath(context.extensionUri, "media");
     const uri = (name: string) =>
       panel.webview.asWebviewUri(vscode.Uri.joinPath(media, name)).toString();
     let disposed = false,
       generation = 0;
-    let fontPaths: Promise<string[]> | undefined;
+    let fontPaths:
+      Promise<{ fonts: string[]; stylesheet?: string }> | undefined;
     let emojiFonts = false;
     const resources = new Set<AbortController>();
     const subscriptions: vscode.Disposable[] = [];
@@ -57,24 +59,33 @@ export function activate(
       const ticket = ++generation;
       const markdown = document.getText(),
         version = document.version;
+      const config = vscode.workspace.getConfiguration(
+        "markview",
+        document.uri,
+      );
+      const template = await services.readingTemplate(document.uri);
+      if (disposed || ticket !== generation) return;
       const emoji = needsEmojiFont(markdown);
       if (emoji !== emojiFonts) {
         fontPaths = undefined;
         emojiFonts = emoji;
       }
       fontPaths ??= (async () => {
-        const catalog = await services.catalog(undefined, "ui");
+        const [catalog, stylesheet] = await Promise.all([
+          services.catalog(template, "ui"),
+          services.previewStylesheet(template),
+        ]);
         if (!emoji)
           catalog.definitions = catalog.definitions.filter(
             ({ id }) => id !== "emoji",
           );
         await services.fonts.refresh(services.directories());
-        return services.fonts.paths(catalog);
+        return { fonts: services.fonts.paths(catalog), stylesheet };
       })().catch((error) => {
         fontPaths = undefined;
         throw error;
       });
-      const fonts = await fontPaths;
+      const { fonts, stylesheet } = await fontPaths;
       if (disposed || ticket !== generation) return;
       panel.webview.options = {
         enableScripts: true,
@@ -91,6 +102,16 @@ export function activate(
         markdown,
         maxLine: scrollSync.maxLine(),
         edit: edit?.version === version ? edit : undefined,
+        template: template.id,
+        stylesheet,
+        codeWrap: config.get("codeWrap", false),
+        options: {
+          fontSize: config.get("fontSize", 18),
+          width: config.get("width", 760),
+          justify: config.get("justify", true),
+          hyphenate: config.get("hyphenate", true),
+          paragraphIndent: config.get("paragraphIndent", 0),
+        },
         base,
         offset: saved?.offset,
         fonts: fonts.map((file) =>
@@ -107,6 +128,9 @@ export function activate(
     }
     const update = () => void publish().catch(report);
     subscriptions.push(
+      panel.onDidChangeViewState(({ webviewPanel }) => {
+        if (webviewPanel.active) services.previewDocument = document.uri;
+      }),
       panel.webview.onDidReceiveMessage(async (message) => {
         try {
           if (message.type === "ready") {
@@ -203,15 +227,29 @@ export function activate(
       }),
       vscode.window.onDidChangeActiveColorTheme(update),
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("markview.fontDirectories")) {
-          fontPaths = undefined;
+        if (event.affectsConfiguration("markview")) {
+          if (
+            [
+              "markview.previewTemplate",
+              "markview.previewStyleFile",
+              "markview.fontDirectories",
+            ].some((key) => event.affectsConfiguration(key))
+          ) {
+            fontPaths = undefined;
+          }
           update();
         }
+      }),
+      services.changed.event(() => {
+        fontPaths = undefined;
+        update();
       }),
       panel.onDidDispose(() => {
         disposed = true;
         generation++;
         panels.delete(identity);
+        if (services.previewDocument === document.uri)
+          services.previewDocument = undefined;
         resources.forEach((controller) => controller.abort());
         subscriptions.forEach((subscription) => subscription.dispose());
       }),
@@ -224,6 +262,24 @@ export function activate(
     panel.webview.html = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${panel.webview.cspSource} data:; img-src blob: data:; script-src 'nonce-${nonce}' 'wasm-unsafe-eval'; style-src ${panel.webview.cspSource} 'unsafe-inline';"><link rel="stylesheet" href="${uri("preview.css")}"></head><body><span id="status" role="status">正在加载…</span><main id="reader"></main><script nonce="${nonce}">window.markviewHost=acquireVsCodeApi();</script><script nonce="${nonce}" type="module" src="${uri("preview.js")}" data-wasm="${uri("markview_web_bg.wasm")}"></script></body></html>`;
   }
   context.subscriptions.push(
+    vscode.commands.registerCommand("markview.preview.template", async () => {
+      try {
+        const template = await services.pickTemplate("ui");
+        if (!template) return;
+        const config = vscode.workspace.getConfiguration("markview");
+        const target = vscode.workspace.workspaceFolders?.length
+          ? vscode.ConfigurationTarget.Workspace
+          : vscode.ConfigurationTarget.Global;
+        await config.update(
+          "previewTemplate",
+          template.path ? "default" : template.id,
+          target,
+        );
+        await config.update("previewStyleFile", template.path ?? "", target);
+      } catch (error) {
+        report(error);
+      }
+    }),
     vscode.commands.registerCommand("markview.preview.open", async () => {
       const document = vscode.window.activeTextEditor?.document;
       if (document?.languageId === "markdown")
