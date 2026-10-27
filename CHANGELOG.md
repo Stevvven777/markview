@@ -31,6 +31,7 @@ at the same level, without `[brackets]`.
 
 ### Fixed
 
+- Refuse to open or keep the image viewer for an image that failed to load.
 - Repaint the folder, outline and tab drawers when the pointer leaves them, so hover paint no longer stays behind.
 - Repaint a custom-width document scrollbar across its whole track, not only the last 16 points.
 

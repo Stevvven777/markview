@@ -366,6 +366,37 @@ fn loaded_images_without_selectable_text_open_on_click() {
 }
 
 #[test]
+fn failed_images_neither_open_nor_keep_the_viewer() {
+	let failed = || ImageInfo {
+		version: 1,
+		size: Some((400, 400)),
+		error: Some("Cannot open image".into()),
+	};
+	let mut app = image_reader("![](a.png)", "a.png", false);
+	app.readers
+		.session
+		.snapshot
+		.images
+		.entries
+		.insert("a.png".into(), failed());
+	let at = app.interaction.pointer.cursor();
+	physical_click(&mut app, at);
+	assert!(!app.interaction.overlays.viewer_open());
+
+	// A failure that lands while the viewer is up closes it.
+	let mut app = image_reader("![](a.png)", "a.png", false);
+	open(&mut app);
+	app.readers
+		.session
+		.snapshot
+		.images
+		.entries
+		.insert("a.png".into(), failed());
+	move_to(&mut app, (1., 1.));
+	assert!(!app.interaction.overlays.viewer_open());
+}
+
+#[test]
 fn an_image_press_that_drags_or_loses_focus_does_not_open() {
 	let mut app = image_reader("![](a.png)", "a.png", true);
 	let at = app.interaction.pointer.cursor();

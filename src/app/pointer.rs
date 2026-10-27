@@ -936,10 +936,18 @@ impl<P: super::SendEvent> App<P> {
 			self.ask_permission(resource, PermissionAction::Images);
 			return;
 		}
+		// A failed source has no picture to show, so the viewer stays closed.
+		let images = &self.readers.session.snapshot.images;
+		if images
+			.entries
+			.get(&src)
+			.is_some_and(|info| info.error.is_some())
+		{
+			return;
+		}
 		// The pixels the renderer already holds cap the fitting, so the
 		// viewer never promises a sharper picture than exists. A picture
 		// still decoding fits its laid-out rect instead.
-		let images = &self.readers.session.snapshot.images;
 		let pixels = images
 			.entries
 			.get(&src)
@@ -965,17 +973,29 @@ impl<P: super::SendEvent> App<P> {
 	/// Decoded pixels can arrive while the viewer is already open.
 	pub(super) fn refresh_viewer(&mut self) {
 		let (width, height, scale) = self.dimensions();
-		if !self.interaction.overlays.viewer_open() {
+		let Some(src) = self
+			.interaction
+			.overlays
+			.viewer()
+			.map(|viewer| viewer.src().to_owned())
+		else {
+			return;
+		};
+		let images = &self.readers.session.snapshot.images;
+		// A picture that failed while open has nothing left to fit.
+		if images
+			.entries
+			.get(&src)
+			.is_some_and(|info| info.error.is_some())
+		{
+			self.interaction.overlays.viewer.send(ViewerMessage::Close);
 			return;
 		}
-		let images = &self.readers.session.snapshot.images;
-		let pixels = self.interaction.overlays.viewer().and_then(|viewer| {
-			images
-				.entries
-				.get(viewer.src())
-				.and_then(|info| images.pixels.get(viewer.src(), info.version))
-				.map(|pixels| (pixels.width as f32, pixels.height as f32))
-		});
+		let pixels = images
+			.entries
+			.get(&src)
+			.and_then(|info| images.pixels.get(&src, info.version))
+			.map(|pixels| (pixels.width as f32, pixels.height as f32));
 		self.interaction.overlays.viewer.refresh(
 			pixels,
 			scale,
