@@ -301,6 +301,7 @@ impl<P: super::SendEvent> App<P> {
 		let proxy = self.proxy.clone();
 		let offline = self.args.offline;
 		let security = self.readers.session.security.clone();
+		let workspace = self.folder.root().cloned();
 		self.export.source = Some((path.clone(), security.origin.clone()));
 		// The reader's own font set, so the export shapes with the personal
 		// download directory exactly like the display does.
@@ -335,16 +336,25 @@ impl<P: super::SendEvent> App<P> {
 				Destination::Ask { .. } => {
 					match output.unwrap().recv().ok().flatten() {
 						Some(output) => run(
-							&path, &output, &settings, dialect, metadata,
-							fonts, cjk, &overrides, offline, services,
+							&path,
+							&output,
+							&settings,
+							dialect,
+							metadata,
+							fonts,
+							cjk,
+							&overrides,
+							offline,
+							services,
 							security,
+							workspace.clone(),
 						),
 						None => ExportOutcome::Cancelled,
 					}
 				}
 				Destination::Path(output) => run(
 					&path, &output, &settings, dialect, metadata, fonts, cjk,
-					&overrides, offline, services, security,
+					&overrides, offline, services, security, workspace,
 				),
 			};
 			proxy.send(Event::Exported(Box::new(outcome)));
@@ -656,10 +666,12 @@ fn run(
 	offline: bool,
 	services: Arc<crate::services::Services>,
 	security: crate::security::Security,
+	workspace: Option<PathBuf>,
 ) -> ExportOutcome {
 	let prepared =
 		match export::Config::from_settings(settings, fonts, cjk, overrides)
 			.with_dialect(dialect)
+			.with_workspace(workspace)
 			.prepare()
 		{
 			Ok(prepared) => prepared,
@@ -687,12 +699,14 @@ fn run(
 		ExportFormat::Png => {
 			let scale = prepared.scale;
 			let stylesheet = prepared.options.stylesheet.clone();
-			match export::png_snapshot_with_services(
+			let workspace = prepared.workspace;
+			match export::png_snapshot_with_services_and_workspace(
 				path,
 				prepared.options,
 				offline,
 				services,
 				security,
+				workspace,
 			) {
 				Ok(snapshot) => ExportOutcome::PngReady {
 					snapshot: Box::new(snapshot),
@@ -779,6 +793,7 @@ mod tests {
 			true,
 			Arc::new(crate::services::Services::new(2)),
 			crate::security::Security::local(crate::security::Trust::Trusted),
+			None,
 		);
 		assert!(matches!(outcome, ExportOutcome::PngReady { .. }));
 		let mut app = App::new(
@@ -1089,6 +1104,7 @@ mod tests {
 				crate::security::Security::local(
 					crate::security::Trust::Trusted,
 				),
+				None,
 			);
 			assert!(matches!(result, ExportOutcome::Written { .. }));
 			let bytes = std::fs::read(&output).unwrap();
@@ -1144,6 +1160,7 @@ mod security_tests {
 				true,
 				Arc::new(crate::services::Services::new(4)),
 				security.clone(),
+				None,
 			);
 			if expected_images == 0 {
 				assert!(
@@ -1186,6 +1203,56 @@ mod security_tests {
 			assert_eq!(snapshot.images.decoded().len(), expected_images);
 		}
 	}
+	#[test]
+	fn exports_resolve_vault_images_from_the_open_folder() {
+		let dir = tempfile::tempdir().unwrap();
+		let root = std::fs::canonicalize(dir.path()).unwrap();
+		std::fs::create_dir_all(root.join("assets")).unwrap();
+		std::fs::create_dir_all(root.join("notes")).unwrap();
+		image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]))
+			.save(root.join("assets/picture.png"))
+			.unwrap();
+		let source = root.join("notes/note.md");
+		std::fs::write(&source, "![[assets/picture.png]]").unwrap();
+		let settings = ExportSettings {
+			format: ExportFormat::Pdf,
+			..Default::default()
+		};
+		let outcome = run(
+			&source,
+			&root.join("out.pdf"),
+			&settings,
+			crate::settings::ReaderSettings::default().effective_dialect(),
+			Default::default(),
+			crate::test_support::fonts(),
+			CjkType::Sc,
+			&[],
+			true,
+			Arc::new(crate::services::Services::new(4)),
+			Security::local(Trust::Trusted),
+			Some(root.clone()),
+		);
+		assert!(matches!(outcome, ExportOutcome::Written { .. }));
+		let snapshot = export::png_snapshot_with_services_and_workspace(
+			&source,
+			crate::layout::LayoutOptions {
+				ofm: true,
+				..crate::test_support::options()
+			},
+			true,
+			Arc::new(crate::services::Services::new(4)),
+			Security::local(Trust::Trusted),
+			Some(root),
+		)
+		.unwrap();
+		assert!(
+			snapshot.images.entries["vault:assets/picture.png"]
+				.error
+				.is_none()
+		);
+		assert_eq!(snapshot.images.decoded().len(), 1);
+	}
+
 	#[test]
 	fn live_exports_keep_the_initiating_origin_when_tabs_change() {
 		#[derive(Clone)]

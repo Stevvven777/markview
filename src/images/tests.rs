@@ -133,6 +133,78 @@ fn sources_cover_local_network_and_inline_images() {
 }
 
 #[test]
+fn obsidian_image_embeds_resolve_from_the_open_folder() {
+	let dir = tempfile::tempdir().unwrap();
+	let root = fs::canonicalize(dir.path()).unwrap();
+	fs::create_dir_all(root.join("assets")).unwrap();
+	fs::create_dir_all(root.join("notes")).unwrap();
+	let bytes = png(3, 2, [1, 2, 3, 255]);
+	fs::write(root.join("assets/picture.png"), &bytes).unwrap();
+	let doc = markview_commonmark::parse_with(
+		"![[assets/picture.png]]\n",
+		markview_commonmark::Dialect {
+			ofm: true,
+			..Default::default()
+		},
+	);
+	let mut images = images(true);
+	images.set_workspace(Some(root.clone()));
+	images.prepare(
+		&doc,
+		&root.join("notes/note.md"),
+		1,
+		false,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	images.wait();
+	let key = "vault:assets/picture.png";
+	let entry = &images.snapshot.entries[key];
+	assert!(entry.error.is_none(), "{entry:?}");
+	assert_eq!(images.snapshot.decoded()[key].width, 3);
+}
+
+#[test]
+fn document_and_vault_images_with_the_same_source_stay_separate() {
+	let dir = tempfile::tempdir().unwrap();
+	let root = fs::canonicalize(dir.path()).unwrap();
+	fs::create_dir_all(root.join("notes")).unwrap();
+	fs::write(root.join("picture.png"), png(3, 2, [1, 2, 3, 255])).unwrap();
+	fs::write(root.join("notes/picture.png"), png(5, 4, [4, 3, 2, 255]))
+		.unwrap();
+	let doc = markview_commonmark::parse_with(
+		"![](picture.png)\n\n![[picture.png]]\n",
+		markview_commonmark::Dialect {
+			ofm: true,
+			..Default::default()
+		},
+	);
+	let mut specs = Vec::new();
+	for block in &doc.blocks {
+		block.images(&mut specs);
+	}
+	let keys: Vec<_> = specs
+		.iter()
+		.map(|spec| spec.resource_key().into_owned())
+		.collect();
+	assert_eq!(keys, ["picture.png", "vault:picture.png"]);
+	let mut images = images(true);
+	images.set_workspace(Some(root.clone()));
+	images.prepare(
+		&doc,
+		&root.join("notes/note.md"),
+		1,
+		false,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	images.wait();
+	let decoded = images.snapshot.decoded();
+	assert_eq!(decoded["picture.png"].width, 5);
+	assert_eq!(decoded["vault:picture.png"].width, 3);
+}
+
+#[test]
 fn data_uris_decode_base64_and_percent_escapes() {
 	let bytes = png(4, 2, [1, 2, 3, 255]);
 	let encoded = data_uri("image/png", &bytes);

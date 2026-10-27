@@ -604,6 +604,7 @@ fn classify(fragment: &str, ofm: bool) -> Tag {
 			title: attribute(attrs, "title").unwrap_or_default(),
 			width: dimension("width"),
 			height: dimension("height"),
+			base: crate::image::ImageBase::Document,
 		});
 	}
 	if let Some(patch) = patch(&name, attrs, ofm) {
@@ -872,6 +873,7 @@ pub(crate) fn svg(source: &str) -> Option<(usize, crate::image::ImageSpec)> {
 			alt: String::new(),
 			title: String::new(),
 			width: attribute(attrs, "width").and_then(|v| v.parse().ok()),
+			base: crate::image::ImageBase::Document,
 			height: attribute(attrs, "height").and_then(|v| v.parse().ok()),
 		},
 	))

@@ -27,6 +27,7 @@ at the same level, without `[brackets]`.
 - Configure VS Code reading typography and inherit reading/export templates from parent directory settings, with live preview and matching font management.
 - Select GFM or Obsidian syntax, hard breaks and highlight marks for CLI buffer exports.
 - Expose GFM and Obsidian dialect options in MVaaC, including live reparsing and independent hard breaks.
+- Read and export Obsidian wikilink image embeds such as `![[file.png]]` from the open folder root, without using the path as a caption.
 
 ### Fixed
 

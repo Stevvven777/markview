@@ -93,11 +93,13 @@ fn external_key(
 		specs
 			.iter()
 			.map(|s| {
+				let key = s.resource_key();
 				(
+					s.base,
 					&s.src,
 					images
 						.entries
-						.get(&s.src)
+						.get(key.as_ref())
 						.map(|i| (i.version, i.size, &i.error)),
 				)
 			})

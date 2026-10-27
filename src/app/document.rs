@@ -82,6 +82,7 @@ impl<P: super::SendEvent> App<P> {
 		self.update_media();
 		if let Some(mut request) = self.readers.request(self.options(), follow)
 		{
+			request.workspace = self.folder.root().cloned();
 			if self.readers.session.accepted_revision != request.content_version
 			{
 				self.readers.session.source_stamp =

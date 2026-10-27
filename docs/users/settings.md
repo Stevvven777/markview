@@ -94,7 +94,8 @@ Settings store this preset as `markdown-flavor = "obsidian"`; the former
 
 | Supported | Not supported |
 | --- | --- |
-| Callouts `> [!type] Title` with the built-in types and aliases, nesting, and foldable `+`/`-` bodies | Obsidian embeds `![[note]]` and full vault semantics |
+| Callouts `> [!type] Title` with the built-in types and aliases, nesting, and foldable `+`/`-` bodies | Obsidian note transclusion `![[note]]` and full vault semantics |
+| Wikilink image embeds `![[file.png]]` from the open folder root, with a pipe label read as alt text | Obsidian image width syntax and other non-image embeds |
 | `==highlight==` marks (forced on) | `#tags` and block references `^id` |
 | Inline HTML `sub` and `mark` styling, and `u`, `ins`, `small` read as plain text, besides the usual `sup`, `b`, `i`, `code`, … | Other OFM-only syntax |
 | Hidden `%%inline comments%%` and line-start `%%` block comments | Callout title formatting (titles stay plain text) |

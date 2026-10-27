@@ -276,6 +276,7 @@ impl Tabs {
 			version: self.session.version,
 			content_version: self.session.content_version,
 			path,
+			workspace: None,
 			options,
 			requested: Instant::now(),
 			coverage: f32::INFINITY,

@@ -65,6 +65,8 @@ pub(crate) struct PdfRequest {
 	pub(crate) metadata: MetadataOverrides,
 	pub(crate) links: bool,
 	pub(crate) offline: bool,
+	/// The open folder root, used by Obsidian vault image embeds.
+	pub(crate) workspace: Option<PathBuf>,
 }
 
 /// A single PNG never allocates more pixels than this. At four bytes each the
@@ -107,6 +109,7 @@ pub(crate) fn png_snapshot(
 		crate::security::Security::local(crate::security::Trust::Trusted),
 	)
 }
+#[cfg(test)]
 pub(crate) fn png_snapshot_with_services(
 	path: &Path,
 	options: LayoutOptions,
@@ -114,8 +117,23 @@ pub(crate) fn png_snapshot_with_services(
 	services: std::sync::Arc<crate::services::Services>,
 	security: crate::security::Security,
 ) -> Result<LayoutSnapshot> {
+	png_snapshot_with_services_and_workspace(
+		path, options, offline, services, security, None,
+	)
+}
+
+pub(crate) fn png_snapshot_with_services_and_workspace(
+	path: &Path,
+	options: LayoutOptions,
+	offline: bool,
+	services: std::sync::Arc<crate::services::Services>,
+	security: crate::security::Security,
+	workspace: Option<PathBuf>,
+) -> Result<LayoutSnapshot> {
 	let text = read_document(path)?;
-	png_snapshot_text(path, &text, options, offline, services, security)
+	png_snapshot_text_with_workspace(
+		path, &text, options, offline, services, security, workspace,
+	)
 }
 
 pub(crate) fn png_snapshot_text(
@@ -125,6 +143,20 @@ pub(crate) fn png_snapshot_text(
 	offline: bool,
 	services: Arc<crate::services::Services>,
 	security: crate::security::Security,
+) -> Result<LayoutSnapshot> {
+	png_snapshot_text_with_workspace(
+		path, text, options, offline, services, security, None,
+	)
+}
+
+pub(crate) fn png_snapshot_text_with_workspace(
+	path: &Path,
+	text: &str,
+	options: LayoutOptions,
+	offline: bool,
+	services: Arc<crate::services::Services>,
+	security: crate::security::Security,
+	workspace: Option<PathBuf>,
 ) -> Result<LayoutSnapshot> {
 	let mut engine = LayoutEngine::with_executor(
 		services.handle.cpu.clone(),
@@ -141,6 +173,7 @@ pub(crate) fn png_snapshot_text(
 	);
 	let mut images = Images::shared(offline, options.fonts.clone(), &services);
 	images.set_security(security.for_content(&document.source));
+	images.set_workspace(workspace);
 	images.prepare(
 		&document,
 		path,

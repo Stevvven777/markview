@@ -165,6 +165,7 @@ fn caption_sources_and_image_fields_are_strict_and_cascade() {
 		title: "title".into(),
 		width: None,
 		height: None,
+		base: markview_layout::image::ImageBase::Document,
 	};
 	assert_eq!(CaptionSource::TitleOrAlt.text(&spec), Some("title"));
 	spec.title = "  ".into();

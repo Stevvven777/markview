@@ -15,9 +15,10 @@ impl BlockContext<'_> {
 		size: f32,
 	) -> (f32, f32) {
 		let inset = self.image_insets(size, available);
+		let key = image.resource_key();
 		let (w, h) = crate::image::image_size(
 			image,
-			self.images.entries.get(&image.src),
+			self.images.entries.get(key.as_ref()),
 			(available - inset[1] - inset[3]).max(1.),
 		);
 		(w + inset[1] + inset[3], h + inset[0] + inset[2])
@@ -27,7 +28,8 @@ impl BlockContext<'_> {
 		&self,
 		image: &crate::image::ImageSpec,
 	) -> Option<String> {
-		let message = match self.images.entries.get(&image.src) {
+		let key = image.resource_key();
+		let message = match self.images.entries.get(key.as_ref()) {
 			Some(i) if i.size.is_some() && i.error.is_none() => return None,
 			Some(i) if i.error.is_some() => i.error.as_deref().unwrap(),
 			_ => "Loading image…",
@@ -65,7 +67,8 @@ impl BlockContext<'_> {
 		out: &mut BlockLayout,
 	) -> Vec<TextCluster> {
 		let mut text_clusters = Vec::new();
-		let info = self.images.entries.get(&image.src);
+		let key = image.resource_key();
+		let info = self.images.entries.get(key.as_ref());
 		let inset = self.image_insets(size, available);
 		let content = Rect {
 			x: rect.x + inset[3],
@@ -74,7 +77,7 @@ impl BlockContext<'_> {
 			h: (rect.h - inset[0] - inset[2]).max(1.),
 		};
 		out.draws.push(Draw::Image {
-			src: image.src.clone(),
+			src: key.into_owned(),
 			version: info.map_or(0, |i| i.version),
 			rect: content,
 			title: image.title.clone(),

@@ -1,6 +1,7 @@
 //! Source resolution and bounded reads; independent of decoding and scheduling.
 use anyhow::{Context, Result, bail};
 use base64::Engine;
+use markview_layout::image::ImageBase;
 use std::{
 	fs,
 	io::Read,
@@ -27,9 +28,20 @@ pub(super) fn source(src: &str, document: &Path) -> Result<Source> {
 	)
 }
 
+#[cfg(test)]
 pub(super) fn resolve(
 	src: &str,
 	document: &Path,
+	security: &crate::security::Security,
+) -> Result<Source> {
+	resolve_in(src, ImageBase::Document, document, None, security)
+}
+
+pub(super) fn resolve_in(
+	src: &str,
+	base: ImageBase,
+	document: &Path,
+	workspace: Option<&Path>,
 	security: &crate::security::Security,
 ) -> Result<Source> {
 	if src.is_empty() {
@@ -66,13 +78,19 @@ pub(super) fn resolve(
 		.decode_utf8()
 		.context("Invalid path encoding")?;
 	let path = Path::new(decoded.as_ref());
-	// Only paths relative to the document are reachable. `..` is allowed: it
+	// Only paths relative to a local base are reachable. `..` is allowed: it
 	// names another relative location, and the reader cannot exfiltrate what
 	// it reads. See `docs/developers/security.md` for the accepted residual.
 	if rooted(path) {
 		bail!("Absolute image paths are not allowed");
 	}
-	let path = document.parent().unwrap_or(Path::new(".")).join(path);
+	let base = match base {
+		ImageBase::Vault => workspace
+			.or_else(|| document.parent())
+			.unwrap_or(Path::new(".")),
+		ImageBase::Document => document.parent().unwrap_or(Path::new(".")),
+	};
+	let path = base.join(path);
 	let path = fs::canonicalize(&path).unwrap_or(path);
 	security.check_file(&path)?;
 	Ok(Source::File(path))

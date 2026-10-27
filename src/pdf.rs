@@ -160,6 +160,12 @@ impl Exporter {
 			std::sync::Arc::new(|| {}),
 		);
 		engine.validate_stylesheet(&options.stylesheet)?;
+		let mut images = Images::shared_pdf(
+			args.offline,
+			args.options.fonts.clone(),
+			&services,
+		);
+		images.set_workspace(args.workspace.clone());
 		Ok(Self {
 			security: args.security.clone(),
 			path: args.path.clone(),
@@ -169,11 +175,7 @@ impl Exporter {
 			metadata: args.metadata.clone(),
 			links: args.links,
 			engine,
-			images: Images::shared_pdf(
-				args.offline,
-				args.options.fonts.clone(),
-				&services,
-			),
+			images,
 			renderer: Renderer::default(),
 			source: None,
 			dirty: true,

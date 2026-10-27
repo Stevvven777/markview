@@ -184,6 +184,7 @@ fn submit(
 		version,
 		content_version,
 		path: path.to_path_buf(),
+		workspace: None,
 		options: options.clone(),
 		requested,
 		coverage,

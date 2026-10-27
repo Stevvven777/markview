@@ -307,6 +307,7 @@ pub struct Images {
 	recv: mpsc::Receiver<Finished>,
 	generation: u64,
 	document: PathBuf,
+	workspace: Option<PathBuf>,
 	revision: u64,
 	poll_at: Instant,
 	/// Jobs that have reported a result, success or failure. A headless wait
@@ -418,6 +419,7 @@ impl Images {
 			recv,
 			generation: 0,
 			document: PathBuf::new(),
+			workspace: None,
 			revision: 0,
 			poll_at: Instant::now(),
 			completed: 0,
@@ -434,6 +436,11 @@ impl Images {
 			self.release();
 			self.security = security;
 		}
+	}
+
+	/// The open folder root through which Obsidian vault embeds resolve.
+	pub(crate) fn set_workspace(&mut self, workspace: Option<PathBuf>) {
+		self.workspace = workspace;
 	}
 
 	/// `load_all` comes from the tab that asked for this layout, so lifting the
@@ -583,7 +590,14 @@ impl Images {
 		// order, so the same document always defers the same images.
 		let mut remote_seen = 0usize;
 		for spec in specs {
-			match source::resolve(&spec.src, path, &self.security) {
+			let key = spec.resource_key().into_owned();
+			match source::resolve_in(
+				&spec.src,
+				spec.base,
+				path,
+				self.workspace.as_deref(),
+				&self.security,
+			) {
 				Ok(source) => {
 					let first = wanted.insert(source.clone());
 					let remote = matches!(source, Source::Http(_));
@@ -619,8 +633,8 @@ impl Images {
 							theme,
 						},
 					);
-					if !e.aliases.contains(&spec.src) {
-						e.aliases.push(spec.src.clone());
+					if !e.aliases.contains(&key) {
+						e.aliases.push(key.clone());
 					}
 					if reload && e.info.error.is_some() {
 						e.info.error = None;
@@ -635,19 +649,16 @@ impl Images {
 						e.info.error = Some(REMOTE_LIMIT.into());
 						e.info.size = None;
 					}
-					self.snapshot
-						.entries
-						.insert(spec.src.clone(), e.info.clone());
+					self.snapshot.entries.insert(key, e.info.clone());
 				}
 				Err(e) => {
 					if let Some(required) =
 						e.downcast_ref::<crate::security::PermissionRequired>()
 					{
-						self.blocked
-							.insert(spec.src.clone(), required.0.clone());
+						self.blocked.insert(key.clone(), required.0.clone());
 					}
 					self.snapshot.entries.insert(
-						spec.src.clone(),
+						key,
 						ImageInfo {
 							error: Some(e.to_string()),
 							..Default::default()

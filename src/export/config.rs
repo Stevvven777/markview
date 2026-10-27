@@ -21,6 +21,7 @@ pub(crate) struct Config {
 	pub(crate) options: LayoutOptions,
 	pub(crate) page: PageOverrides,
 	pub(crate) scale: f32,
+	pub(crate) workspace: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -37,6 +38,7 @@ impl Default for Config {
 			},
 			page: PageOverrides::default(),
 			scale: 2.0,
+			workspace: None,
 		}
 	}
 }
@@ -45,6 +47,7 @@ pub(crate) struct Prepared {
 	pub(crate) options: LayoutOptions,
 	pub(crate) geometry: PageGeometry,
 	pub(crate) scale: f32,
+	pub(crate) workspace: Option<PathBuf>,
 }
 
 impl Config {
@@ -88,6 +91,11 @@ impl Config {
 		self
 	}
 
+	pub(crate) fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
+		self.workspace = workspace;
+		self
+	}
+
 	pub(crate) fn prepare(self) -> Result<Prepared> {
 		validate_font_size(self.options.font_size)?;
 		validate_indent(self.options.paragraph_indent)?;
@@ -107,6 +115,7 @@ impl Config {
 		let fonts =
 			crate::fonts::export_config(self.options.fonts, &self.font_files)?;
 		Ok(Prepared {
+			workspace: self.workspace,
 			options: LayoutOptions {
 				width: geometry.text_px().0,
 				stylesheet,
@@ -140,6 +149,7 @@ impl Prepared {
 			metadata: Default::default(),
 			links: true,
 			offline,
+			workspace: self.workspace,
 		}
 	}
 }

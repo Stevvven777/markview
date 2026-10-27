@@ -1,5 +1,8 @@
 use markview_commonmark::{Dialect, parse_with};
-use markview_document::{Block, BlockKind, Callout, CalloutKind, plain_text};
+use markview_document::{
+	Block, BlockKind, Callout, CalloutKind, InlineKind, image::ImageBase,
+	plain_text,
+};
 
 fn ofm() -> Dialect {
 	Dialect {
@@ -133,4 +136,61 @@ fn deep_quote_inlines_do_not_recurse_while_recognizing_callouts() {
 			assert_eq!(paragraph(&blocks[0]), "Body.");
 		}
 	}
+}
+
+#[test]
+fn image_embeds_read_as_images_only_in_ofm() {
+	let source = "![[images/Photo 1.png|Alt text]] ![[file.PNG]] ![[note]] ![[scan.avif]]\n";
+	let doc = parse_with(source, ofm());
+	let BlockKind::Paragraph(text) = &doc.blocks[0].kind else {
+		panic!("expected paragraph");
+	};
+	let images: Vec<_> = text
+		.iter()
+		.filter_map(|inline| match &inline.kind {
+			InlineKind::Image(image) => Some(image),
+			_ => None,
+		})
+		.collect();
+	assert_eq!(images.len(), 2);
+	assert_eq!(images[0].src, "images/Photo 1.png");
+	assert_eq!(images[0].alt, "Alt text");
+	assert_eq!(images[0].base, ImageBase::Vault);
+	assert_eq!(images[1].src, "file.PNG");
+	assert_eq!(images[1].alt, "");
+	assert_eq!(images[1].base, ImageBase::Vault);
+	assert_eq!(plain_text(text), "Alt text  note scan.avif");
+	let links: Vec<_> = text
+		.iter()
+		.filter_map(|inline| inline.style.link_url())
+		.collect();
+	assert_eq!(links, ["note", "scan.avif"]);
+
+	let doc = parse_with(source, Dialect::default());
+	let BlockKind::Paragraph(text) = &doc.blocks[0].kind else {
+		panic!("expected paragraph");
+	};
+	assert!(
+		text.iter()
+			.all(|inline| !matches!(inline.kind, InlineKind::Image(_)))
+	);
+}
+
+#[test]
+fn table_escaped_pipe_still_supplies_an_embed_label() {
+	let source = "| Image |\n| --- |\n| ![[a.png\\|Caption]] |\n";
+	let doc = parse_with(source, ofm());
+	let BlockKind::Table { rows, .. } = &doc.blocks[0].kind else {
+		panic!("expected table: {:?}", doc.blocks);
+	};
+	let image = rows
+		.iter()
+		.flatten()
+		.flat_map(|cell| cell.iter())
+		.find_map(|inline| match &inline.kind {
+			InlineKind::Image(image) => Some(image),
+			_ => None,
+		})
+		.expect("expected image");
+	assert_eq!(image.alt, "Caption");
 }

@@ -33,6 +33,8 @@ pub struct Request {
 	pub version: u64,
 	pub content_version: u64,
 	pub path: PathBuf,
+	/// The open folder root, used by Obsidian vault image embeds.
+	pub workspace: Option<PathBuf>,
 	pub options: LayoutOptions,
 	pub requested: Instant,
 	/// Initial viewport bottom plus prefetch, in document coordinates.
@@ -221,6 +223,7 @@ impl Worker {
 					};
 					let mut request = request;
 					last = Some(request.clone());
+					images.set_workspace(request.workspace.clone());
 					engine.set_parallel_start(request.coverage);
 					let rendered = rendered.clone();
 					let version = request.version;
@@ -671,6 +674,7 @@ mod tests {
 			version: 1,
 			content_version: 1,
 			path,
+			workspace: None,
 			options: crate::test_support::options(),
 			requested: Instant::now(),
 			coverage: 600.0,
@@ -734,6 +738,7 @@ mod tests {
 			version: 1,
 			content_version: 1,
 			path: path.clone(),
+			workspace: None,
 			options: crate::test_support::options(),
 			requested: Instant::now(),
 			coverage: 600.,
@@ -801,6 +806,7 @@ mod tests {
 			version: 1,
 			content_version: 1,
 			path,
+			workspace: None,
 			options: crate::test_support::options(),
 			requested: Instant::now(),
 			coverage: 600.,
@@ -846,6 +852,7 @@ mod tests {
 			version,
 			content_version: 1,
 			path: path.clone(),
+			workspace: None,
 			options: LayoutOptions {
 				hard_breaks,
 				..crate::test_support::options()
@@ -905,6 +912,7 @@ mod tests {
 			version,
 			content_version: 1,
 			path: path.clone(),
+			workspace: None,
 			options: LayoutOptions {
 				highlight_marks,
 				..crate::test_support::options()
@@ -962,6 +970,7 @@ mod tests {
 				version,
 				content_version: 1,
 				path: path.clone(),
+				workspace: None,
 				options: LayoutOptions {
 					width: 250.0 + version as f32,
 					fonts: crate::test_support::fonts(),
@@ -1004,6 +1013,7 @@ mod reflow_tests {
 				version,
 				content_version,
 				path: path.clone(),
+				workspace: None,
 				options: crate::test_support::options(),
 				requested: Instant::now(),
 				coverage: f32::INFINITY,
@@ -1066,6 +1076,7 @@ mod reflow_tests {
 			version,
 			content_version: 1,
 			path: path.clone(),
+			workspace: None,
 			options: crate::test_support::options(),
 			requested: Instant::now(),
 			coverage: f32::INFINITY,
@@ -1123,6 +1134,7 @@ mod reflow_tests {
 				version,
 				content_version: 1,
 				path: path.clone(),
+				workspace: None,
 				options: crate::test_support::options(),
 				requested: Instant::now(),
 				coverage: f32::INFINITY,

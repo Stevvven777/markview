@@ -4,7 +4,9 @@ use std::{
 	sync::{Arc, Mutex},
 };
 
-pub use markview_document::image::{ImageSpec, MERMAID_SCHEME, mermaid_source};
+pub use markview_document::image::{
+	ImageBase, ImageSpec, MERMAID_SCHEME, mermaid_source,
+};
 
 /// Decoded pixels in the one layout the renderer consumes.
 #[derive(Clone, Debug)]

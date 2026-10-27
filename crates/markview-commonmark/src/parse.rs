@@ -9,7 +9,8 @@ use crate::{
 use comrak::{
 	Arena, Options,
 	nodes::{
-		AstNode, CalloutFold, ListType, NodeCallout, NodeValue, TableAlignment,
+		AstNode, CalloutFold, ListType, NodeCallout, NodeValue, NodeWikiLink,
+		TableAlignment,
 	},
 	parse_document,
 };
@@ -349,23 +350,34 @@ impl Reader<'_> {
 					None
 				}
 				NodeValue::WikiLink(l) => {
-					let url = l.url.split_once('#').map_or_else(
-						|| l.url.replace('%', "%25"),
-						|(path, heading)| {
-							let path = path.replace('%', "%25");
-							format!(
-								"{path}#{}",
-								crate::heading_slug(
-									heading
-										.rsplit('#')
-										.next()
-										.unwrap_or(heading)
-								)
+					if self.dialect.ofm && l.embed && wikilink_image(l) {
+						let in_table = child.ancestors().any(|parent| {
+							matches!(
+								parent.data.borrow().value,
+								NodeValue::TableCell
 							)
-						},
-					);
-					child_style.link = Some(Link::new(url, source.start));
-					None
+						});
+						let alt = if wikilink_has_label(
+							&self.source[source.clone()],
+							in_table,
+						) {
+							self.alt_text(child, depth + 1, from)
+						} else {
+							String::new()
+						};
+						Some(InlineKind::Image(crate::image::ImageSpec {
+							src: wikilink_asset_url(l),
+							alt,
+							title: String::new(),
+							width: None,
+							height: None,
+							base: crate::image::ImageBase::Vault,
+						}))
+					} else {
+						let url = wikilink_url(l);
+						child_style.link = Some(Link::new(url, source.start));
+						None
+					}
 				}
 				NodeValue::Highlight => {
 					child_style.mark = true;
@@ -386,24 +398,13 @@ impl Reader<'_> {
 					None
 				}
 				NodeValue::Image(link) => {
-					let mut alt = Vec::new();
-					// Alt text contains no document elements or opaque scopes.
-					let mut alt_opaque_until = usize::MAX;
-					self.inlines(
-						child,
-						&TextStyle::default(),
-						&mut alt,
-						depth + 1,
-						from,
-						&mut alt_opaque_until,
-					);
-					let alt = plain_text(&alt);
 					Some(InlineKind::Image(crate::image::ImageSpec {
 						src: link.url.clone(),
-						alt,
+						alt: self.alt_text(child, depth + 1, from),
 						title: link.title.clone(),
 						width: None,
 						height: None,
+						base: crate::image::ImageBase::Document,
 					}))
 				}
 				_ => None,
@@ -445,6 +446,26 @@ impl Reader<'_> {
 		{
 			text.pop();
 		}
+	}
+
+	/// Alt text contains no document elements or opaque scopes.
+	fn alt_text<'a>(
+		&self,
+		node: &'a AstNode<'a>,
+		depth: usize,
+		from: usize,
+	) -> String {
+		let mut alt = Vec::new();
+		let mut opaque_until = usize::MAX;
+		self.inlines(
+			node,
+			&TextStyle::default(),
+			&mut alt,
+			depth,
+			from,
+			&mut opaque_until,
+		);
+		plain_text(&alt)
 	}
 
 	/// Whether a leading space after a hidden comment collapses: the run
@@ -1588,6 +1609,64 @@ fn markdown_options(dialect: Dialect) -> Options<'static> {
 	options
 }
 
+/// Image formats an OFM `![[...]]` embed reads as a picture.
+const WIKILINK_IMAGE_EXTENSIONS: &[&str] =
+	&["bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"];
+
+/// The Markview URL of an Obsidian wikilink or embed; literal `%` is escaped
+/// so the link resolver decodes only the encoding Markview adds itself.
+fn wikilink_url(link: &NodeWikiLink) -> String {
+	link.url.split_once('#').map_or_else(
+		|| link.url.replace('%', "%25"),
+		|(path, heading)| {
+			let path = path.replace('%', "%25");
+			format!(
+				"{path}#{}",
+				crate::heading_slug(
+					heading.rsplit('#').next().unwrap_or(heading)
+				)
+			)
+		},
+	)
+}
+
+/// Whether an embed names a picture, so note transclusion stays a link.
+fn wikilink_image(link: &NodeWikiLink) -> bool {
+	let path = link
+		.url
+		.split_once('#')
+		.map_or(link.url.as_str(), |(p, _)| p);
+	path.rsplit_once('.').is_some_and(|(_, extension)| {
+		WIKILINK_IMAGE_EXTENSIONS
+			.iter()
+			.any(|known| extension.trim().eq_ignore_ascii_case(known))
+	})
+}
+
+/// The vault-relative source of an image embed; a heading is not part of the
+/// file name, and literal `%` stays literal after the path decoder runs.
+fn wikilink_asset_url(link: &NodeWikiLink) -> String {
+	let path = link
+		.url
+		.split_once('#')
+		.map_or(link.url.as_str(), |(p, _)| p);
+	path.replace('%', "%25")
+}
+
+/// Whether the embed spells an explicit label. A table normalizes `\|` into a
+/// plain pipe before the wikilink parser sees it.
+fn wikilink_has_label(source: &str, in_table: bool) -> bool {
+	let mut escaped = false;
+	for ch in source.chars() {
+		match ch {
+			'\\' if !escaped => escaped = true,
+			'|' if !escaped || in_table => return true,
+			_ => escaped = false,
+		}
+	}
+	false
+}
+
 fn apply_patch(patch: &html::Patch, style: &mut TextStyle, origin: usize) {
 	match patch {
 		html::Patch::Bold => style.bold = true,
@@ -1776,6 +1855,7 @@ fn code_block_kind(
 				title: String::new(),
 				width: None,
 				height: None,
+				base: crate::image::ImageBase::Document,
 			}),
 			style: TextStyle::default(),
 			source: source.clone(),

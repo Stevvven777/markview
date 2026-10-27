@@ -106,8 +106,10 @@ vault root. A bare note name is looked up in the current directory, at the root,
 then throughout the tree when its suffix identifies a single note. Use a folder
 path for duplicate names.
 Markview remains read-only: it does not change notes or Obsidian configuration.
-Obsidian block references, note transclusion (`![[Note]]`), wikilink image
-embeds, plugins and graph views are not supported.
+Image embeds such as `![[image.png]]` read as images from the open folder's
+root. A `|` label becomes alt text; without one the image keeps an empty alt
+text and no caption. Obsidian block references, note transclusion
+(`![[Note]]`), plugins and graph views are not supported.
 
 ## Resource permissions
 
