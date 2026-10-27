@@ -11,7 +11,7 @@ use crate::{
 	state::{Published, SelectionLength},
 	stylesheets::Stylesheets,
 };
-use markview_commonmark::parse;
+use markview_commonmark::{Dialect, parse_with};
 use markview_document::Document;
 use markview_layout::{
 	fonts::FontConfig,
@@ -133,7 +133,7 @@ pub async fn create(
 		MediaContext::native(StyleTarget::Ui).with_size(logical.0, logical.1),
 	);
 	options.width = column_width(config.width, logical.0);
-	let document = Arc::new(parse(""));
+	let document = Arc::new(parse_with("", config.dialect()));
 	Ok(Markview {
 		canvas,
 		renderer,
@@ -419,7 +419,7 @@ impl Markview {
 	pub fn set_markdown(&mut self, text: String) -> String {
 		let started = Instant::now();
 		self.reset_document_interaction();
-		self.document = Arc::new(parse(text));
+		self.document = Arc::new(parse_with(text, self.config.dialect()));
 		self.replace_source(self.document.clone());
 		self.images.prepare(&self.document);
 		self.images_dirty = false;
@@ -437,7 +437,7 @@ impl Markview {
 	pub fn begin_update(&mut self, text: String) -> String {
 		let started = Instant::now();
 		self.reset_document_interaction();
-		let document = Arc::new(parse(text));
+		let document = Arc::new(parse_with(text, self.config.dialect()));
 		self.replace_source(document.clone());
 		self.images.prepare(&document);
 		self.images_dirty = false;
@@ -911,6 +911,7 @@ impl Markview {
 		config_json: Option<String>,
 	) -> Result<(), JsValue> {
 		let config = Config::parse(config_json.as_deref())?;
+		let dialect_changed = config.dialect() != self.config.dialect();
 		let details_open = self.options.details_open.clone();
 		let mut options = config.options(self.options.fonts.clone());
 		if self.stylesheets.explicit {
@@ -923,6 +924,10 @@ impl Markview {
 		self.overflow_drag = None;
 		self.config = config;
 		self.apply_column();
+		if dialect_changed {
+			self.set_markdown(self.source_text.to_string());
+			return Ok(());
+		}
 		if let Some(pending) = self.pending.take()
 			&& let Some(parsed) = pending.parsed
 		{
@@ -1449,6 +1454,9 @@ struct Config {
 	greedy: bool,
 	hide_front_matter: bool,
 	front_matter_label: String,
+	markdown_flavor: MarkdownFlavor,
+	hard_breaks: bool,
+	highlight_marks: bool,
 }
 impl Default for Config {
 	fn default() -> Self {
@@ -1462,10 +1470,29 @@ impl Default for Config {
 			greedy: false,
 			hide_front_matter: false,
 			front_matter_label: "Metadata".into(),
+			markdown_flavor: MarkdownFlavor::Gfm,
+			hard_breaks: false,
+			highlight_marks: false,
 		}
 	}
 }
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum MarkdownFlavor {
+	Gfm,
+	Obsidian,
+}
+
 impl Config {
+	fn dialect(&self) -> Dialect {
+		let ofm = self.markdown_flavor == MarkdownFlavor::Obsidian;
+		Dialect {
+			hard_breaks: self.hard_breaks,
+			highlight_marks: self.highlight_marks || ofm,
+			ofm,
+		}
+	}
+
 	fn parse(json: Option<&str>) -> Result<Self, JsValue> {
 		match json.map(str::trim) {
 			None | Some("") => Ok(Self::default()),

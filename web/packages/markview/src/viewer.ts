@@ -178,7 +178,14 @@ export class Viewer {
 	}
 	setOptions(options: MarkviewOptions): void {
 		this.#live();
+		const position = this.#position;
 		this.reader.markview.setOptions(options);
+		if (
+			position &&
+			position.documentVersion !==
+				this.reader.markview.stats().documentVersion
+		)
+			this.scrollToSource(position.offset, position.fraction);
 	}
 	/** Parses and caches MVSS without changing the current appearance. */
 	registerStylesheet(id: string, source: string): void {

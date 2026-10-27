@@ -3,6 +3,12 @@
 
 /** Layout and typography options; every key is optional with a default. */
 export interface MarkviewOptions {
+	/** Markdown preset. Existing readers default to GFM. */
+	markdownFlavor?: "gfm" | "obsidian";
+	/** Read single newlines as hard breaks independently of the preset. (false) */
+	hardBreaks?: boolean;
+	/** Enable `==highlight==`; Obsidian always enables it. (false) */
+	highlightMarks?: boolean;
 	/** Layout column width, logical px. (760) */
 	width?: number;
 	/** Base body size, logical px. (18) */

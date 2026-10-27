@@ -232,7 +232,10 @@ export class Markview {
 	setOptions(options: MarkviewOptions): void {
 		// Relaying out cancels the pending pass, so it supersedes it too.
 		this.#supersede();
-		this.#live().setConfig(serializeOptions(options));
+		const handle = this.#live();
+		const version = parseStats(handle.stats()).documentVersion;
+		handle.setConfig(serializeOptions(options));
+		if (parseStats(handle.stats()).documentVersion !== version) this.#resources.replace(handle);
 	}
 
 	/** Replaces faces through ordinary budgeted reflow. */
