@@ -54,7 +54,8 @@ test("side preview publishes unsaved edits, changes theme, deduplicates panels a
     uri: uri("/tmp/source.md"),
     version: 1,
     languageId: "markdown",
-    getText: () => `# version ${document.version}`,
+    getText: () => document.source ?? `# version ${document.version}`,
+    offsetAt: (position) => position.character,
   };
   const panel = {
     title: "",
@@ -94,7 +95,7 @@ test("side preview publishes unsaved edits, changes theme, deduplicates panels a
       visibleTextEditors: [],
       onDidChangeTextEditorVisibleRanges: () => disposable,
       onDidChangeTextEditorSelection: () => disposable,
-      activeTextEditor: { document },
+      activeTextEditor: { document, selection: { active: { character: 0 } } },
       activeColorTheme: { kind: 1 },
       createWebviewPanel: (_type, _title, column) => {
         assert.equal(column, 2);
@@ -153,10 +154,25 @@ test("side preview publishes unsaved edits, changes theme, deduplicates panels a
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(messages.at(-1).markdown, "# version 1");
   document.version = 2;
-  changed({ document });
+  changed({ document, contentChanges: [] });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(messages.at(-1).markdown, "# version 2");
   assert.equal(lookups, 1);
+  document.source = "# version 2X";
+  document.version = 3;
+  vscode.window.activeTextEditor.selection.active.character =
+    document.source.length;
+  changed({
+    document,
+    contentChanges: [
+      { rangeOffset: document.source.length - 1, rangeLength: 0, text: "X" },
+    ],
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(messages.at(-1).edit.offset, document.source.length);
+  assert.equal(messages.at(-1).edit.version, 3);
+  await receive({ type: "rendered", uri: document.uri.toString(), version: 3 });
+
   vscode.window.activeColorTheme.kind = 2;
   themeChanged();
   await new Promise((resolve) => setImmediate(resolve));

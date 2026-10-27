@@ -1,7 +1,7 @@
 import { Viewer, type FontSet, type ImageRequest } from "@markview/viewer";
 import { FontLoader } from "@markview/fonts";
 import { browserResources, decodeImage } from "@markview/resources";
-import { PreviewScrollSync } from "./scroll-sync-webview";
+import { PreviewScrollSync, type EditPosition } from "./scroll-sync-webview";
 import { PreviewScrollbar } from "./scrollbar";
 declare global {
   interface Window {
@@ -17,6 +17,7 @@ interface DocumentMessage {
   version: number;
   markdown: string;
   maxLine?: number;
+  edit?: EditPosition;
   fonts: string[];
   theme: "light" | "dark";
   base: string;
@@ -69,6 +70,7 @@ async function update(message: DocumentMessage, ticket: number) {
     message.version,
     message.markdown,
     message.maxLine ?? message.markdown.split("\n").length - 1,
+    message.edit,
   );
   if (!viewer) {
     viewer = await Viewer.mount(

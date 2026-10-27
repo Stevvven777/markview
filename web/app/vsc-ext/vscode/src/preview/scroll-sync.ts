@@ -16,6 +16,7 @@ export class EditorScrollSync {
   private expected: number[] = [];
   private initial: boolean;
   private previewHovered = false;
+  private editVersion?: number;
   private viewportLines = 0;
   private lastTop = "";
 
@@ -34,6 +35,7 @@ export class EditorScrollSync {
           !event.visibleRanges.length
         )
           return;
+        if (this.editVersion === document.version) return;
         const position = event.visibleRanges[0].start;
         const key = `${position.line}:${position.character}:${this.maxLine()}`;
         if (key === this.lastTop) return;
@@ -62,6 +64,17 @@ export class EditorScrollSync {
         this.inputTime = Math.max(Date.now(), this.inputTime + 1);
       }),
     );
+  }
+
+  edit(offset: number) {
+    if (vscode.window.activeTextEditor?.document !== this.document) return;
+    this.sync.setDocumentVersion(this.document.version);
+    this.sync.takeControl("source");
+    this.expected = [];
+    this.initial = false;
+    this.inputTime = Math.max(Date.now(), this.inputTime + 1);
+    this.editVersion = this.document.version;
+    return { offset, inputTime: this.inputTime, version: this.editVersion };
   }
 
   private editor() {
@@ -124,6 +137,7 @@ export class EditorScrollSync {
       return true;
     }
     if (message.type === "rendered") {
+      this.editVersion = undefined;
       if (this.initial) {
         this.initial = false;
         this.follow();
@@ -136,6 +150,7 @@ export class EditorScrollSync {
     )
       return true;
     this.inputTime = message.inputTime!;
+    this.editVersion = undefined;
     this.sync.takeControl("preview");
     if (message.type === "preview-control" || !Number.isFinite(message.line))
       return true;
