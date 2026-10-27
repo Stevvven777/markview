@@ -28,6 +28,11 @@ at the same level, without `[brackets]`.
 - Select GFM or Obsidian syntax, hard breaks and highlight marks for CLI buffer exports.
 - Expose GFM and Obsidian dialect options in MVaaC, including live reparsing and independent hard breaks.
 
+### Fixed
+
+- Repaint the folder, outline and tab drawers when the pointer leaves them, so hover paint no longer stays behind.
+- Repaint a custom-width document scrollbar across its whole track, not only the last 16 points.
+
 ## 0.4.1 - 2026-10-23
 
 **Highlights**:

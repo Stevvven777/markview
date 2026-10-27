@@ -360,6 +360,66 @@ fn document_scrollbar_keeps_its_edge_inset_and_width_while_dragging() {
 	assert_eq!((dragged_thumb.x, dragged_thumb.w), (thumb.x, thumb.w));
 }
 
+#[test]
+fn leaving_a_folder_sidebar_repaints_its_hover() {
+	use crate::app::folder::Tree;
+	let dir = tempfile::tempdir().unwrap();
+	for i in 0..40 {
+		std::fs::write(dir.path().join(format!("note-{i:02}.md")), SOURCE)
+			.unwrap();
+	}
+	let (mut app, _) = reader(SOURCE, 1000.0);
+	app.folder.tree = Some(Tree::read(dir.path().into()).unwrap());
+	app.set_folder_open(true);
+	app.advance_drawers(Instant::now() + std::time::Duration::from_secs(1));
+	let (_, thumb) = app.folder_bar().unwrap().bars(false);
+	let hover = (thumb.x + thumb.w / 2.0, thumb.y + thumb.h / 2.0);
+	app.interaction.pointer.move_to(hover);
+	assert!(
+		app.buttons().iter().all(|b| {
+			!b.widget()
+				.hit_rect()
+				.is_some_and(|r| r.contains(hover.0, hover.1))
+		}),
+		"the scrollbar is not a widget"
+	);
+	assert!(app.pointer_over_drawer(hover));
+
+	// Neither end is a button, so only the drawer leaving the pointer can ask
+	// for the frame that drops the scrollbar's hover paint.
+	let reading = (600.0, 400.0);
+	app.interaction.pointer.move_to(reading);
+	assert!(!app.pointer_over_drawer(reading));
+	assert!(app.pointer_move_repaints(hover, false));
+	app.interaction.pointer.move_to(hover);
+	assert!(app.pointer_move_repaints(reading, false));
+}
+
+#[test]
+fn a_wide_document_scrollbar_repaints_from_its_whole_track() {
+	use markview_layout::style::Stylesheet;
+	let (mut app, _) = reader(&"Body line.\n\n".repeat(100), 760.0);
+	app.preferences.values.stylesheet = Arc::new(
+		Stylesheet::parse(
+			"format_version=2\nversion=1\n[[rule]]\nwhen=['scrollbar']\nthickness=30.0",
+		)
+		.unwrap(),
+	);
+	let width = app.dimensions().0;
+	let (track, _) = app.document_scrollbar().unwrap().bars(false);
+	let hover = (track.x + 1.0, track.y + 10.0);
+	let reading = (500.0, 400.0);
+	assert!(
+		hover.0 < width - 16.0,
+		"the track reaches past the old edge"
+	);
+
+	app.interaction.pointer.move_to(reading);
+	assert!(app.pointer_move_repaints(hover, false));
+	app.interaction.pointer.move_to(hover);
+	assert!(app.pointer_move_repaints(reading, false));
+}
+
 /// The footer names the open document while the reader is idle, and the label
 /// carries the whole path, so a press copies it even where the band had to
 /// trim it to fit. A hover hint, a timed status and an empty session each take

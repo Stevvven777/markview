@@ -149,6 +149,22 @@ impl<P: super::SendEvent> App<P> {
 		}
 	}
 
+	/// Whether `point` lies on an open drawer, whose hover paint reads the
+	/// pointer directly instead of through a widget.
+	pub(super) fn pointer_over_drawer(&self, point: (f32, f32)) -> bool {
+		let visible = |sidebar| match sidebar {
+			Sidebar::Folder => self.folder.reveal() > 0.,
+			Sidebar::Outline => self.interaction.overlays.outline.reveal() > 0.,
+			Sidebar::Tabs => self.tabs_reveal() > 0.,
+		};
+		[Sidebar::Folder, Sidebar::Outline, Sidebar::Tabs]
+			.into_iter()
+			.any(|sidebar| {
+				let rect = self.sidebar_rect(sidebar);
+				visible(sidebar) && rect.contains(point.0, point.1)
+			})
+	}
+
 	fn on_sidebar_edge(&self, sidebar: Sidebar) -> bool {
 		let rect = self.sidebar_rect(sidebar);
 		let edge = if sidebar == Sidebar::Outline {

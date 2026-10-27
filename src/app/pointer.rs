@@ -320,17 +320,32 @@ impl<P: super::SendEvent> App<P> {
 			if self.hover_preview(now) {
 				self.redraw();
 			}
-			if self.interaction.panel_open()
-				|| was_button
-				|| self.button_at_cursor()
-				|| old.1 < TOP
-				|| point.1 < TOP
-				|| old.0 >= self.dimensions().0 - 16.
-				|| point.0 >= self.dimensions().0 - 16.
-			{
+			if self.pointer_move_repaints(old, was_button) {
 				self.redraw();
 			}
 		}
+	}
+
+	/// Whether moving from `old` to the current point changes paint that no
+	/// widget owns: button and drawer hover, the toolbar's band and the
+	/// scrollbars beside the reading view.
+	pub(super) fn pointer_move_repaints(
+		&mut self,
+		old: (f32, f32),
+		was_button: bool,
+	) -> bool {
+		let point = self.interaction.pointer.cursor();
+		let scrollbar = self.document_scrollbar().is_some_and(|bar| {
+			bar.hit(old.0, old.1) || bar.hit(point.0, point.1)
+		});
+		self.interaction.panel_open()
+			|| was_button
+			|| self.button_at_cursor()
+			|| old.1 < TOP
+			|| point.1 < TOP
+			|| scrollbar
+			|| self.pointer_over_drawer(old)
+			|| self.pointer_over_drawer(point)
 	}
 
 	pub(super) fn pointer_left(&mut self) {
