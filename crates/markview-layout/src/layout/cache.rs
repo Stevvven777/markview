@@ -153,6 +153,22 @@ pub(super) fn block_link_origins(
 	block: &Block,
 	limits: &crate::limits::Limits,
 ) -> Vec<usize> {
+	fn quote(
+		callout: &Option<crate::document::Callout>,
+		blocks: &[Block],
+		limits: &crate::limits::Limits,
+		out: &mut Vec<usize>,
+	) {
+		// A foldable title is already the disclosed summary.
+		if let Some(callout) = callout
+			&& callout.fold.is_none()
+		{
+			out.extend(crate::document::inline_link_origins(&callout.title));
+		}
+		for block in blocks {
+			walk(block, limits, out);
+		}
+	}
 	fn walk(
 		block: &Block,
 		limits: &crate::limits::Limits,
@@ -167,17 +183,7 @@ pub(super) fn block_link_origins(
 			}
 			BlockKind::Code { .. } | BlockKind::Rule => {}
 			BlockKind::Quote { callout, blocks } => {
-				// A foldable title is already the disclosed summary.
-				if let Some(callout) = callout
-					&& callout.fold.is_none()
-				{
-					out.extend(crate::document::inline_link_origins(
-						&callout.title,
-					));
-				}
-				for block in blocks {
-					walk(block, limits, out);
-				}
+				quote(callout, blocks, limits, out);
 			}
 			BlockKind::Footnote { blocks, .. }
 			| BlockKind::FrontMatter { blocks, .. } => {

@@ -510,17 +510,23 @@ impl Block {
 				}
 			}
 		}
+		fn callout_images<'a>(
+			title: &'a Option<Callout>,
+			out: &mut Vec<&'a crate::image::ImageSpec>,
+		) {
+			// A foldable title is already the disclosed summary.
+			if let Some(callout) = title
+				&& callout.fold.is_none()
+			{
+				rich(&callout.title, out);
+			}
+		}
 		match &self.kind {
 			BlockKind::Paragraph(t) | BlockKind::Heading { text: t, .. } => {
 				rich(t, out)
 			}
 			BlockKind::Quote { callout, blocks } => {
-				// A foldable title is already the disclosed summary.
-				if let Some(callout) = callout
-					&& callout.fold.is_none()
-				{
-					rich(&callout.title, out);
-				}
+				callout_images(callout, out);
 				for b in blocks {
 					b.images(out);
 				}

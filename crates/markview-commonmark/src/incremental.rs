@@ -17,8 +17,8 @@
 //! them. A prefix that ends inside a code block or a list simply shows the part
 //! of it that exists.
 use super::{
-	Anchors, Block, BlockKind, Dialect, Document, RichText, content_identity,
-	plain_text, semantic_key,
+	Anchors, Block, BlockKind, Callout, Dialect, Document, RichText,
+	content_identity, plain_text, semantic_key,
 };
 use std::{ops::Range, sync::Arc};
 
@@ -742,6 +742,19 @@ fn shift_rich(ranges: &mut RichText, delta: isize) {
 	}
 }
 
+fn shift_quote(
+	callout: &mut Option<Callout>,
+	blocks: &mut [Block],
+	delta: isize,
+) {
+	if let Some(callout) = callout {
+		shift_rich(&mut callout.title, delta);
+	}
+	for block in blocks {
+		shift(block, delta);
+	}
+}
+
 fn shift(block: &mut Block, delta: isize) {
 	shift_range(&mut block.source, delta);
 	match &mut block.kind {
@@ -749,12 +762,7 @@ fn shift(block: &mut Block, delta: isize) {
 			shift_rich(text, delta)
 		}
 		BlockKind::Quote { callout, blocks } => {
-			if let Some(callout) = callout {
-				shift_rich(&mut callout.title, delta);
-			}
-			for block in blocks {
-				shift(block, delta);
-			}
+			shift_quote(callout, blocks, delta)
 		}
 		BlockKind::Footnote { blocks, .. } => {
 			for block in blocks {
