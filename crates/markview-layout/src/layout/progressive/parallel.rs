@@ -150,8 +150,11 @@ fn has_math(block: &Block) -> bool {
 		BlockKind::Paragraph(text) | BlockKind::Heading { text, .. } => {
 			rich(text)
 		}
-		BlockKind::Quote { blocks, .. }
-		| BlockKind::Footnote { blocks, .. }
+		BlockKind::Quote { callout, blocks } => {
+			callout.as_ref().is_some_and(|callout| rich(&callout.title))
+				|| blocks.iter().any(has_math)
+		}
+		BlockKind::Footnote { blocks, .. }
 		| BlockKind::FrontMatter { blocks, .. } => blocks.iter().any(has_math),
 		BlockKind::Details {
 			summary, blocks, ..
@@ -234,6 +237,18 @@ mod tests {
 		if let Some(parallel) = &engine.parallel {
 			assert!(parallel.pool.is_some());
 		}
+	}
+
+	#[test]
+	fn callout_title_math_stays_on_the_coordinator() {
+		let document = markview_commonmark::parse_with(
+			"> [!note] $a$\n> Body.\n",
+			markview_commonmark::Dialect {
+				ofm: true,
+				..Default::default()
+			},
+		);
+		assert!(has_math(&document.blocks[0]));
 	}
 
 	#[test]

@@ -748,8 +748,15 @@ fn shift(block: &mut Block, delta: isize) {
 		BlockKind::Paragraph(text) | BlockKind::Heading { text, .. } => {
 			shift_rich(text, delta)
 		}
-		BlockKind::Quote { blocks, .. }
-		| BlockKind::Footnote { blocks, .. } => {
+		BlockKind::Quote { callout, blocks } => {
+			if let Some(callout) = callout {
+				shift_rich(&mut callout.title, delta);
+			}
+			for block in blocks {
+				shift(block, delta);
+			}
+		}
+		BlockKind::Footnote { blocks, .. } => {
 			for block in blocks {
 				shift(block, delta);
 			}

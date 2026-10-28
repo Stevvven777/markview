@@ -2334,7 +2334,7 @@ fn obsidian_callouts_read_every_type_and_alias() {
 		let doc = parse_with(format!("> [!{name}] Title\n> Body\n"), ofm());
 		let (callout, blocks) = callout_of(&doc.blocks[0]);
 		assert_eq!(callout.kind, kind, "{name}");
-		assert_eq!(callout.title, "Title");
+		assert_eq!(plain_text(&callout.title), "Title");
 		assert_eq!(callout.fold, None);
 		let BlockKind::Paragraph(body) = &blocks[0].kind else {
 			panic!("{name}: body {:?}", blocks);
@@ -2347,13 +2347,13 @@ fn obsidian_callouts_read_every_type_and_alias() {
 fn a_callout_without_a_title_uses_its_type_name() {
 	let doc = parse_with("> [!info]\n> Default title.\n", ofm());
 	let (callout, blocks) = callout_of(&doc.blocks[0]);
-	assert_eq!(callout.title, "Info");
+	assert_eq!(plain_text(&callout.title), "Info");
 	assert_eq!(blocks.len(), 1);
 	// A marker alone in its paragraph leaves no empty paragraph behind.
 	let doc = parse_with("> [!faq]\n>\n> Body.\n", ofm());
 	let (callout, blocks) = callout_of(&doc.blocks[0]);
 	assert_eq!(
-		(callout.kind, callout.title.as_str()),
+		(callout.kind, plain_text(&callout.title).as_str()),
 		(CalloutKind::Question, "Faq")
 	);
 	assert_eq!(blocks.len(), 1);
@@ -2395,7 +2395,7 @@ fn callouts_nest_and_keep_inline_markup_in_the_body() {
 		ofm(),
 	);
 	let (outer, blocks) = callout_of(&doc.blocks[0]);
-	assert_eq!(outer.title, "Outer");
+	assert_eq!(plain_text(&outer.title), "Outer");
 	let inner = blocks
 		.iter()
 		.find(|b| matches!(b.kind, BlockKind::Quote { .. }))
@@ -2414,7 +2414,7 @@ fn gfm_keeps_github_alerts_and_plain_quotes() {
 	let doc = parse("> [!NOTE]\n> Alert.\n\n> [!faq] Not an alert\n> Quote.\n");
 	assert!(matches!(
 		&doc.blocks[0].kind,
-		BlockKind::Quote { callout: Some(c), .. } if c.kind == CalloutKind::Note && c.title == "Note"
+		BlockKind::Quote { callout: Some(c), .. } if c.kind == CalloutKind::Note && plain_text(&c.title) == "Note"
 	));
 	let BlockKind::Quote {
 		callout: None,
@@ -2431,7 +2431,7 @@ fn gfm_keeps_github_alerts_and_plain_quotes() {
 	let doc = parse_with("> [!NOTE]\n> Alert.\n", ofm());
 	let (callout, _) = callout_of(&doc.blocks[0]);
 	assert_eq!(
-		(callout.kind, callout.title.as_str()),
+		(callout.kind, plain_text(&callout.title).as_str()),
 		(CalloutKind::Note, "Note")
 	);
 }
@@ -2857,7 +2857,7 @@ fn ofm_comments_inside_details_and_callouts() {
 	// Callout bodies hide comments too.
 	let doc = parse_with("> [!tip] Title\n> Body %%gone%% kept.\n", ofm());
 	let (callout, blocks) = callout_of(&doc.blocks[0]);
-	assert_eq!(callout.title, "Title");
+	assert_eq!(plain_text(&callout.title), "Title");
 	let BlockKind::Paragraph(p) = &blocks[0].kind else {
 		panic!();
 	};
@@ -3309,4 +3309,70 @@ fn ofm_comments_restore_link_occurrences_to_original_bytes() {
 			assert_eq!(origins, expected, "{source}");
 		}
 	}
+}
+
+#[test]
+fn callout_titles_keep_inline_markup_and_math() {
+	let doc = parse_with(
+		"> [!note] $a^2$ **bold** %%hidden%%\n> Body.\n\n> [!note]- $b$\n> Hidden.\n",
+		ofm(),
+	);
+	for block in &doc.blocks {
+		let (callout, _) = callout_of(block);
+		assert!(
+			callout
+				.title
+				.iter()
+				.any(|span| matches!(span.kind, InlineKind::Math { .. }))
+		);
+	}
+	let (callout, _) = callout_of(&doc.blocks[0]);
+	assert!(callout.title.iter().any(|span| span.style.bold
+		&& matches!(&span.kind, InlineKind::Text(text) if text == "bold")));
+	assert_eq!(plain_text(&callout.title), "a^2 bold");
+}
+
+#[test]
+fn callout_title_images_are_discovered_once() {
+	for source in [
+		"> [!note] ![icon](icon.png)\n> Body.\n",
+		"> [!note]- ![icon](icon.png)\n> Hidden.\n",
+	] {
+		let doc = parse_with(source, ofm());
+		let mut images = Vec::new();
+		for block in &doc.blocks {
+			block.images(&mut images);
+		}
+		assert_eq!(images.len(), 1, "{source}");
+		assert_eq!(images[0].src, "icon.png");
+	}
+}
+
+#[test]
+fn callout_title_trimming_keeps_edge_anchors() {
+	for (source, anchor) in [
+		("> [!note] <a id='start'></a>Title\n> Body.\n", "start"),
+		("> [!note] Title<a id='end'></a>\n> Body.\n", "end"),
+	] {
+		let doc = parse_with(source, ofm());
+		let (callout, _) = callout_of(&doc.blocks[0]);
+		assert_eq!(plain_text(&callout.title), "Title");
+		assert!(
+			callout.title.iter().any(
+				|span| matches!(&span.kind, InlineKind::Anchor(a) if a == anchor)
+			),
+			"{source}"
+		);
+	}
+}
+
+#[test]
+fn callout_title_anchors_name_their_enclosing_disclosure() {
+	let doc = parse_with(
+		"<details>\n<summary>S</summary>\n\n> [!note] <a id='target'></a>Title[^f]\n> Body.\n\n[^f]: note\n\n</details>\n",
+		ofm(),
+	);
+	let outer = doc.blocks[0].id;
+	assert_eq!(doc.details_enclosing("target"), [outer]);
+	assert_eq!(doc.details_enclosing("fnref:1"), [outer]);
 }

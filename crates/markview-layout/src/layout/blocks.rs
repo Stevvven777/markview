@@ -799,14 +799,9 @@ impl BlockContext<'_> {
 						out,
 					);
 				}
-				let title = vec![Inline {
-					kind: InlineKind::Text(callout.title.clone()),
-					style: TextStyle::default(),
-					source: block.source.clone(),
-				}];
 				let header = self.callout_header(
 					callout.kind,
-					&title,
+					&callout.title,
 					x,
 					y,
 					width,

@@ -285,6 +285,10 @@ impl Reader<'_> {
 						from,
 					)))
 				}
+				// Comrak reads an indented callout title as a code block.
+				NodeValue::CodeBlock(c) => Some(InlineKind::Text(
+					self.text_after(&c.literal, source.clone(), from),
+				)),
 				NodeValue::HtmlInline(t) => {
 					match html::inline(t, self.dialect.ofm) {
 						html::Inline::Image(image) => {
@@ -773,7 +777,7 @@ impl Reader<'_> {
 			})
 	}
 
-	/// Comrak's callout metadata, plain-text title and body.
+	/// Comrak's callout metadata, inline title and body.
 	fn callout_kind<'a>(
 		&mut self,
 		node: &'a AstNode<'a>,
@@ -784,12 +788,13 @@ impl Reader<'_> {
 		let title = node.children().find(|child| {
 			matches!(child.data.borrow().value, NodeValue::CalloutTitle)
 		});
+		let title = title.map_or_else(
+			|| plain_rich(metadata.default_title(), source.clone()),
+			|title| trim_text(self.rich(title)),
+		);
 		let callout = Callout {
 			kind: CalloutKind::parse(&metadata.callout_type),
-			title: title.map_or_else(
-				|| metadata.default_title(),
-				|title| self.flattened_from(title, 0).trim().to_owned(),
-			),
+			title,
 			fold: match metadata.fold {
 				CalloutFold::None => None,
 				CalloutFold::Expanded => Some(true),
@@ -802,11 +807,7 @@ impl Reader<'_> {
 			// a `<details>` element.
 			let ordinal = self.details_ordinal;
 			self.details_ordinal += 1;
-			let summary = vec![Inline {
-				kind: InlineKind::Text(callout.title.clone()),
-				style: TextStyle::default(),
-				source: source.clone(),
-			}];
+			let summary = callout.title.clone();
 			blocks = vec![details_block_of(
 				self.source,
 				open,
@@ -910,7 +911,10 @@ impl Reader<'_> {
 								CalloutKind::Caution
 							}
 						},
-						title: format!("{:?}", a.alert_type),
+						title: plain_rich(
+							format!("{:?}", a.alert_type),
+							source.clone(),
+						),
 						fold: None,
 					}),
 					blocks: self.blocks(child, depth + 1),
@@ -1035,8 +1039,13 @@ impl Reader<'_> {
 						rich(summary, offsets);
 						walk(blocks, offsets);
 					}
-					BlockKind::Quote { blocks, .. }
-					| BlockKind::Footnote { blocks, .. }
+					BlockKind::Quote { callout, blocks } => {
+						if let Some(callout) = callout {
+							rich(&mut callout.title, offsets);
+						}
+						walk(blocks, offsets);
+					}
+					BlockKind::Footnote { blocks, .. }
 					| BlockKind::FrontMatter { blocks, .. } => walk(blocks, offsets),
 					BlockKind::List { items, .. } => {
 						for item in items {
@@ -1795,6 +1804,52 @@ fn merge_text(text: RichText) -> RichText {
 		previous_text = Some(out.len() - 1);
 	}
 	out
+}
+
+fn plain_rich(text: String, source: Range<usize>) -> RichText {
+	vec![Inline {
+		kind: InlineKind::Text(text),
+		style: TextStyle::default(),
+		source,
+	}]
+}
+
+fn trim_text(mut text: RichText) -> RichText {
+	fn trim_edge(text: &mut RichText, end: bool) {
+		let mut leading = true;
+		text.retain(|inline| {
+			if !leading {
+				return true;
+			}
+			match &inline.kind {
+				InlineKind::Anchor(_) => true,
+				InlineKind::Text(t) if t.trim().is_empty() => false,
+				_ => {
+					leading = false;
+					true
+				}
+			}
+		});
+		if let Some(Inline {
+			kind: InlineKind::Text(t),
+			..
+		}) = text.iter_mut().find(|inline| match &inline.kind {
+			InlineKind::Anchor(_) => false,
+			InlineKind::Text(t) => !t.trim().is_empty(),
+			_ => true,
+		}) {
+			if end {
+				t.truncate(t.trim_end().len());
+			} else {
+				t.drain(..t.len() - t.trim_start().len());
+			}
+		}
+	}
+	trim_edge(&mut text, false);
+	text.reverse();
+	trim_edge(&mut text, true);
+	text.reverse();
+	text
 }
 
 fn append_merged_text(previous: &mut String, text: &str) {

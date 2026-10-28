@@ -266,7 +266,7 @@ impl CalloutKind {
 pub struct Callout {
 	pub kind: CalloutKind,
 	/// The custom title, or the marker's type name when none was given.
-	pub title: String,
+	pub title: RichText,
 	/// `Some(open)` for a foldable `[!x]+` / `[!x]-` callout. Its body is
 	/// then one `<details>`-style disclosure whose summary is the title.
 	pub fold: Option<bool>,
@@ -335,6 +335,10 @@ impl Document {
 			if match &block.kind {
 				BlockKind::Paragraph(t)
 				| BlockKind::Heading { text: t, .. } => rich(t),
+				BlockKind::Quote {
+					callout: Some(callout),
+					..
+				} if callout.fold.is_none() => rich(&callout.title),
 				BlockKind::Details { summary, .. } => rich(summary),
 				BlockKind::Table { rows, .. } => {
 					rows.iter().flatten().any(rich)
@@ -510,8 +514,18 @@ impl Block {
 			BlockKind::Paragraph(t) | BlockKind::Heading { text: t, .. } => {
 				rich(t, out)
 			}
-			BlockKind::Quote { blocks, .. }
-			| BlockKind::Footnote { blocks, .. } => {
+			BlockKind::Quote { callout, blocks } => {
+				// A foldable title is already the disclosed summary.
+				if let Some(callout) = callout
+					&& callout.fold.is_none()
+				{
+					rich(&callout.title, out);
+				}
+				for b in blocks {
+					b.images(out);
+				}
+			}
+			BlockKind::Footnote { blocks, .. } => {
 				for b in blocks {
 					b.images(out);
 				}
@@ -642,12 +656,15 @@ pub fn semantic_key(kind: &BlockKind) -> u64 {
 			children(blocks).hash(&mut hash);
 		}
 		BlockKind::Quote { blocks, .. }
-		| BlockKind::Footnote {
-			label: _, blocks, ..
-		} => {
+		| BlockKind::Footnote { blocks, .. } => {
 			// Hash each container's metadata separately.
-			if let BlockKind::Quote { callout, .. } = kind {
-				callout.hash(&mut hash);
+			if let BlockKind::Quote {
+				callout: Some(callout),
+				..
+			} = kind
+			{
+				(callout.kind, rich(&callout.title), callout.fold)
+					.hash(&mut hash);
 			}
 			if let BlockKind::Footnote { label, column, .. } = kind {
 				(label, column).hash(&mut hash);

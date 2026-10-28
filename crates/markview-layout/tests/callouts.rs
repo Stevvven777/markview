@@ -1,5 +1,5 @@
 use markview_commonmark::{Dialect, parse_with};
-use markview_document::{BlockKind, CalloutKind};
+use markview_document::{BlockKind, CalloutKind, plain_text};
 use markview_layout::{
 	fonts::FontConfig,
 	layout::{LayoutEngine, LayoutOptions},
@@ -96,7 +96,7 @@ fn both_dialects_draw_vector_types_and_keep_icons_out_of_copy() {
 				let selection = snapshot.select_all(1).unwrap();
 				assert_eq!(
 					snapshot.extract_text(selection, 1),
-					format!("{}\n\nBody.", callout.title)
+					format!("{}\n\nBody.", plain_text(&callout.title))
 				);
 			}
 		}
@@ -289,5 +289,31 @@ fn callouts_inherit_quote_line_widths_across_themes_and_mvss_overrides() {
 				assert_eq!(widths[0], widths[1], "{theme}: {rule}");
 			}
 		}
+	}
+}
+
+#[test]
+fn callout_headers_render_math_in_plain_and_folded_titles() {
+	let doc = parse_with(
+		"> [!note] $a^2$\n> Body.\n\n> [!note]- $b$\n> Hidden.\n",
+		Dialect {
+			ofm: true,
+			..Default::default()
+		},
+	);
+	let snapshot = LayoutEngine::new()
+		.layout(&doc, &options(false))
+		.flattened();
+	assert_eq!(snapshot.math_errors, 0);
+	assert_eq!(snapshot.blocks.len(), 2);
+	for block in &snapshot.blocks {
+		assert!(
+			block
+				.layout
+				.draws
+				.iter()
+				.any(|draw| matches!(draw, Draw::Math { .. })),
+			"callout title did not draw math"
+		);
 	}
 }

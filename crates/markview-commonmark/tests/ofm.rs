@@ -38,7 +38,7 @@ fn callouts_use_upstream_headers_and_title_boundaries() {
 	);
 	let (header, blocks) = callout(&doc.blocks[0]);
 	assert_eq!(header.kind, CalloutKind::Note);
-	assert_eq!(header.title, "Custom");
+	assert_eq!(plain_text(&header.title), "Custom");
 	assert_eq!(header.fold, Some(false));
 	let BlockKind::Details { blocks, .. } = &blocks[0].kind else {
 		panic!("expected disclosure");
@@ -52,13 +52,13 @@ fn callouts_use_upstream_headers_and_title_boundaries() {
 	] {
 		let doc = parse_with(source, ofm());
 		let (header, blocks) = callout(&doc.blocks[0]);
-		assert_eq!(header.title, title, "{source}");
+		assert_eq!(plain_text(&header.title), title, "{source}");
 		assert_eq!(paragraph(&blocks[0]), "Body.");
 	}
 
 	let doc = parse_with("> [!note] *Title\n> *body*\n", ofm());
 	let (header, blocks) = callout(&doc.blocks[0]);
-	assert_eq!(header.title, "*Title");
+	assert_eq!(plain_text(&header.title), "*Title");
 	let BlockKind::Paragraph(text) = &blocks[0].kind else {
 		panic!("expected body paragraph");
 	};
@@ -132,7 +132,7 @@ fn deep_quote_inlines_do_not_recurse_while_recognizing_callouts() {
 		assert_eq!(doc.blocks.len(), 1);
 		if prefix.starts_with("[!") {
 			let (header, blocks) = callout(&doc.blocks[0]);
-			assert!(header.title.contains("title"));
+			assert!(plain_text(&header.title).contains("title"));
 			assert_eq!(paragraph(&blocks[0]), "Body.");
 		}
 	}

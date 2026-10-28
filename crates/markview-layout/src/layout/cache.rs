@@ -166,8 +166,20 @@ pub(super) fn block_link_origins(
 				out.extend(crate::document::inline_link_origins(text));
 			}
 			BlockKind::Code { .. } | BlockKind::Rule => {}
-			BlockKind::Quote { blocks, .. }
-			| BlockKind::Footnote { blocks, .. }
+			BlockKind::Quote { callout, blocks } => {
+				// A foldable title is already the disclosed summary.
+				if let Some(callout) = callout
+					&& callout.fold.is_none()
+				{
+					out.extend(crate::document::inline_link_origins(
+						&callout.title,
+					));
+				}
+				for block in blocks {
+					walk(block, limits, out);
+				}
+			}
+			BlockKind::Footnote { blocks, .. }
 			| BlockKind::FrontMatter { blocks, .. } => {
 				for block in blocks {
 					walk(block, limits, out);
@@ -216,6 +228,28 @@ pub(super) fn block_link_origins(
 mod tests {
 	use super::*;
 	use crate::layout::LayoutEngine;
+
+	#[test]
+	fn callout_title_links_are_counted_once() {
+		let limits = crate::limits::Limits::default();
+		for source in [
+			"> [!note] [title](t)\n> [body](b)\n",
+			"> [!note]- [title](t)\n> [body](b)\n",
+		] {
+			let doc = markview_commonmark::parse_with(
+				source,
+				markview_commonmark::Dialect {
+					ofm: true,
+					..Default::default()
+				},
+			);
+			assert_eq!(
+				block_link_origins(&doc.blocks[0], &limits).len(),
+				2,
+				"{source}"
+			);
+		}
+	}
 
 	#[test]
 	fn an_edit_remeasures_one_leaf_and_releases_superseded_geometry() {
