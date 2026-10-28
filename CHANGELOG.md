@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Documentation
+
+- Document Homebrew installation for Apple Silicon Macs through the community tap.
+
 ## 0.4.2 - 2026-10-28
 
 **Highlights**:
