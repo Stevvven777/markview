@@ -47,11 +47,42 @@ impl Tree {
 		let root = fs::canonicalize(root)?;
 		anyhow::ensure!(root.is_dir(), "Not a folder: {}", root.display());
 		let name = markview_platform::folder_name(&root);
+		Self::scan(root, name, cancelled, |path, cancelled| {
+			let mut children = Vec::new();
+			for child in fs::read_dir(path)?.flatten() {
+				anyhow::ensure!(!cancelled(), "Folder scan cancelled");
+				let Ok(kind) = child.file_type() else {
+					continue;
+				};
+				if child.file_name().to_string_lossy().starts_with('.') {
+					continue;
+				}
+				let directory = kind.is_dir();
+				let path = child.path();
+				if directory
+					|| (kind.is_file()
+						&& (markdown(&path) || crate::file::is_image(&path)))
+				{
+					children.push((path, directory));
+				}
+			}
+			Ok(children)
+		})
+	}
+
+	fn scan(
+		root: PathBuf,
+		name: String,
+		cancelled: impl Fn() -> bool,
+		mut list: impl FnMut(
+			&Path,
+			&dyn Fn() -> bool,
+		) -> anyhow::Result<Vec<(PathBuf, bool)>>,
+	) -> anyhow::Result<Self> {
 		let mut entries = Vec::new();
-		let mut pending = vec![(root.clone(), 0)];
-		while let Some((path, depth)) = pending.pop() {
+		let mut pending = vec![(root.clone(), 0, true)];
+		while let Some((path, depth, directory)) = pending.pop() {
 			anyhow::ensure!(!cancelled(), "Folder scan cancelled");
-			let directory = path.is_dir();
 			if path != root {
 				entries.push(Entry {
 					directory,
@@ -63,10 +94,9 @@ impl Tree {
 			if !directory {
 				continue;
 			}
-			let mut children = Vec::new();
-			let directory = match fs::read_dir(&path) {
-				Ok(directory) => directory,
-				Err(error) if path == root => return Err(error.into()),
+			let mut children = match list(&path, &cancelled) {
+				Ok(children) => children,
+				Err(error) if path == root || cancelled() => return Err(error),
 				Err(error) => {
 					log::warn!(
 						"Cannot read folder {}: {error}",
@@ -75,41 +105,16 @@ impl Tree {
 					continue;
 				}
 			};
-			for child in directory.flatten() {
-				anyhow::ensure!(!cancelled(), "Folder scan cancelled");
-				let Ok(kind) = child.file_type() else {
-					continue;
-				};
-				if child.file_name().to_string_lossy().starts_with('.') {
-					continue;
-				}
-				if kind.is_dir()
-					|| (kind.is_file()
-						&& (markdown(&child.path())
-							|| crate::file::is_image(&child.path())))
-				{
-					children.push(Entry {
-						path: child.path(),
-						depth,
-						directory: kind.is_dir(),
-						subtree_end: 0,
-					});
-				}
-			}
-			children.sort_by_key(|e| {
+			children.sort_by_key(|(path, directory)| {
 				(
-					!e.directory,
-					e.path
-						.file_name()
-						.unwrap()
-						.to_string_lossy()
-						.to_lowercase(),
-					e.path.clone(),
+					!*directory,
+					path.file_name().unwrap().to_string_lossy().to_lowercase(),
+					path.clone(),
 				)
 			});
 			// A directory's descendants follow it in the flat tree.
-			for child in children.into_iter().rev() {
-				pending.push((child.path, child.depth + 1));
+			for (path, directory) in children.into_iter().rev() {
+				pending.push((path, depth + 1, directory));
 			}
 		}
 		let mut tree = Self {
@@ -753,6 +758,23 @@ impl<P: SendEvent> App<P> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn folder_entries_keep_non_unicode_names() {
+		let root = PathBuf::from("/folder");
+		let image =
+			root.join(markview_platform::test_support::non_unicode_name());
+		let tree = Tree::scan(
+			root.clone(),
+			"folder".into(),
+			|| false,
+			|_, _| Ok(vec![(image.clone(), false)]),
+		)
+		.unwrap();
+		assert_eq!(tree.entries.len(), 1);
+		assert_eq!(tree.entries[0].path, image);
+		assert!(tree.entries[0].path.to_str().is_none());
+	}
 
 	#[test]
 	fn existing_directories_take_precedence_over_suffixed_notes() {

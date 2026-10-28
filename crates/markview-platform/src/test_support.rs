@@ -55,6 +55,26 @@ pub fn set_mode(path: impl AsRef<Path>, mode: u32) -> io::Result<()> {
 		Ok(())
 	}
 }
+/// A file name that has no Unicode representation.
+pub fn non_unicode_name() -> OsString {
+	#[cfg(unix)]
+	{
+		use std::os::unix::ffi::OsStringExt;
+		OsString::from_vec(b"pic\xff.png".to_vec())
+	}
+	#[cfg(windows)]
+	{
+		use std::os::windows::ffi::OsStringExt;
+		let mut name: Vec<u16> = "pic".encode_utf16().collect();
+		name.push(0xd800);
+		name.extend(".png".encode_utf16());
+		OsString::from_wide(&name)
+	}
+	#[cfg(not(any(unix, windows)))]
+	{
+		OsString::from("pic\u{fffd}.png")
+	}
+}
 pub fn raw_os_string(bytes: Vec<u8>) -> OsString {
 	#[cfg(unix)]
 	{
