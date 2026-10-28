@@ -914,9 +914,11 @@ fn folder_image_entries_open_a_single_image_tab() {
 	assert_eq!(h.app.readers.session.snapshot.images.decoded().len(), 1);
 }
 
-#[cfg(unix)]
 #[test]
 fn folder_image_entries_keep_non_utf8_names() {
+	if !markview_platform::test_support::special_files() {
+		return;
+	}
 	use crate::state::Command;
 	let mut h = Harness::new();
 	h.app.tab_strip.phone = true;

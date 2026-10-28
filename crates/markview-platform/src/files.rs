@@ -36,6 +36,32 @@ pub fn open_nonblocking(path: &Path) -> io::Result<fs::File> {
 	fs::File::open(path)
 }
 
+/// Whether two paths name the same file, including through symlinks and hard
+/// links. Metadata identity keeps this from opening a FIFO or device.
+pub fn same_file(first: &Path, second: &Path) -> bool {
+	if first == second {
+		return true;
+	}
+	#[cfg(unix)]
+	{
+		use std::os::unix::fs::MetadataExt;
+		let (Ok(first), Ok(second)) =
+			(fs::metadata(first), fs::metadata(second))
+		else {
+			return false;
+		};
+		first.dev() == second.dev() && first.ino() == second.ino()
+	}
+	#[cfg(windows)]
+	{
+		::same_file::is_same_file(first, second).unwrap_or(false)
+	}
+	#[cfg(not(any(unix, windows)))]
+	{
+		false
+	}
+}
+
 pub fn private_file_options(options: &mut fs::OpenOptions) {
 	#[cfg(unix)]
 	{

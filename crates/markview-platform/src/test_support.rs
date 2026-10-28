@@ -8,6 +8,9 @@ pub const fn isolated_fontconfig() -> bool {
 pub const fn special_files() -> bool {
 	cfg!(unix)
 }
+pub const fn symlinks() -> bool {
+	cfg!(unix)
+}
 pub const fn desktop_goldens() -> bool {
 	cfg!(target_os = "linux")
 }

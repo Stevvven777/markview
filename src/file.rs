@@ -31,27 +31,7 @@ pub(crate) fn open_regular(path: &Path) -> Result<fs::File> {
 /// Whether two paths name the same file, including through symlinks and hard
 /// links. Metadata identity keeps this from opening a FIFO or device.
 pub(crate) fn same_file(first: &Path, second: &Path) -> bool {
-	if first == second {
-		return true;
-	}
-	#[cfg(unix)]
-	{
-		use std::os::unix::fs::MetadataExt;
-		let (Ok(first), Ok(second)) =
-			(fs::metadata(first), fs::metadata(second))
-		else {
-			return false;
-		};
-		first.dev() == second.dev() && first.ino() == second.ino()
-	}
-	#[cfg(windows)]
-	{
-		same_file::is_same_file(first, second).unwrap_or(false)
-	}
-	#[cfg(not(any(unix, windows)))]
-	{
-		false
-	}
+	markview_platform::same_file(first, second)
 }
 
 /// Image files the reader can show as a one-picture document.

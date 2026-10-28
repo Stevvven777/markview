@@ -591,9 +591,11 @@ mod tests {
 		assert!(fs::read(&output).unwrap().starts_with(b"%PDF"));
 	}
 
-	#[cfg(unix)]
 	#[test]
 	fn a_retargeted_picture_symlink_rebuilds_a_watched_export() {
+		if !markview_platform::test_support::symlinks() {
+			return;
+		}
 		let dir = tempfile::tempdir().unwrap();
 		let first = dir.path().join("first.png");
 		let second = dir.path().join("second.png");
