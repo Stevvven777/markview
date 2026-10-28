@@ -108,7 +108,7 @@ pub(in crate::app) fn list(drawer: Rect, rows: usize, scroll: f32) -> List {
 		drawer,
 		Rect {
 			y: drawer.y + 38.,
-			h: (drawer.h - 38. - super::BOTTOM).max(0.),
+			h: (drawer.h - 38.).max(0.),
 			..drawer
 		},
 		0.,
@@ -462,6 +462,27 @@ mod tests {
 			std::fs::read(fixtures.join("NotoSans-Regular-subset.otf"))
 				.unwrap();
 		assert!(render_font(&mut ui).as_ref() == expected);
+	}
+
+	#[test]
+	fn rows_reach_the_bottom_of_the_drawer() {
+		let drawer = rect(1200., 800., 40., 24., 260.);
+		let desktop = list(drawer, 30, 0.);
+		assert_eq!(
+			desktop.viewport.y + desktop.viewport.h,
+			drawer.y + drawer.h
+		);
+		let phone = super::super::tab_drawer::folder_rect(Rect {
+			x: 0.,
+			y: 0.,
+			w: 320.,
+			h: 760.,
+		});
+		let phone = list(phone, 30, 0.);
+		assert_eq!(
+			phone.viewport.y + phone.viewport.h,
+			phone.panel.y + phone.panel.h
+		);
 	}
 
 	#[test]
