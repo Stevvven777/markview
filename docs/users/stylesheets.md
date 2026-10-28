@@ -231,7 +231,7 @@ A block's own box is the exception. Its background, border, padding, spacing, an
 
 ## Fields
 
-The tab hover card accepts `radius` on `["ui", "preview"]`, in logical pixels. The bundled fallback uses `0.0` (square corners) for all reader themes, including Light, Dark and 8-bit. Its title, detail and outer outline inherit the panel colors; the whole card always uses `body.background`, and its page preview has no border.
+The tab hover card accepts `radius` on `["ui", "preview"]`, in logical pixels. The bundled fallback uses `0.0` (square corners) for all reader themes, including Light, Dark and 8-bit. Its title, detail, divider and outer outline inherit the panel colors; the whole card always uses `body.background`, and its page preview has no border.
 
 ```toml
 [[rule]]

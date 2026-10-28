@@ -36,6 +36,8 @@ pub(super) struct Layout {
 	pub rect: Rect,
 	title: Rect,
 	detail: Rect,
+	/// The rule between the path line and the page body.
+	separator: Option<Rect>,
 	pub(super) body: Option<Rect>,
 }
 
@@ -144,6 +146,12 @@ pub(super) fn layout(card: &Card, anchor: Rect, window: (f32, f32)) -> Layout {
 		w: CONTENT_WIDTH,
 		h: DETAIL_LINE,
 	};
+	let separator = body.map(|_| Rect {
+		x: title.x,
+		y: detail.y + DETAIL_LINE + (BODY_GAP - 1.0) / 2.0,
+		w: CONTENT_WIDTH,
+		h: 1.0,
+	});
 	let body = body.map(|height| Rect {
 		x: title.x,
 		y: detail.y + DETAIL_LINE + BODY_GAP,
@@ -154,6 +162,7 @@ pub(super) fn layout(card: &Card, anchor: Rect, window: (f32, f32)) -> Layout {
 		rect,
 		title,
 		detail,
+		separator,
 		body,
 	}
 }
@@ -197,6 +206,12 @@ pub(super) fn draw(
 		layout.detail.y + DETAIL_SIZE,
 		Paint::Styled(Condition::Panel, C::Muted),
 	));
+	if let Some(separator) = layout.separator {
+		out.push(Draw::Rect(
+			separator,
+			Paint::Styled(Condition::Panel, C::BorderColor),
+		));
+	}
 	out
 }
 
