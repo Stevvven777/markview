@@ -333,8 +333,9 @@ checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
 name = "comrak"
-version = "0.57.0"
-source = "git+https://github.com/kivikakk/comrak?rev=dbf62fe87215ba491e28ca997bbfcc36df5b1ae9#dbf62fe87215ba491e28ca997bbfcc36df5b1ae9"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3adf553d37681e21753316065ad5a763d9513f81c910e250576c572114a8eb06"
 dependencies = [
  "caseless",
  "entities",
@@ -1286,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "markview-commonmark"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "comrak",
  "html-escape",
@@ -1296,7 +1297,7 @@ dependencies = [
 
 [[package]]
 name = "markview-document"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde",
 ]
@@ -1319,11 +1320,11 @@ dependencies = [
 
 [[package]]
 name = "markview-geometry"
-version = "0.4.0"
+version = "0.4.1"
 
 [[package]]
 name = "markview-layout"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "codex",
@@ -1353,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "markview-pdf"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "krilla",
@@ -1371,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "markview-render"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "bytemuck",

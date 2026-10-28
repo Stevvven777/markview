@@ -33,6 +33,7 @@ at the same level, without `[brackets]`.
 ### Changed
 
 - Show the open folder's name in the sidebar header and keep its root expanded when collapsing all folders.
+- Upgrade Comrak to 0.59.0 and drop the temporary Git revision.
 
 ### Fixed
 
