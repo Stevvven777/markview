@@ -21,6 +21,17 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+## 0.4.2 - 2026-10-28
+
+**Highlights**:
+
+- Browse images in the folder tree and open them in picture tabs.
+- Keep your place in the edited Markdown when the preview reflows.
+- Configure VS Code reading typography and inherit templates from parent folders.
+- Choose GFM or Obsidian syntax for CLI exports and MVaaC, including wikilink image embeds.
+- See math and formatting in callout titles instead of literal text.
+- Find the open folder's name in the sidebar header, with its root kept expanded.
+
 ### Added
 
 - List images in the folder tree, open one in a new picture tab, and export that tab as the picture.
