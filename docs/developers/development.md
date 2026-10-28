@@ -13,7 +13,8 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo build --release --locked
 ```
 
-Audit Rust cyclomatic complexity separately:
+Run the Rust cyclomatic complexity audit before every push; CI runs it across
+the platform matrix and fails on an unmarked violation:
 
 ```sh
 cargo run -p xtask --locked -- complexity
