@@ -1488,6 +1488,28 @@ fn touching_a_panel_stops_its_ease() {
 }
 
 #[test]
+fn tab_hits_follow_the_close_slide() {
+	let (mut app, _) = reader(SOURCE, 900.0);
+	let now = Instant::now();
+	for index in 0..3 {
+		app.readers
+			.open(PathBuf::from(format!("/tmp/close-tab-{index}.md")), now);
+	}
+	let before = *app.tab_layout().rects.last().unwrap();
+	let last = app.readers.entries().len() - 2;
+	app.action(Command::Chrome(ChromeCommand::CloseTab(1)));
+	assert!(app.tab_strip.animating());
+	app.tab_strip.freeze_close(Duration::ZERO);
+	let at = (before.x + before.w - 4.0, before.y + before.h / 2.0);
+	app.interaction.pointer.move_to(at);
+	assert_eq!(app.tab_close_at_cursor(), Some(last));
+	app.interaction
+		.pointer
+		.move_to((before.x + before.w / 2.0, at.1));
+	assert_eq!(app.tab_at_cursor(), Some(last));
+}
+
+#[test]
 fn a_scrolling_strip_carries_the_dragged_tab_with_it() {
 	let (mut app, _) = reader(SOURCE, 760.0);
 	let now = Instant::now();

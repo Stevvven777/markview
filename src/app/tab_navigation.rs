@@ -18,7 +18,7 @@ impl<P: super::SendEvent> App<P> {
 			.filter(|i| x >= layout.rects[*i].x + layout.rects[*i].w - 24.0)
 	}
 	pub(super) fn normalize_tab_scroll(&mut self) {
-		let layout = self.tab_layout();
+		let layout = self.resting_tab_layout();
 		self.tab_strip.scroll.set_max(layout.max_scroll);
 		if self.tab_strip.reveal_active {
 			self.tab_strip.reveal_active = false;

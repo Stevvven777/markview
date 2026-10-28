@@ -37,6 +37,8 @@ impl TabBar<'_> {
 
 	pub(super) fn draw_tabs(&mut self) -> Vec<Draw> {
 		let layout = self.layout();
+		let close = self.strip.rects(&layout);
+		let rects = close.as_deref().unwrap_or(&layout.rects);
 		let style = self.style;
 		let old = self.ui.appearance.clone();
 		self.ui.appearance = crate::app::tab_metrics::tab_appearance(self.ui);
@@ -50,7 +52,7 @@ impl TabBar<'_> {
 			indices.push(drag.index);
 		}
 		for index in indices {
-			let mut rect = layout.rects[index];
+			let mut rect = rects[index];
 			if let Some(drag) = dragged.filter(|d| d.index == index) {
 				rect.x = (self.cursor.0 - drag.grab).clamp(
 					layout.viewport.x,

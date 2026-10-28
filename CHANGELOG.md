@@ -32,6 +32,7 @@ at the same level, without `[brackets]`.
 
 ### Changed
 
+- Slide the remaining tabs left when one closes, easing the gaps shut instead of snapping.
 - Show the open folder's name in the sidebar header and keep its root expanded when collapsing all folders.
 - Upgrade Comrak to 0.59.0 and drop the temporary Git revision.
 

@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Duration;
 fn viewport() -> Rect {
 	Rect {
 		x: 10.0,
@@ -98,4 +99,26 @@ fn edge_scroll_reorders_under_a_stationary_pointer_and_stops_at_bounds() {
 	};
 	strip.cancel_drag();
 	assert!(strip.drag.is_none() && strip.scroll_at.is_none());
+}
+
+#[test]
+fn closing_a_tab_slides_the_following_tabs_left_and_settles() {
+	let widths = [(100.0, 60.0); 3];
+	let layout = TabLayout::new(viewport(), &widths, 0.0);
+	let mut strip = TabStrip::default();
+	strip.begin_close(&layout.rects, 1);
+	assert!(strip.animating());
+	let after = [(100.0, 60.0); 2];
+	let settled = TabLayout::new(viewport(), &after, 0.0);
+	strip.freeze_close(Duration::ZERO);
+	let start = strip.rects(&settled).unwrap();
+	assert_eq!(start[0], layout.rects[0]);
+	assert_eq!(start[1], layout.rects[2]);
+	strip.freeze_close(Duration::from_millis(110));
+	let halfway = strip.rects(&settled).unwrap();
+	assert!(halfway[1].x < layout.rects[2].x);
+	assert!(halfway[1].x > settled.rects[1].x);
+	strip.advance_animation(Instant::now() + Duration::from_secs(1));
+	assert!(!strip.animating());
+	assert!(strip.rects(&settled).is_none());
 }

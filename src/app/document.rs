@@ -302,6 +302,8 @@ impl<P: super::SendEvent> App<P> {
 		else {
 			return;
 		};
+		let layout = self.tab_layout();
+		self.tab_strip.begin_close(&layout.rects, index);
 		let origin = self.readers.session_mut(index).security.origin.clone();
 		self.dismiss_preview();
 		let result = self.readers.close(index, Instant::now());

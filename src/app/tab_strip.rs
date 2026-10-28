@@ -14,6 +14,15 @@ pub(super) struct TabStrip {
 	pub scroll_at: Option<Instant>,
 	/// The drawer's slide when the tabs page opens or closes.
 	animation: Option<DrawerAnimation>,
+	/// The tabs sliding left after one of them closes.
+	close: Option<TabClose>,
+}
+struct TabClose {
+	/// Where each surviving tab stood when the close started.
+	from: Vec<Rect>,
+	/// The old right edge of the whole strip.
+	end: f32,
+	animation: Option<DrawerAnimation>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct TabDrag {
@@ -63,6 +72,10 @@ impl TabStrip {
 
 	pub(super) fn animating(&self) -> bool {
 		self.animation.is_some()
+			|| self
+				.close
+				.as_ref()
+				.is_some_and(|close| close.animation.is_some())
 	}
 
 	pub(super) fn advance_animation(&mut self, now: Instant) {
@@ -73,12 +86,67 @@ impl TabStrip {
 		{
 			self.animation = None;
 		}
+		let settled = self.close.as_ref().is_some_and(|close| {
+			close
+				.animation
+				.as_ref()
+				.is_some_and(|animation| animation.is_finished(now))
+		});
+		if settled {
+			self.close = None;
+		}
+	}
+
+	/// Starts the surviving tabs at `rects` and slides them into the layout
+	/// that follows the close. `index` is the tab about to leave.
+	pub(super) fn begin_close(&mut self, rects: &[Rect], index: usize) {
+		let mut from = rects.to_vec();
+		if index >= from.len() {
+			return;
+		}
+		let end = from.last().map_or(0.0, |rect| rect.x + rect.w);
+		from.remove(index);
+		let mut animation = None;
+		DrawerAnimation::retarget(&mut animation, false, true);
+		self.close = animation.map(|animation| TabClose {
+			from,
+			end,
+			animation: Some(animation),
+		});
+	}
+
+	/// The right edge of the tabs, including the close slide.
+	pub(super) fn end(&self, end: f32, tabs: usize) -> f32 {
+		self.close_slide(tabs)
+			.map_or(end, |(t, close)| close.end + (end - close.end) * t)
+	}
+
+	/// The tabs' rects with the close slide applied, or none at rest.
+	pub(super) fn rects(&self, layout: &TabLayout) -> Option<Vec<Rect>> {
+		let (t, close) = self.close_slide(layout.rects.len())?;
+		let mut rects = layout.rects.clone();
+		for (rect, from) in rects.iter_mut().zip(&close.from) {
+			rect.x = from.x + (rect.x - from.x) * t;
+			rect.w = from.w + (rect.w - from.w) * t;
+		}
+		Some(rects)
+	}
+
+	fn close_slide(&self, tabs: usize) -> Option<(f32, &TabClose)> {
+		let close = self.close.as_ref()?;
+		if close.from.len() != tabs {
+			return None;
+		}
+		let t = 1.0
+			- DrawerAnimation::reveal(&close.animation, false, Instant::now());
+		Some((t, close))
 	}
 
 	/// Drops the slide where it is, as a page change without animation does.
 	#[cfg(test)]
 	pub(super) fn stop_animation(&mut self) {
 		self.animation = None;
+		self.close = None;
 	}
 
 	#[cfg(test)]
@@ -86,6 +154,15 @@ impl TabStrip {
 		self.animation
 			.as_mut()
 			.expect("the tabs drawer is animating")
+			.freeze(elapsed);
+	}
+
+	#[cfg(test)]
+	pub(super) fn freeze_close(&mut self, elapsed: std::time::Duration) {
+		self.close
+			.as_mut()
+			.and_then(|close| close.animation.as_mut())
+			.expect("a tab close is animating")
 			.freeze(elapsed);
 	}
 
