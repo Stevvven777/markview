@@ -617,7 +617,6 @@ impl<'a> Chrome<'a> {
 			if matches!(
 				b.action,
 				Command::Chrome(ChromeCommand::Folder)
-					| Command::Chrome(ChromeCommand::FolderRoot)
 					| Command::Chrome(ChromeCommand::FolderEntry(_))
 					| Command::Chrome(ChromeCommand::OpenFolder)
 					| Command::Chrome(ChromeCommand::FolderRefresh)

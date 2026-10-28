@@ -120,7 +120,6 @@ impl<P: super::SendEvent> App<P> {
 			}
 			ChromeCommand::OpenFolder
 			| ChromeCommand::Folder
-			| ChromeCommand::FolderRoot
 			| ChromeCommand::FolderEntry(_)
 			| ChromeCommand::FolderCollapseAll
 			| ChromeCommand::FolderRefresh
@@ -200,13 +199,6 @@ impl<P: super::SendEvent> App<P> {
 		match command {
 			ChromeCommand::OpenFolder => self.pick_folder(),
 			ChromeCommand::Folder => self.toggle_folder(),
-			ChromeCommand::FolderRoot => {
-				if let Some(tree) = &mut self.folder.tree {
-					tree.toggle_root();
-					self.scroll_folder(0.);
-					self.redraw();
-				}
-			}
 			ChromeCommand::FolderEntry(index) => {
 				self.activate_folder_entry(index)
 			}

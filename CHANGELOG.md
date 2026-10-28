@@ -30,6 +30,10 @@ at the same level, without `[brackets]`.
 - Expose GFM and Obsidian dialect options in MVaaC, including live reparsing and independent hard breaks.
 - Read and export Obsidian wikilink image embeds such as `![[file.png]]` from the open folder root, without using the path as a caption.
 
+### Changed
+
+- Show the open folder's name in the sidebar header and keep its root expanded when collapsing all folders.
+
 ### Fixed
 
 - Refuse to open or keep the image viewer for an image that failed to load.

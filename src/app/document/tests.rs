@@ -850,14 +850,11 @@ fn folder_open_navigation_links_and_refresh_use_the_native_reader() {
 	assert!(h.app.folder.tree.as_ref().unwrap().collapsed(notes));
 	h.app
 		.action(Command::Chrome(ChromeCommand::FolderEntry(notes)));
-	h.app.action(Command::Chrome(ChromeCommand::FolderRoot));
 	fs::remove_file(root.join("notes/Other note.md")).unwrap();
 	fs::write(root.join("notes/New.md"), "# A new note").unwrap();
 	fs::create_dir(root.join("notes/new folder")).unwrap();
 	fs::write(root.join("notes/new folder/Nested.md"), "# Nested").unwrap();
 	h.app.folder_loaded(1, false, Tree::read(root.clone()));
-	assert!(h.app.folder.tree.as_ref().unwrap().rows().is_empty());
-	h.app.action(Command::Chrome(ChromeCommand::FolderRoot));
 	let tree = h.app.folder.tree.as_ref().unwrap();
 	assert!(!tree.collapsed(notes));
 	assert!(
@@ -1041,20 +1038,16 @@ fn folder_scan_completion_preserves_newer_input_and_capture() {
 			_ => unreachable!(),
 		};
 		assert_eq!(text, "typed");
-		for command in [
-			Command::Chrome(ChromeCommand::FolderRoot),
-			Command::Chrome(ChromeCommand::FolderEntry(0)),
-		] {
-			h.app.interaction.widgets.focus = Some(command.widget_id());
-			h.app.interaction.widgets.captured = Some(command.widget_id());
-			h.app.folder_loaded(
-				0,
-				false,
-				crate::app::folder::Tree::read(root.clone()),
-			);
-			assert!(h.app.interaction.widgets.focus.is_none());
-			assert!(h.app.interaction.widgets.captured.is_none());
-		}
+		let command = Command::Chrome(ChromeCommand::FolderEntry(0));
+		h.app.interaction.widgets.focus = Some(command.widget_id());
+		h.app.interaction.widgets.captured = Some(command.widget_id());
+		h.app.folder_loaded(
+			0,
+			false,
+			crate::app::folder::Tree::read(root.clone()),
+		);
+		assert!(h.app.interaction.widgets.focus.is_none());
+		assert!(h.app.interaction.widgets.captured.is_none());
 		h.app.tab_strip.phone = true;
 		h.app.set_folder_open(true);
 		let focus = h.app.interaction.widgets.focus;
@@ -1465,7 +1458,7 @@ fn folder_sidebar_geometry_keyboard_and_pointer_ownership() {
 		})
 		.unwrap();
 	assert!(
-		entry.widget().hit_rect().unwrap().y >= h.app.folder_rect().y + 66.
+		entry.widget().hit_rect().unwrap().y >= h.app.folder_rect().y + 38.
 	);
 	h.app.interaction.widgets.focus =
 		Some(Command::Chrome(ChromeCommand::FolderEntry(0)).widget_id());
@@ -1475,16 +1468,7 @@ fn folder_sidebar_geometry_keyboard_and_pointer_ownership() {
 		Some(Command::Chrome(ChromeCommand::FolderEntry(1)).widget_id())
 	);
 	assert!(h.app.folder.scroll.offset() <= 28.);
-	h.app.interaction.widgets.focus =
-		Some(Command::Chrome(ChromeCommand::FolderRoot).widget_id());
-	assert!(h.app.key_pressed(&Key::Named(NamedKey::ArrowLeft)));
-	assert!(h.app.folder.tree.as_ref().unwrap().rows().is_empty());
-	assert!(!h.app.buttons().iter().any(|b| matches!(
-		b.action,
-		Command::Chrome(ChromeCommand::FolderEntry(_))
-	)));
-	assert!(h.app.key_pressed(&Key::Named(NamedKey::ArrowRight)));
-	assert!(h.app.key_pressed(&Key::Named(NamedKey::ArrowDown)));
+	assert!(h.app.key_pressed(&Key::Named(NamedKey::ArrowUp)));
 	assert_eq!(
 		h.app.interaction.widgets.focus,
 		Some(Command::Chrome(ChromeCommand::FolderEntry(0)).widget_id())
@@ -1550,8 +1534,7 @@ fn folder_overlay_resize_keeps_search_and_its_focus() {
 			assert_eq!(h.app.folder.reveal(), 0.);
 			assert!(!h.app.buttons().iter().any(|b| matches!(
 				b.action,
-				Command::Chrome(ChromeCommand::FolderRoot)
-					| Command::Chrome(ChromeCommand::FolderEntry(_))
+				Command::Chrome(ChromeCommand::FolderEntry(_))
 			)));
 		}
 	}
@@ -1575,9 +1558,9 @@ fn folder_drawers_reconcile_on_resize_to_an_overlay() {
 	assert!(h.app.interaction.overlays.outline.open());
 	h.app.folder.grab = Some(0.);
 	h.app.interaction.widgets.focus =
-		Some(Command::Chrome(ChromeCommand::FolderRoot).widget_id());
+		Some(Command::Chrome(ChromeCommand::FolderEntry(0)).widget_id());
 	h.app.interaction.widgets.captured =
-		Some(Command::Chrome(ChromeCommand::FolderRoot).widget_id());
+		Some(Command::Chrome(ChromeCommand::FolderEntry(0)).widget_id());
 	for (width, folder_open) in [(760, true), (536, false), (900, false)] {
 		h.app.handle_window_event(
 			&StubLoop,
@@ -1595,7 +1578,6 @@ fn folder_drawers_reconcile_on_resize_to_an_overlay() {
 			assert!(!h.app.buttons().iter().any(|button| matches!(
 				button.action,
 				Command::Chrome(ChromeCommand::FolderEntry(_))
-					| Command::Chrome(ChromeCommand::FolderRoot)
 			)));
 		}
 	}
@@ -1648,8 +1630,7 @@ fn folder_sidebar_reuses_drawer_motion_and_keeps_outgoing_coverage() {
 	let buttons = h.app.buttons();
 	assert!(!buttons.iter().any(|b| matches!(
 		b.action,
-		Command::Chrome(ChromeCommand::FolderRoot)
-			| Command::Chrome(ChromeCommand::FolderEntry(_))
+		Command::Chrome(ChromeCommand::FolderEntry(_))
 	)));
 	// The outgoing surface still covers empty-page widgets while sliding away.
 	for button in buttons.iter().filter(|b| {
@@ -1966,7 +1947,9 @@ fn selecting_a_tab_opens_the_folder_onto_its_document() {
 	};
 	h.app
 		.action(Command::Chrome(ChromeCommand::FolderCollapseAll));
-	assert!(rows(&h).is_empty());
+	let collapsed = rows(&h);
+	assert!(collapsed.contains(&PathBuf::from("README.md")));
+	assert!(collapsed.iter().all(|path| path.components().count() == 1));
 	h.app.action(Command::Chrome(ChromeCommand::SelectTab(0)));
 	assert!(reachable(&mut h).contains(&PathBuf::from("README.md")));
 	assert!(!reachable(&mut h).iter().any(|p| p.starts_with("zoo")));

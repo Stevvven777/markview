@@ -78,10 +78,11 @@ collapsed; refreshing preserves the folders you expanded. Existing tabs are
 reused. With the sidebar open, picking a tab expands the folders around its
 document and scrolls that row into view. The sidebar scrolls independently; Tab
 focuses its controls, arrow keys move between file rows, and Enter opens the
-selected row. Its header can collapse all folders or refresh the tree after
-files are added, moved or deleted.
-**Collapse all** also clears nested expansion and returns the tree to the top;
-use **Ctrl+Shift+O** to choose another folder.
+selected row. Its header shows the open folder's name and can collapse all
+folders or refresh the tree after files are added, moved or deleted.
+**Collapse all** also clears nested expansion and returns the tree to the open
+folder's top-level entries, which stay visible; use **Ctrl+Shift+O** to choose
+another folder.
 Hidden entries such as `.obsidian` and `.git`, and symbolic links, are omitted.
 Inaccessible subfolders are skipped; an unreadable root reports an error.
 
@@ -91,8 +92,8 @@ position. Wide windows reserve space for the sidebar. In narrow windows it overl
 page and closes after choosing a document. Phones put the file tree and tab
 list in one sidebar with a Tabs/Folders switch. On desktop and tablets, the
 top-left sidebar button expands or collapses the file tree and stays to the
-left of all tabs when collapsed; clicking the root folder collapses its
-contents. Session restoration retains the folder as well as open documents
+left of all tabs when collapsed. Session restoration retains the folder as
+well as open documents
 and reading positions.
 An empty folder stays open so it can be refreshed after documents are added.
 When both drawers are open, narrowing the window keeps the outline and closes

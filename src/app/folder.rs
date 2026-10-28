@@ -31,7 +31,6 @@ pub(super) struct Tree {
 	pub name: String,
 	pub entries: Vec<Entry>,
 	expanded: HashSet<PathBuf>,
-	root_collapsed: bool,
 	visible: Vec<usize>,
 }
 
@@ -118,7 +117,6 @@ impl Tree {
 			name,
 			entries,
 			expanded: HashSet::new(),
-			root_collapsed: false,
 			visible: Vec::new(),
 		};
 		tree.index_subtrees();
@@ -127,11 +125,7 @@ impl Tree {
 	}
 
 	pub fn rows(&self) -> &[usize] {
-		if self.root_collapsed() {
-			&[]
-		} else {
-			&self.visible
-		}
+		&self.visible
 	}
 
 	fn index_subtrees(&mut self) {
@@ -169,17 +163,8 @@ impl Tree {
 			&& !self.expanded.contains(&self.entries[index].path)
 	}
 
-	pub fn root_collapsed(&self) -> bool {
-		self.root_collapsed
-	}
-
-	pub fn toggle_root(&mut self) {
-		self.root_collapsed = !self.root_collapsed;
-	}
-
 	pub fn collapse_all(&mut self) {
 		self.expanded.clear();
-		self.root_collapsed = true;
 		self.rebuild_rows();
 	}
 
@@ -204,7 +189,6 @@ impl Tree {
 				})
 				.map(|j| self.entries[j].path.clone()),
 		);
-		self.root_collapsed = false;
 		self.rebuild_rows();
 		Some(index)
 	}
@@ -369,11 +353,6 @@ impl<P: SendEvent> App<P> {
 		let Some(tree) = &self.folder.tree else {
 			return false;
 		};
-		if self.interaction.widgets.focus
-			== Some(Command::Chrome(ChromeCommand::FolderRoot).widget_id())
-		{
-			return self.folder_root_key(key);
-		}
 		let rows = tree.rows();
 		let focused = self.interaction.widgets.focus.and_then(|id| {
 			rows.iter().position(|i| {
@@ -404,32 +383,6 @@ impl<P: SendEvent> App<P> {
 			Command::Chrome(ChromeCommand::FolderEntry(index)).widget_id(),
 		);
 		self.reveal_folder(index);
-		self.redraw();
-		true
-	}
-
-	fn folder_root_key(&mut self, key: &winit::keyboard::Key) -> bool {
-		use winit::keyboard::{Key, NamedKey};
-		let tree = self.folder.tree.as_ref().unwrap();
-		match key {
-			Key::Named(NamedKey::ArrowLeft | NamedKey::ArrowRight) => {
-				if tree.root_collapsed()
-					== matches!(key, Key::Named(NamedKey::ArrowRight))
-				{
-					self.action(Command::Chrome(ChromeCommand::FolderRoot));
-				}
-			}
-			Key::Named(NamedKey::ArrowDown) => {
-				if let Some(index) = tree.rows().first() {
-					self.interaction.widgets.focus = Some(
-						Command::Chrome(ChromeCommand::FolderEntry(*index))
-							.widget_id(),
-					);
-					self.reveal_folder(*index);
-				}
-			}
-			_ => return false,
-		}
 		self.redraw();
 		true
 	}
@@ -515,7 +468,6 @@ impl<P: SendEvent> App<P> {
 					&& previous.root == tree.root
 				{
 					tree.expanded = previous.expanded.clone();
-					tree.root_collapsed = previous.root_collapsed;
 					tree.rebuild_rows();
 				}
 				let initial = tree.initial();
@@ -676,11 +628,10 @@ impl<P: SendEvent> App<P> {
 			&mut self.interaction.widgets.captured,
 		] {
 			*slot = slot.filter(|id| {
-				*id != Command::Chrome(ChromeCommand::FolderRoot).widget_id()
-					&& id.scope
-						!= Command::Chrome(ChromeCommand::FolderEntry(0))
-							.widget_id()
-							.scope
+				id.scope
+					!= Command::Chrome(ChromeCommand::FolderEntry(0))
+						.widget_id()
+						.scope
 			});
 		}
 	}
@@ -1037,10 +988,8 @@ mod tests {
 			)
 		);
 		tree.collapse_all();
-		assert!(tree.rows().is_empty());
-		// A collapsed root reopens for the note it has to show.
+		assert_eq!(rows(&tree), expected(&["a", "b", "Top.md"]));
 		assert_eq!(tree.expand_to(&root.join("Top.md")), Some(6));
-		assert!(!tree.root_collapsed());
 		assert_eq!(rows(&tree), expected(&["a", "b", "Top.md"]));
 		assert!(tree.expand_to(&root.join("absent.md")).is_none());
 	}

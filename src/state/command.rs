@@ -113,7 +113,6 @@ pub(crate) enum ChromeCommand {
 	FocusInput(TextField),
 	OpenFolder,
 	Folder,
-	FolderRoot,
 	FolderEntry(usize),
 	FolderRefresh,
 	FolderCollapseAll,

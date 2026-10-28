@@ -825,16 +825,13 @@ fn folder_collapse_all_clears_nested_expansion_and_scroll_on_both_layouts() {
 			),
 		);
 		let tree = app.folder.tree.as_ref().unwrap();
-		assert!(tree.root_collapsed());
-		assert!(tree.rows().is_empty());
+		assert_eq!(tree.rows(), &[0]);
 		assert!(tree.collapsed(0) && tree.collapsed(1));
 		assert_eq!(app.folder.scroll.offset(), 0.);
 		assert!(app.folder.grab.is_none());
 		assert_eq!(app.readers.session.path, path);
 		assert_eq!(app.phone_folder_open(), phone);
 		assert_eq!(app.folder.open, !phone);
-		app.action(Command::Chrome(ChromeCommand::FolderRoot));
-		assert_eq!(app.folder.tree.as_ref().unwrap().rows(), &[0]);
 		app.action(Command::Chrome(ChromeCommand::FolderEntry(0)));
 		assert_eq!(app.folder.tree.as_ref().unwrap().rows(), &[0, 1]);
 	}
@@ -1010,8 +1007,7 @@ fn phone_sidebar_offers_folder_selection_before_a_tree_exists_and_stays_phone_on
 	);
 	assert!(!buttons.iter().any(|b| matches!(
 		b.action,
-		Command::Chrome(ChromeCommand::FolderRoot)
-			| Command::Chrome(ChromeCommand::FolderEntry(_))
+		Command::Chrome(ChromeCommand::FolderEntry(_))
 			| Command::Chrome(ChromeCommand::SelectTab(_))
 	)));
 	assert!(!app.overlay().is_empty());

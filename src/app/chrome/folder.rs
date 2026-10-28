@@ -107,8 +107,8 @@ pub(in crate::app) fn list(drawer: Rect, rows: usize, scroll: f32) -> List {
 	List::new(
 		drawer,
 		Rect {
-			y: drawer.y + 66.,
-			h: (drawer.h - 66. - super::BOTTOM).max(0.),
+			y: drawer.y + 38.,
+			h: (drawer.h - 38. - super::BOTTOM).max(0.),
 			..drawer
 		},
 		0.,
@@ -164,17 +164,6 @@ pub(super) fn buttons(
 		b.clip = Some(drawer);
 		buttons.push(b);
 	}
-	let mut root = components::button(
-		std::sync::Arc::<str>::from(tree.name.as_str()),
-		Command::Chrome(ChromeCommand::FolderRoot),
-		Rect {
-			y: drawer.y + 38.,
-			h: 28.,
-			..drawer
-		},
-	);
-	root.clip = Some(drawer);
-	buttons.push(root);
 	let rows = tree.rows();
 	let list = list(drawer, rows.len(), browser.scroll.offset());
 	let row_buttons = list
@@ -243,37 +232,17 @@ pub(super) fn draw(
 	ui.appearance.weight = 650;
 	out.extend(components::label(
 		ui,
-		&lang.folder_files().to_uppercase(),
-		12.,
+		&tree.name,
+		13.,
 		Rect {
 			x: drawer.x + 16.,
 			y: drawer.y,
 			w: (drawer.w - 88.).max(0.),
 			h: 38.,
 		},
-		C::Muted,
+		C::Color,
 	));
 	components::appearance(ui);
-	let root_rect = Rect {
-		y: drawer.y + 38.,
-		h: 28.,
-		..drawer
-	};
-	let mut header = Vec::new();
-	Row {
-		rect: root_rect,
-		action: Command::Chrome(ChromeCommand::FolderRoot),
-		depth: 0,
-		collapsed: Some(tree.root_collapsed()),
-		image: false,
-		name: &tree.name,
-		selected: false,
-	}
-	.draw(ui, &mut labels, &mut header, interaction);
-	out.push(Draw::Clipped {
-		rect: drawer,
-		draws: header,
-	});
 	for b in buttons(browser, drawer, lang).into_iter().filter(|b| {
 		matches!(
 			b.action,
@@ -286,7 +255,7 @@ pub(super) fn draw(
 	let rows = tree.rows();
 	let list = list(drawer, rows.len(), browser.scroll.offset());
 	let mut body = Vec::new();
-	if tree.entries.is_empty() && !tree.root_collapsed() {
+	if tree.entries.is_empty() {
 		body.extend(components::label(
 			ui,
 			lang.folder_empty(),
@@ -306,7 +275,7 @@ pub(super) fn draw(
 		Row {
 			rect: list.row_rect(row),
 			action: Command::Chrome(ChromeCommand::FolderEntry(index)),
-			depth: e.depth + 1,
+			depth: e.depth,
 			collapsed: e.directory.then(|| tree.collapsed(index)),
 			image: crate::file::is_image(&e.path),
 			name: &e.path.file_name().unwrap().to_string_lossy(),
@@ -560,7 +529,7 @@ mod tests {
 				let row = list(drawer, 1, 0.).row_rect(0);
 				assert_eq!(*size, ROW_ICON);
 				assert_eq!(y + size / 2., row.y + row.h / 2.);
-				assert_eq!(*x - row.x, 40.);
+				assert_eq!(*x - row.x, 24.);
 			}
 		}
 	}

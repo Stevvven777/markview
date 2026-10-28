@@ -181,7 +181,6 @@ mod tests {
 			Command::Document(DocumentCommand::Open),
 			Command::Chrome(ChromeCommand::OpenFolder),
 			Command::Chrome(ChromeCommand::Folder),
-			Command::Chrome(ChromeCommand::FolderRoot),
 			Command::Chrome(ChromeCommand::FolderEntry(0)),
 			Command::Chrome(ChromeCommand::FolderRefresh),
 			Command::Chrome(ChromeCommand::FolderCollapseAll),
@@ -265,7 +264,7 @@ mod tests {
 	#[test]
 	fn every_flat_command_has_a_unique_scope() {
 		let commands = every_command();
-		assert_eq!(commands.len(), 80);
+		assert_eq!(commands.len(), 79);
 		let mut scopes = std::collections::HashSet::new();
 		for command in &commands {
 			assert!(
