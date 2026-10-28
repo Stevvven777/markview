@@ -20,6 +20,7 @@ pub(crate) use command::*;
 pub(crate) use drawer::DrawerAnimation;
 pub(crate) use outline::OutlineTree;
 
+#[cfg(test)]
 pub(crate) use markview_layout::layout::scroll_limit;
 pub(crate) use markview_selection::{
 	Drag, Grain, Host, HoveredLink, Modifiers, Point, Selection,
@@ -671,7 +672,7 @@ impl ReaderSession {
 			max: if self.layout_pending {
 				(self.snapshot.height - viewport).max(0.0)
 			} else {
-				scroll_limit(self.snapshot.height, viewport)
+				self.snapshot.scroll_limit(viewport)
 			},
 			complete: !self.layout_pending,
 		}
@@ -819,7 +820,7 @@ impl ReaderSession {
 			self.scrolling.target = None;
 			self.follow_update = false;
 			self.scrolling.offset =
-				y.clamp(0.0, scroll_limit(self.snapshot.height, viewport));
+				y.clamp(0.0, self.snapshot.scroll_limit(viewport));
 			return Some(Ok(()));
 		}
 		if self.snapshot_complete {
@@ -852,7 +853,7 @@ impl ReaderSession {
 			// A prefix keeps the content limit, because a position inside the
 			// blank would exceed what `can_display` accepts.
 			let limit = if reader.complete {
-				scroll_limit(reader.layout.height, viewport)
+				reader.layout.scroll_limit(viewport)
 			} else {
 				(reader.layout.height - viewport).max(0.0)
 			};

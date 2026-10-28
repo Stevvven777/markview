@@ -310,11 +310,13 @@ fn live_query_preserves_scroll_selection_and_disclosures() {
 	);
 	assert!(!h.app.draw_search_highlights().is_empty());
 	assert_eq!(h.app.bottom(), 44.0);
+	assert!(h.app.reflow_at.is_some());
 	let drawer = h.app.outline_drawer();
 	assert_eq!(drawer.y + drawer.h, h.app.dimensions().1 - h.app.bottom());
 	h.app.close_search();
 	assert!(h.app.draw_search_highlights().is_empty());
 	assert_eq!(h.app.bottom(), 28.0);
+	assert!(h.app.reflow_at.is_some());
 	assert_eq!(h.app.readers.session.scrolling.offset, 800.0);
 	assert_eq!(h.app.readers.session.search.input.text(), "needle");
 }

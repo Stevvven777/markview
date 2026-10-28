@@ -1,4 +1,3 @@
-use super::scroll_limit;
 use crate::scene::Draw;
 use crate::scene::LayoutSnapshot;
 use std::collections::HashMap;
@@ -9,8 +8,8 @@ pub fn anchored_scroll(
 	viewport: f32,
 	follow: bool,
 ) -> f32 {
-	let max = scroll_limit(new.height, viewport);
-	if follow && scroll >= scroll_limit(old.height, viewport) - 3.0 {
+	let max = new.scroll_limit(viewport);
+	if follow && scroll >= old.scroll_limit(viewport) - 3.0 {
 		return max;
 	}
 	let index = old

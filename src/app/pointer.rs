@@ -688,10 +688,7 @@ impl<P: super::SendEvent> App<P> {
 			(self.readers.session.snapshot_complete
 				&& !self.readers.session.layout_pending)
 				.then(|| {
-					crate::state::scroll_limit(
-						self.readers.session.snapshot.height,
-						self.viewport(),
-					)
+					self.readers.session.snapshot.scroll_limit(self.viewport())
 				})
 		} else {
 			Some(0.0)

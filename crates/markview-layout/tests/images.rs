@@ -624,6 +624,60 @@ fn single_image_centers_and_shrinks_without_changing_copy() {
 }
 
 #[test]
+fn a_single_picture_centers_in_a_taller_viewport() {
+	let doc = markview_commonmark::parse("![](test.png)");
+	let mut engine = LayoutEngine::new();
+	let options = |viewport_height| LayoutOptions {
+		width: 400.,
+		viewport_height,
+		fonts: fonts(),
+		..Default::default()
+	};
+	let top = engine.layout_with_images(&doc, &options(0.), &resources());
+	let centered =
+		engine.layout_with_images(&doc, &options(1000.), &resources());
+	assert_eq!(centered.height, 1000.);
+	let block = &centered.blocks[0];
+	let image = rects(&centered)[0];
+	assert!((block.y + image.y + image.h / 2. - 500.).abs() < 0.01);
+	assert!(block.y > top.blocks[0].y);
+	assert_eq!(centered.scroll_limit(1000.), 0.);
+	// A smaller reading area, such as one below an opened search bar, must
+	// expose the overflow instead of trapping the picture behind the chrome.
+	assert!(centered.scroll_limit(900.) > 0.);
+	// The picture fits even though the paragraph's outer spacing does not.
+	let snug = engine.layout_with_images(&doc, &options(145.), &resources());
+	let image = rects(&snug)[0];
+	assert!(snug.centered);
+	assert!((snug.blocks[0].y + image.y + image.h / 2. - 72.5).abs() < 0.01);
+	assert_eq!(snug.scroll_limit(145.), 0.);
+	// An exactly fitting picture is still centered and never scrolls.
+	let exact = engine.layout_with_images(&doc, &options(140.), &resources());
+	let image = rects(&exact)[0];
+	assert!(exact.centered);
+	assert!((exact.blocks[0].y + image.y + image.h / 2. - 70.).abs() < 0.01);
+	assert_eq!(exact.scroll_limit(140.), 0.);
+	// Padding and border belong to the figure, so an outer box that no longer
+	// fits the reading area must stay scrollable.
+	let mut padded =
+		styled("[[rule]]\nwhen=['img']\npadding=0.5\nborder_width=2", 400.);
+	padded.viewport_height = 145.;
+	let padded = engine.layout_with_images(&doc, &padded, &resources());
+	assert!(!padded.centered);
+	assert!(padded.scroll_limit(145.) > 0.);
+	// A picture taller than the reading area keeps the top position and the
+	// document height that lets the reader scroll it.
+	let mut tall_resources = resources();
+	tall_resources.entries.get_mut("test.png").unwrap().size =
+		Some((100, 1000));
+	let tall_top =
+		engine.layout_with_images(&doc, &options(0.), &tall_resources);
+	let tall = engine.layout_with_images(&doc, &options(300.), &tall_resources);
+	assert_eq!(tall.blocks[0].y, tall_top.blocks[0].y);
+	assert!(tall.height > 300.);
+}
+
+#[test]
 fn inline_images_share_their_line_and_never_wrap_text_beside_them() {
 	for width in [420., 280.] {
 		let snapshot = LayoutEngine::new().layout_with_images(

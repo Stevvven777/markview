@@ -133,6 +133,7 @@ pub async fn create(
 		MediaContext::native(StyleTarget::Ui).with_size(logical.0, logical.1),
 	);
 	options.width = column_width(config.width, logical.0);
+	options.viewport_height = (logical.1 - 2.0 * INSET).max(0.0);
 	let document = Arc::new(parse_with("", config.dialect()));
 	Ok(Markview {
 		canvas,
@@ -1203,16 +1204,18 @@ impl Markview {
 		((self.logical.0 - self.published.snapshot.width) / 2.0).max(MARGIN)
 	}
 
-	/// Narrows the layout column to what the canvas can show, and reports
-	/// whether it moved. A column left wider than the canvas clips its lines
-	/// off the edge, and nothing here can pan sideways to reach them.
+	/// Narrows the layout column to what the canvas can show and updates the
+	/// reading height, reporting whether either moved. A column left wider than
+	/// the canvas clips its lines off the edge, and nothing here can pan
+	/// sideways to reach them.
 	fn apply_column(&mut self) -> bool {
 		let width = column_width(self.config.width, self.logical.0);
-		if (self.options.width - width).abs() < f32::EPSILON {
-			return false;
-		}
+		let height = (self.logical.1 - 2.0 * INSET).max(0.0);
+		let changed = (self.options.width - width).abs() >= f32::EPSILON
+			|| (self.options.viewport_height - height).abs() >= f32::EPSILON;
 		self.options.width = width;
-		true
+		self.options.viewport_height = height;
+		changed
 	}
 
 	/// The offset actually on screen. A pass that is still publishing has only

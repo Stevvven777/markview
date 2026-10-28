@@ -119,10 +119,8 @@ impl ReaderSession {
 			_ if self.snapshot_complete => saved.position.fallback,
 			_ => return,
 		};
-		self.scrolling.offset = target.clamp(
-			0.0,
-			crate::state::scroll_limit(self.snapshot.height, viewport),
-		);
+		self.scrolling.offset =
+			target.clamp(0.0, self.snapshot.scroll_limit(viewport));
 		self.scrolling.target = None;
 		self.saved_reading = None;
 	}

@@ -21,6 +21,10 @@ at the same level, without `[brackets]`.
 
 ## Unreleased
 
+### Added
+
+- Center a picture that fits the reading area vertically, while taller pictures keep scrolling.
+
 ## 0.4.2 - 2026-10-28
 
 **Highlights**:

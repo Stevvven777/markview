@@ -354,6 +354,7 @@ impl ReaderSettings {
 		let dialect = self.effective_dialect();
 		LayoutOptions {
 			width: self.width.min(viewport_width - 40.0).max(80.0),
+			viewport_height: 0.0,
 			font_size: self.font_size,
 			justify: self.justify,
 			hyphenate: self.hyphenate,
