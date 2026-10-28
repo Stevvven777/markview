@@ -41,7 +41,7 @@ def main():
     failures = []
     for directory in ("src", "tests"):
         for path in sorted((ROOT / directory).rglob("*.rs")):
-            for line, condition in violations(path.read_text(), path == ROOT / "src/main.rs"):
+            for line, condition in violations(path.read_text(encoding="utf-8"), path == ROOT / "src/main.rs"):
                 failures.append(f"{path.relative_to(ROOT)}:{line}: move conditional `{condition}` into markview-platform")
     for failure in failures:
         print(failure)
