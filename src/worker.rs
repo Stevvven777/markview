@@ -1,7 +1,7 @@
 //! Latest-request-wins document processing, independent of file observation.
 use crate::{
 	document,
-	file::read_document,
+	file::read_markdown,
 	layout::{LayoutEngine, LayoutOptions, LayoutSnapshot},
 };
 use std::{
@@ -224,6 +224,10 @@ impl Worker {
 					let mut request = request;
 					last = Some(request.clone());
 					images.set_workspace(request.workspace.clone());
+					images.set_standalone_image(
+						crate::file::is_picture(&request.path)
+							.then(|| request.path.clone()),
+					);
 					engine.set_parallel_start(request.coverage);
 					let rendered = rendered.clone();
 					let version = request.version;
@@ -255,7 +259,7 @@ impl Worker {
 								doc.clone()
 							} else {
 								let start = Instant::now();
-								let text = read_document(&request.path)
+								let text = read_markdown(&request.path)
 									.map_err(|e| format!("{e:#}"))?;
 								request.security =
 									request.security.for_content(&text);

@@ -4,7 +4,7 @@
 //! The adapters prepare one immutable job through [`Config`]. Window dialogs,
 //! command-line parsing and progress presentation stay with their callers.
 use crate::{
-	file::read_document,
+	file::read_markdown,
 	images::Images,
 	layout::{LayoutEngine, LayoutOptions, LayoutSnapshot},
 	settings::{ExportFormat, ExportSettings},
@@ -130,7 +130,7 @@ pub(crate) fn png_snapshot_with_services_and_workspace(
 	security: crate::security::Security,
 	workspace: Option<PathBuf>,
 ) -> Result<LayoutSnapshot> {
-	let text = read_document(path)?;
+	let text = read_markdown(path)?;
 	png_snapshot_text_with_workspace(
 		path, &text, options, offline, services, security, workspace,
 	)
@@ -174,6 +174,9 @@ pub(crate) fn png_snapshot_text_with_workspace(
 	let mut images = Images::shared(offline, options.fonts.clone(), &services);
 	images.set_security(security.for_content(&document.source));
 	images.set_workspace(workspace);
+	images.set_standalone_image(
+		crate::file::is_picture(path).then(|| path.to_path_buf()),
+	);
 	images.prepare(
 		&document,
 		path,

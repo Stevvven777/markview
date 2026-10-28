@@ -2047,6 +2047,38 @@ fn a_queue_behind_held_pipelines_settles_boundedly() {
 }
 
 #[test]
+fn standalone_pictures_canonicalize_before_matching_grants() {
+	use crate::security::{Resource, Security, Trust};
+	let dir = tempfile::tempdir().unwrap();
+	let file = dir.path().join("picture.png");
+	fs::write(&file, png(5, 3, [1, 2, 3, 255])).unwrap();
+	let file = fs::canonicalize(&file).unwrap();
+	fs::create_dir(dir.path().join("unused")).unwrap();
+	let spelling = dir.path().join("unused/../picture.png");
+	let document = markview_commonmark::parse(format!(
+		"![]({})",
+		crate::file::STANDALONE_IMAGE_SOURCE
+	));
+	let mut security = Security::local(Trust::Untrusted);
+	security.grant(Resource::File(file.clone()));
+	let mut images = images(true);
+	images.set_security(security);
+	images.set_standalone_image(Some(spelling));
+	images.prepare(
+		&document,
+		&file,
+		1,
+		false,
+		&Stylesheet::default(),
+		&crate::test_support::fonts(),
+	);
+	images.wait();
+	let entry = &images.snapshot.entries[crate::file::STANDALONE_IMAGE_SOURCE];
+	assert!(entry.error.is_none(), "{entry:?}");
+	assert_eq!(entry.size, Some((5, 3)));
+}
+
+#[test]
 fn resource_authority_controls_local_reads_and_cached_bodies_including_offline()
 {
 	use crate::security::{Origin, Resource, Security, Trust};

@@ -19,6 +19,8 @@ pub(super) const TREE_FOLDER_OPEN: &[IconPath] =
 	markview_icon::icon!("assets/ui/tree-folder-open.svg");
 pub(super) const TREE_MARKDOWN: &[IconPath] =
 	markview_icon::icon!("assets/ui/tree-markdown.svg");
+pub(super) const TREE_IMAGE: &[IconPath] =
+	markview_icon::icon!("assets/ui/tree-image.svg");
 pub(super) const EXPORT: &[IconPath] =
 	markview_icon::icon!("assets/ui/export.svg");
 pub(super) const SETTINGS: &[IconPath] =

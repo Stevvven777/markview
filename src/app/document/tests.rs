@@ -887,6 +887,72 @@ fn folder_open_navigation_links_and_refresh_use_the_native_reader() {
 }
 
 #[test]
+fn folder_image_entries_open_a_single_image_tab() {
+	use crate::state::Command;
+	let mut h = Harness::new();
+	h.app.tab_strip.phone = true;
+	let root = h.dir.path().canonicalize().unwrap();
+	h.app.open(root.clone());
+	let event = h.events.recv_timeout(Duration::from_secs(10)).unwrap();
+	h.app.handle_user_event(&StubLoop, event);
+	h.wait_images(2);
+	let image = h
+		.app
+		.folder
+		.tree
+		.as_ref()
+		.unwrap()
+		.entries
+		.iter()
+		.position(|e| e.path == root.join("first.png"))
+		.unwrap();
+	h.app
+		.action(Command::Chrome(ChromeCommand::FolderEntry(image)));
+	h.wait_images(1);
+	assert_eq!(h.app.readers.entries().len(), 2);
+	assert_eq!(
+		h.app.readers.session.path.as_ref(),
+		Some(&root.join("first.png"))
+	);
+	assert_eq!(h.app.readers.session.snapshot.images.decoded().len(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn folder_image_entries_keep_non_utf8_names() {
+	use crate::state::Command;
+	let mut h = Harness::new();
+	h.app.tab_strip.phone = true;
+	let root = h.dir.path().canonicalize().unwrap();
+	let name = markview_platform::test_support::raw_os_string(vec![
+		b'p', b'i', b'c', 0xff, b'.', b'p', b'n', b'g',
+	]);
+	let image_path = root.join(name);
+	image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]))
+		.save(&image_path)
+		.unwrap();
+	h.app.open(root.clone());
+	let event = h.events.recv_timeout(Duration::from_secs(10)).unwrap();
+	h.app.handle_user_event(&StubLoop, event);
+	h.wait_images(2);
+	let image = h
+		.app
+		.folder
+		.tree
+		.as_ref()
+		.unwrap()
+		.entries
+		.iter()
+		.position(|e| e.path == image_path)
+		.unwrap();
+	h.app
+		.action(Command::Chrome(ChromeCommand::FolderEntry(image)));
+	h.wait_images(1);
+	assert_eq!(h.app.readers.entries().len(), 2);
+	assert_eq!(h.app.readers.session.path.as_ref(), Some(&image_path));
+}
+
+#[test]
 fn folder_scan_completion_preserves_newer_navigation() {
 	for phone in [false, true] {
 		for navigation in

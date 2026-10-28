@@ -265,6 +265,7 @@ pub(super) fn draw(
 		action: Command::Chrome(ChromeCommand::FolderRoot),
 		depth: 0,
 		collapsed: Some(tree.root_collapsed()),
+		image: false,
 		name: &tree.name,
 		selected: false,
 	}
@@ -307,6 +308,7 @@ pub(super) fn draw(
 			action: Command::Chrome(ChromeCommand::FolderEntry(index)),
 			depth: e.depth + 1,
 			collapsed: e.directory.then(|| tree.collapsed(index)),
+			image: crate::file::is_image(&e.path),
 			name: &e.path.file_name().unwrap().to_string_lossy(),
 			selected: active == Some(e.path.as_path()),
 		}
@@ -322,6 +324,7 @@ struct Row<'a> {
 	action: Command,
 	depth: usize,
 	collapsed: Option<bool>,
+	image: bool,
 	name: &'a str,
 	selected: bool,
 }
@@ -339,6 +342,7 @@ impl Row<'_> {
 			action,
 			depth,
 			collapsed,
+			image,
 			name,
 			selected,
 		} = self;
@@ -386,6 +390,7 @@ impl Row<'_> {
 			paths: match collapsed {
 				Some(true) => icons::TREE_FOLDER,
 				Some(false) => icons::TREE_FOLDER_OPEN,
+				None if image => icons::TREE_IMAGE,
 				None => icons::TREE_MARKDOWN,
 			},
 			paint: components::mix(ui, background, ink, 0.46),

@@ -308,6 +308,8 @@ pub struct Images {
 	generation: u64,
 	document: PathBuf,
 	workspace: Option<PathBuf>,
+	/// The exact file a synthesized one-picture document shows.
+	standalone: Option<PathBuf>,
 	revision: u64,
 	poll_at: Instant,
 	/// Jobs that have reported a result, success or failure. A headless wait
@@ -420,6 +422,7 @@ impl Images {
 			generation: 0,
 			document: PathBuf::new(),
 			workspace: None,
+			standalone: None,
 			revision: 0,
 			poll_at: Instant::now(),
 			completed: 0,
@@ -441,6 +444,19 @@ impl Images {
 	/// The open folder root through which Obsidian vault embeds resolve.
 	pub(crate) fn set_workspace(&mut self, workspace: Option<PathBuf>) {
 		self.workspace = workspace;
+	}
+
+	/// Names the exact file of a synthesized one-picture document. The path is
+	/// canonical so it matches the resource grants a CLI exporter recorded.
+	/// Returns whether the resolved file changed.
+	pub(crate) fn set_standalone_image(
+		&mut self,
+		path: Option<PathBuf>,
+	) -> bool {
+		let path = path.map(|path| path.canonicalize().unwrap_or(path));
+		let changed = self.standalone != path;
+		self.standalone = path;
+		changed
 	}
 
 	/// `load_all` comes from the tab that asked for this layout, so lifting the
@@ -591,13 +607,23 @@ impl Images {
 		let mut remote_seen = 0usize;
 		for spec in specs {
 			let key = spec.resource_key().into_owned();
-			match source::resolve_in(
-				&spec.src,
-				spec.base,
-				path,
-				self.workspace.as_deref(),
-				&self.security,
-			) {
+			let source = match &self.standalone {
+				Some(standalone)
+					if spec.src == crate::file::STANDALONE_IMAGE_SOURCE =>
+				{
+					self.security
+						.check_file(standalone)
+						.map(|()| Source::File(standalone.clone()))
+				}
+				_ => source::resolve_in(
+					&spec.src,
+					spec.base,
+					path,
+					self.workspace.as_deref(),
+					&self.security,
+				),
+			};
+			match source {
 				Ok(source) => {
 					let first = wanted.insert(source.clone());
 					let remote = matches!(source, Source::Http(_));

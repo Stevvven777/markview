@@ -84,7 +84,10 @@ impl Tree {
 				if child.file_name().to_string_lossy().starts_with('.') {
 					continue;
 				}
-				if kind.is_dir() || (kind.is_file() && markdown(&child.path()))
+				if kind.is_dir()
+					|| (kind.is_file()
+						&& (markdown(&child.path())
+							|| crate::file::is_image(&child.path())))
 				{
 					children.push(Entry {
 						path: child.path(),
@@ -209,7 +212,7 @@ impl Tree {
 	pub fn initial(&self) -> Option<PathBuf> {
 		self.entries
 			.iter()
-			.filter(|e| !e.directory)
+			.filter(|e| !e.directory && markdown(&e.path))
 			.min_by_key(|e| {
 				(
 					e.path.parent() != Some(self.root.as_path()),
@@ -960,15 +963,15 @@ mod tests {
 			.unwrap();
 		let mut tree = Tree::read(root.clone()).unwrap();
 		assert_eq!(tree.initial(), Some(root.join("README.md")));
-		assert_eq!(tree.entries.len(), 8);
+		assert_eq!(tree.entries.len(), 9);
 		assert_eq!(tree.entries[0].path, root.join("a"));
 		assert_eq!(tree.entries[1].depth, 1);
-		assert_eq!(tree.rows(), &[0, 3, 6, 7]);
+		assert_eq!(tree.rows(), &[0, 3, 6, 7, 8]);
 		assert!(tree.collapsed(0));
 		tree.toggle(0);
-		assert_eq!(tree.rows(), &[0, 1, 2, 3, 6, 7]);
+		assert_eq!(tree.rows(), &[0, 1, 2, 3, 6, 7, 8]);
 		tree.toggle(0);
-		assert_eq!(tree.rows(), &[0, 3, 6, 7]);
+		assert_eq!(tree.rows(), &[0, 3, 6, 7, 8]);
 		assert_eq!(
 			tree.resolve("First%20note", &root.join("b")),
 			Some(root.join("a/First note.md"))

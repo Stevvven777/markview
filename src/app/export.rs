@@ -249,11 +249,7 @@ impl<P: super::SendEvent> App<P> {
 		self.refresh_hover();
 
 		let directory = path.parent().map(Path::to_path_buf);
-		let stem = path
-			.file_stem()
-			.map(|stem| stem.to_string_lossy().into_owned())
-			.filter(|stem| !stem.is_empty())
-			.unwrap_or_else(|| "document".into());
+		let stem = suggested_stem(&path, settings.format);
 		self.spawn_export(path, Destination::Ask { stem, directory }, settings);
 	}
 
@@ -611,6 +607,30 @@ impl<P: super::SendEvent> App<P> {
 	}
 }
 
+/// The suggested output stem, kept distinct from the input when the format
+/// would otherwise propose the input file itself.
+fn suggested_stem(path: &Path, format: ExportFormat) -> String {
+	let stem = path
+		.file_stem()
+		.map(|stem| stem.to_string_lossy().into_owned())
+		.filter(|stem| !stem.is_empty())
+		.unwrap_or_else(|| "document".into());
+	let output_extension = match format {
+		ExportFormat::Pdf => "pdf",
+		ExportFormat::Png => "png",
+	};
+	if path
+		.extension()
+		.and_then(|extension| extension.to_str())
+		.is_some_and(|extension| {
+			extension.eq_ignore_ascii_case(output_extension)
+		}) {
+		format!("{stem}-export")
+	} else {
+		stem
+	}
+}
+
 /// Construct native dialogs on the UI thread; await their result on the I/O service.
 fn choose_output(
 	stem: &str,
@@ -668,6 +688,12 @@ fn run(
 	security: crate::security::Security,
 	workspace: Option<PathBuf>,
 ) -> ExportOutcome {
+	if crate::file::same_file(path, output) {
+		return ExportOutcome::Failed(format!(
+			"Cannot export over the source file: {}",
+			path.display()
+		));
+	}
 	let prepared =
 		match export::Config::from_settings(settings, fonts, cjk, overrides)
 			.with_dialect(dialect)
@@ -1117,6 +1143,47 @@ mod tests {
 			);
 		}
 	}
+
+	#[test]
+	fn picture_exports_suggest_a_distinct_png_destination() {
+		let path = Path::new("/tmp/photo.png");
+		assert_eq!(suggested_stem(path, ExportFormat::Png), "photo-export");
+		assert_eq!(suggested_stem(path, ExportFormat::Pdf), "photo");
+		assert_eq!(
+			suggested_stem(Path::new("/tmp/photo.jpeg"), ExportFormat::Png),
+			"photo"
+		);
+	}
+
+	#[test]
+	fn exports_refuse_to_replace_their_source() {
+		let dir = tempfile::tempdir().unwrap();
+		let source = dir.path().join("picture.png");
+		image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]))
+			.save(&source)
+			.unwrap();
+		let original = std::fs::read(&source).unwrap();
+		let outcome = run(
+			&source,
+			&source,
+			&ExportSettings::default(),
+			crate::settings::ReaderSettings::default().effective_dialect(),
+			Default::default(),
+			crate::test_support::fonts(),
+			CjkType::Sc,
+			&[],
+			true,
+			Arc::new(crate::services::Services::new(4)),
+			crate::security::Security::local(crate::security::Trust::Trusted),
+			None,
+		);
+		assert!(matches!(
+			outcome,
+			ExportOutcome::Failed(ref error)
+				if error.contains("Cannot export over the source file")
+		));
+		assert_eq!(std::fs::read(source).unwrap(), original);
+	}
 }
 
 #[cfg(test)]
@@ -1250,6 +1317,40 @@ mod security_tests {
 				.error
 				.is_none()
 		);
+		assert_eq!(snapshot.images.decoded().len(), 1);
+	}
+
+	#[test]
+	fn standalone_pictures_export_as_pictures() {
+		let dir = tempfile::tempdir().unwrap();
+		let image_path = dir.path().join("picture.png");
+		image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]))
+			.save(&image_path)
+			.unwrap();
+		let output = dir.path().join("picture.pdf");
+		let outcome = run(
+			&image_path,
+			&output,
+			&ExportSettings::default(),
+			crate::settings::ReaderSettings::default().effective_dialect(),
+			Default::default(),
+			crate::test_support::fonts(),
+			CjkType::Sc,
+			&[],
+			true,
+			Arc::new(crate::services::Services::new(4)),
+			Security::local(Trust::Trusted),
+			None,
+		);
+		assert!(matches!(outcome, ExportOutcome::Written { .. }));
+		let snapshot = export::png_snapshot_with_services(
+			&image_path,
+			crate::test_support::options(),
+			true,
+			Arc::new(crate::services::Services::new(4)),
+			Security::local(Trust::Trusted),
+		)
+		.unwrap();
 		assert_eq!(snapshot.images.decoded().len(), 1);
 	}
 

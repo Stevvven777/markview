@@ -2,7 +2,7 @@
 use crate::cli::{LaunchOptions, Mode, arguments};
 use crate::{
 	benchmark,
-	file::read_document,
+	file::read_markdown,
 	layout::LayoutEngine,
 	render::{Renderer, Theme, View},
 };
@@ -190,6 +190,11 @@ fn run_diagnostic(mut args: LaunchOptions) -> Result<()> {
 
 fn render_preview(args: LaunchOptions) -> Result<()> {
 	let path = args.path.as_ref().unwrap();
+	if let Some(output) = args.output.as_deref()
+		&& crate::file::same_file(path, output)
+	{
+		bail!("Cannot render over the source file: {}", path.display());
+	}
 	let mut renderer = pollster::block_on(Renderer::new(None))?;
 	renderer.set_stylesheet(args.options.stylesheet.clone());
 	let services = std::sync::Arc::new(crate::services::Services::new(4));
@@ -198,7 +203,7 @@ fn render_preview(args: LaunchOptions) -> Result<()> {
 		std::sync::Arc::new(|| {}),
 	);
 	engine.validate_stylesheet(&args.options.stylesheet)?;
-	let doc = markview_commonmark::parse(read_document(path)?);
+	let doc = markview_commonmark::parse(read_markdown(path)?);
 	let mut images = crate::images::Images::shared(
 		args.offline,
 		args.options.fonts.clone(),
@@ -207,6 +212,9 @@ fn render_preview(args: LaunchOptions) -> Result<()> {
 	images.set_security(crate::security::Security::local(
 		crate::security::Trust::Trusted,
 	));
+	images.set_standalone_image(
+		crate::file::is_picture(path).then(|| path.to_path_buf()),
+	);
 	images.prepare(
 		&doc,
 		path,

@@ -10,7 +10,7 @@
 use crate::{
 	document,
 	export::{MetadataOverrides, PdfRequest},
-	file::read_document,
+	file::read_markdown,
 	images::Images,
 	layout::{LayoutEngine, LayoutOptions},
 	paginate::{PageGeometry, paginate},
@@ -63,7 +63,7 @@ pub(crate) fn export_with_services(
 	args: &PdfRequest,
 	services: Arc<crate::services::Services>,
 ) -> Result<ExportStats> {
-	let text = read_document(&args.path)?;
+	let text = read_markdown(&args.path)?;
 	export_text(args, &text, services, || Ok(()))
 }
 
@@ -166,6 +166,9 @@ impl Exporter {
 			&services,
 		);
 		images.set_workspace(args.workspace.clone());
+		images.set_standalone_image(
+			crate::file::is_picture(&args.path).then(|| args.path.clone()),
+		);
 		Ok(Self {
 			security: args.security.clone(),
 			path: args.path.clone(),
@@ -187,8 +190,18 @@ impl Exporter {
 	/// Rebuilds the PDF, or returns `None` when the document is unchanged and
 	/// `force` did not ask for a rebuild anyway.
 	fn export(&mut self, force: bool) -> Result<Option<ExportStats>> {
-		let text = read_document(&self.path)?;
+		if self.refresh_standalone_source() {
+			self.dirty = true;
+		}
+		let text = read_markdown(&self.path)?;
 		self.export_source(&text, force, || Ok(()))
+	}
+
+	/// Follows a retargeted symlink to the picture a watched export displays.
+	fn refresh_standalone_source(&mut self) -> bool {
+		self.images.set_standalone_image(
+			crate::file::is_picture(&self.path).then(|| self.path.clone()),
+		)
 	}
 	fn export_source(
 		&mut self,
@@ -196,6 +209,11 @@ impl Exporter {
 		force: bool,
 		before_write: impl Fn() -> Result<()>,
 	) -> Result<Option<ExportStats>> {
+		anyhow::ensure!(
+			!crate::file::same_file(&self.path, &self.output),
+			"Cannot export over the source file: {}",
+			self.path.display()
+		);
 		let started = Instant::now();
 		let unchanged = !self.dirty && self.source.as_deref() == Some(text);
 		if unchanged && !force {
@@ -312,9 +330,9 @@ impl Exporter {
 		Ok(Some(stats))
 	}
 
-	/// Whether a local image the document references changed on disk.
+	/// Whether the picture or a local image the document references changed.
 	fn image_changed(&mut self) -> bool {
-		self.images.poll()
+		self.refresh_standalone_source() || self.images.poll()
 	}
 }
 
@@ -571,6 +589,35 @@ mod tests {
 		// The same content is not skipped as unchanged, so the retry rebuilds.
 		assert!(exporter.export(false).unwrap().is_some());
 		assert!(fs::read(&output).unwrap().starts_with(b"%PDF"));
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn a_retargeted_picture_symlink_rebuilds_a_watched_export() {
+		let dir = tempfile::tempdir().unwrap();
+		let first = dir.path().join("first.png");
+		let second = dir.path().join("second.png");
+		image::RgbaImage::from_pixel(3, 2, image::Rgba([255, 0, 0, 255]))
+			.save(&first)
+			.unwrap();
+		image::RgbaImage::from_pixel(4, 3, image::Rgba([0, 0, 255, 255]))
+			.save(&second)
+			.unwrap();
+		let source = dir.path().join("current.png");
+		let output = dir.path().join("out.pdf");
+		markview_platform::test_support::symlink(&first, &source).unwrap();
+		let mut exporter = Exporter::new(&options(&source, &output)).unwrap();
+		exporter.export(false).unwrap().expect("the first build");
+		fs::remove_file(&source).unwrap();
+		markview_platform::test_support::symlink(&second, &source).unwrap();
+		assert!(
+			exporter.export(false).unwrap().is_some(),
+			"a retargeted picture must rebuild even though its Markdown is unchanged"
+		);
+		fs::remove_file(&source).unwrap();
+		markview_platform::test_support::symlink(&first, &source).unwrap();
+		assert!(exporter.image_changed());
+		assert!(exporter.export(true).unwrap().is_some());
 	}
 
 	#[test]

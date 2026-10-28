@@ -179,6 +179,9 @@ winit.workspace = true
 
 tempfile.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+same-file = "1"
+
 [dev-dependencies]
 markview-platform = { path = "crates/markview-platform", features = ["test-support"] }
 lopdf = { version = "0.45", default-features = false }
