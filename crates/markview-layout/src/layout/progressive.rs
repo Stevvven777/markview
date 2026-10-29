@@ -16,7 +16,7 @@ use super::{
 	blocks::anchor_only, cache, external_key,
 };
 use crate::{
-	document::{Block, Document},
+	document::{Block, Document, InlineKind},
 	image::ImageSnapshot,
 	scene::{
 		BlockLayout, BoxDecoration, Draw, LayoutSnapshot, PlacedBlock, Rect,
@@ -39,6 +39,8 @@ pub struct ProgressiveLayout {
 	index: usize,
 	/// How many blocks the document has, fixed when the pass began.
 	count: usize,
+	/// Whether the document is one picture alone, which centers in a viewport.
+	picture_only: bool,
 	/// Positions used by child selectors exclude invisible target blocks.
 	visible_index: usize,
 	visible_count: usize,
@@ -231,6 +233,7 @@ impl LayoutEngine {
 			pass,
 			index: 0,
 			count: document.blocks.len(),
+			picture_only: single_picture(document),
 			visible_index: 0,
 			visible_count: document
 				.blocks
@@ -375,6 +378,18 @@ impl LayoutEngine {
 	/// Adds what only the end of a pass can know.
 	fn close(&mut self, layout: &mut ProgressiveLayout) {
 		layout.result.height += layout.pass.trailing;
+		let viewport = layout.pass.options.viewport_height;
+		if layout.picture_only && viewport > 0.0 {
+			let block = &mut layout.result.blocks[0];
+			if let Some((top, bottom)) = figure_bounds(&block.layout) {
+				let height = bottom - top;
+				if height <= viewport {
+					block.y = (viewport - height) / 2.0 - top;
+					layout.result.height = viewport;
+					layout.result.centered = true;
+				}
+			}
+		}
 		let mut document_box = layout.pass.box_template.clone();
 		if let Draw::Box { rect, .. } = &mut document_box {
 			rect.h = layout.result.height;
@@ -396,6 +411,53 @@ impl LayoutEngine {
 		}
 		self.completed = Some(id);
 	}
+}
+
+/// The local top and bottom of a picture and its caption, excluding the
+/// paragraph's outer spacing.
+fn figure_bounds(block: &BlockLayout) -> Option<(f32, f32)> {
+	let mut top = f32::INFINITY;
+	let mut bottom = f32::NEG_INFINITY;
+	let mut extend = |y: f32, h: f32| {
+		top = top.min(y);
+		bottom = bottom.max(y + h);
+	};
+	for draw in &block.draws {
+		match draw {
+			Draw::Image { rect, .. }
+			| Draw::Box {
+				rect,
+				condition: Condition::Image,
+				..
+			} => extend(rect.y, rect.h),
+			_ => {}
+		}
+	}
+	for cluster in block.text.iter().flat_map(|node| &node.clusters) {
+		extend(cluster.rect.y, cluster.rect.h);
+	}
+	top.is_finite().then_some((top, bottom))
+}
+
+/// Whether `document` is exactly one paragraph holding one picture and nothing
+/// else, which the reader can center on its own.
+fn single_picture(document: &Document) -> bool {
+	let [block] = document.blocks.as_slice() else {
+		return false;
+	};
+	let crate::document::BlockKind::Paragraph(rich) = &block.kind else {
+		return false;
+	};
+	let mut pictures = 0;
+	rich.iter().all(|inline| match &inline.kind {
+		InlineKind::Image(_) => {
+			pictures += 1;
+			true
+		}
+		InlineKind::Anchor(_) => true,
+		InlineKind::Text(text) => text.trim().is_empty(),
+		_ => false,
+	}) && pictures == 1
 }
 
 struct BlockJob<'a> {

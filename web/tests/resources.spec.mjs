@@ -172,18 +172,20 @@ test("arrival during a progressive replacement keeps the newest text and invalid
 test("replacement and destruction cancel requests and ignore late or duplicate completion", async ({ page }) => {
   await host(page);
   const result = await page.evaluate(async () => {
-    window.mv.setMarkdown("![old](same)");
+    window.mv.setMarkdown("Before.\n\n![old](same)");
     await Promise.resolve();
     const old = window.requests[0];
-    window.mv.setMarkdown("![new](same)");
+    window.mv.setMarkdown("Before.\n\n![new](same)");
     await Promise.resolve();
     const fresh = window.requests[1];
     old.resolve(window.red(300, 180));
     old.reject("late");
     fresh.reject("Image unavailable");
-    fresh.resolve(window.red(300, 180));
     window.finish();
     const placeholder = window.mv.contentHeight();
+    fresh.resolve(window.red(300, 180));
+    window.finish();
+    const unchanged = window.mv.contentHeight() === placeholder;
     const revision = window.mv.stats().revision;
     window.mv.setOptions({ width: 500 });
     window.mv.resize(400, 400, 1);
@@ -192,13 +194,13 @@ test("replacement and destruction cancel requests and ignore late or duplicate c
     window.mv.destroy();
     fresh.resolve(window.red(1, 1));
     fresh.reject("after destroy");
-    return { oldCancelled: old.signal.aborted, unique: old.id !== fresh.id, cancelled: fresh.signal.aborted, placeholder, revision, preserved };
+    return { oldCancelled: old.signal.aborted, unique: old.id !== fresh.id, cancelled: fresh.signal.aborted, unchanged, revision, preserved };
   });
   expect(result.oldCancelled).toBe(true);
   expect(result.cancelled).toBe(true);
   expect(result.unique).toBe(true);
   expect(result.preserved).toBe(true);
-  expect(result.placeholder).toBeLessThan(180);
+  expect(result.unchanged).toBe(true);
 });
 
 test("URL helpers support relative PNG, SVG and byte views, and report fetch failures", async ({ page }) => {

@@ -555,7 +555,8 @@ fn decoding_refreshes_the_viewer_dimensions_and_texture_version() {
 
 #[test]
 fn a_touchpad_stream_pans_nothing_while_the_viewer_is_open() {
-	let mut app = image_reader("![](a.png)", "a.png", true);
+	let source = format!("![](a.png)\n\n{}", "Filler.\n\n".repeat(80));
+	let mut app = image_reader(&source, "a.png", true);
 	open(&mut app);
 	// A Direct Manipulation stream bypasses the wheel the viewer zooms by,
 	// so the pixel surfaces owe it nothing: the page behind the viewer

@@ -39,8 +39,16 @@ impl Page {
 		if source.blocks.is_empty() {
 			return None;
 		}
-		let scroll = session.scrolling.offset.max(0.0);
-		let bottom = scroll + source.width.max(1.0) * card::BODY_RATIO + 1.0;
+		let body = source.width.max(1.0) * card::BODY_RATIO;
+		// A centered picture sits below the document top, so the card centers
+		// its slice on the picture instead of retaining only the blank above.
+		let scroll = if source.centered {
+			let block = &source.blocks[0];
+			(block.y + block.height() / 2.0 - body / 2.0).max(0.0)
+		} else {
+			session.scrolling.offset.max(0.0)
+		};
+		let bottom = scroll + body + 1.0;
 		let start = source
 			.blocks
 			.partition_point(|block| block.y + block.height() < scroll);

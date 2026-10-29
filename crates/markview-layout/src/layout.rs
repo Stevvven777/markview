@@ -150,6 +150,9 @@ fn disclosure_identities(block: &Block, out: &mut Vec<(u64, bool)>) {
 #[derive(Clone, Debug)]
 pub struct LayoutOptions {
 	pub width: f32,
+	/// The reading area's height, used to center a singly displayed picture.
+	/// Zero leaves the document top-aligned.
+	pub viewport_height: f32,
 	pub font_size: f32,
 	pub justify: bool,
 	pub hyphenate: bool,
@@ -196,6 +199,7 @@ impl Default for LayoutOptions {
 	fn default() -> Self {
 		Self {
 			width: 760.0,
+			viewport_height: 0.0,
 			font_size: 18.0,
 			justify: true,
 			hyphenate: true,
@@ -220,7 +224,7 @@ impl Default for LayoutOptions {
 
 impl PartialEq for LayoutOptions {
 	fn eq(&self, other: &Self) -> bool {
-		self.width == other.width
+		(self.width, self.viewport_height) == (other.width, other.viewport_height)
 			&& self.font_size == other.font_size
 			&& self.justify == other.justify
 			&& self.hyphenate == other.hyphenate

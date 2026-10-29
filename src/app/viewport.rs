@@ -1,6 +1,5 @@
 use super::App;
 use crate::layout::{Rect, Scrollbar};
-use crate::state::scroll_limit;
 impl<P: super::SendEvent> App<P> {
 	pub(super) fn document_interaction(
 		&self,
@@ -45,8 +44,7 @@ impl<P: super::SendEvent> App<P> {
 		// The bar spans the scrollable range, including the blank kept below
 		// the document, so its thumb and the scroll clamp agree.
 		let content =
-			scroll_limit(self.readers.session.snapshot.height, viewport)
-				+ viewport;
+			self.readers.session.snapshot.scroll_limit(viewport) + viewport;
 		Scrollbar::vertical(
 			track,
 			self.readers.session.scrolling.offset,

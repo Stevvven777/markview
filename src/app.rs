@@ -566,6 +566,7 @@ impl<P: SendEvent> App<P> {
 		if self.tab_strip.phone {
 			options.width = (self.dimensions().0 - 40.0).max(80.0);
 		}
+		options.viewport_height = self.viewport();
 		options.details_open = self.readers.session.details_open.clone();
 		options
 	}

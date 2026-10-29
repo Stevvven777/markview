@@ -369,6 +369,53 @@ fn an_inactive_tab_pins_only_its_visible_image_pixels() {
 }
 
 #[test]
+fn a_centered_picture_keeps_its_block_and_pixels_in_the_tab_preview() {
+	use markview_layout::image::{ImageInfo, ImageSnapshot, Pixels};
+	use std::sync::Arc;
+
+	let document = Arc::new(markview_commonmark::parse("![](picture.png)"));
+	let mut images = ImageSnapshot::default();
+	images.entries.insert(
+		"picture.png".into(),
+		ImageInfo {
+			version: 1,
+			size: Some((100, 140)),
+			error: None,
+		},
+	);
+	images.pixels.insert(
+		"picture.png".into(),
+		1,
+		Arc::new(Pixels {
+			width: 1,
+			height: 1,
+			rgba: Arc::from([0, 0, 0, 255]),
+		}),
+	);
+	let options = crate::layout::LayoutOptions {
+		width: 400.0,
+		viewport_height: 1000.0,
+		..crate::test_support::options()
+	};
+	let snapshot = crate::layout::LayoutEngine::new()
+		.layout_with_images(&document, &options, &images);
+	assert!(snapshot.centered);
+
+	let (mut app, _events) = app();
+	let now = Instant::now();
+	app.readers.open("/tmp/picture.md".into(), now);
+	app.readers.session.snapshot = snapshot;
+	app.readers.session.document = Some(document);
+	app.readers.open("/tmp/second.md".into(), now);
+	app.readers.release_inactive(now + Duration::from_secs(21));
+
+	let page = app.readers.entries()[0].preview.as_ref().unwrap();
+	assert_eq!(page.snapshot.blocks.len(), 1);
+	assert!(page.snapshot.images.pixels.get("picture.png", 1).is_some());
+	assert!(!page.snapshot.images.decoded().is_empty());
+}
+
+#[test]
 fn overflowing_table_previews_pin_only_images_in_the_scrolled_clip() {
 	use markview_layout::image::{ImageInfo, ImageSnapshot, Pixels};
 	use std::sync::Arc;

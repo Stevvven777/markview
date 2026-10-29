@@ -328,12 +328,25 @@ pub struct LayoutSnapshot {
 	pub blocks: Vec<PlacedBlock>,
 	pub height: f32,
 	pub width: f32,
+	/// Whether a single picture was centered in the viewport, leaving no
+	/// scrollable extent below it.
+	pub centered: bool,
 	pub reused: usize,
 	pub degraded: usize,
 	pub math_errors: usize,
 }
 
 impl LayoutSnapshot {
+	/// The furthest this snapshot scrolls in `viewport`. A centered picture
+	/// fits by construction, so it never scrolls into the blank tail. If the
+	/// reading area has since shrunk, the picture must scroll again.
+	pub fn scroll_limit(&self, viewport: f32) -> f32 {
+		if self.centered && self.height <= viewport {
+			0.0
+		} else {
+			crate::layout::scroll_limit(self.height, viewport)
+		}
+	}
 	/// The document y a link to a heading anchor should scroll to, once that
 	/// heading has been laid out. A prefix snapshot only answers for the
 	/// headings it already contains.

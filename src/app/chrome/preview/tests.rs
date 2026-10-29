@@ -82,6 +82,27 @@ fn a_card_without_a_body_reserves_no_preview_rectangle() {
 }
 
 #[test]
+fn the_rule_between_the_path_and_page_keeps_the_content_padding() {
+	let with_body = card("notes.md", true);
+	let layout =
+		super::layout(&with_body, anchor(200.0, 100.0), (800.0, 600.0));
+	let separator = layout.separator.expect("a body has a rule");
+	let body = layout.body.expect("a body is reserved");
+	assert_eq!(separator.x, body.x);
+	assert_eq!(separator.w, body.w);
+	assert_eq!(separator.x - layout.rect.x, PADDING);
+	assert!(separator.y > layout.detail.y + layout.detail.h);
+	assert!(separator.y + separator.h < body.y);
+
+	let without = super::layout(
+		&card("notes.md", false),
+		anchor(200.0, 100.0),
+		(800.0, 600.0),
+	);
+	assert!(without.separator.is_none());
+}
+
+#[test]
 fn preview_cards_use_the_theme_radius_without_a_body_frame() {
 	let mut ui = crate::test_support::shaper();
 	let card = card("notes.md", true);
@@ -117,7 +138,10 @@ fn preview_cards_use_the_theme_radius_without_a_body_frame() {
 				"{theme}: {radius}"
 			);
 			assert!(
-				draws[1..].iter().all(|draw| matches!(draw, Draw::Glyph(_)))
+				draws[1..].iter().all(|draw| matches!(
+					draw,
+					Draw::Glyph(_) | Draw::Rect(_, _)
+				))
 			);
 			assert!(draws.len() > 1);
 		}

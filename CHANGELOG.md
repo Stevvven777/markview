@@ -25,6 +25,15 @@ at the same level, without `[brackets]`.
 
 - Document Homebrew installation for Apple Silicon Macs through the community tap.
 
+### Added
+
+- Center a picture that fits the reading area vertically, while taller pictures keep scrolling.
+
+### Changed
+
+- Draw a padded rule between the tab hover card's path and its page preview.
+- Extend folder sidebar rows down to the footer band instead of stopping a band early.
+
 ## 0.4.2 - 2026-10-28
 
 **Highlights**:

@@ -13,6 +13,7 @@ use markview_layout::{
 use std::{
 	path::PathBuf,
 	sync::{Arc, Condvar, Mutex, atomic::Ordering},
+	time::Instant,
 };
 
 pub(super) const HEIGHT: f32 = 44.0;
@@ -245,6 +246,9 @@ impl<P: SendEvent> App<P> {
 		self.clear_input_focus();
 		self.show_panel(PanelPage::Closed);
 		self.readers.session.search.open = true;
+		// The bar shrinks the reading area, which changes what a centered
+		// picture has to fit into.
+		self.reflow_at = Some(Instant::now());
 		if fresh {
 			let search = &mut self.readers.session.search;
 			search.input.set_text(&mut self.ui, "");
@@ -276,6 +280,7 @@ impl<P: SendEvent> App<P> {
 		self.clear_input_focus();
 		self.readers.session.search.open = false;
 		self.readers.session.search.pending_navigation = false;
+		self.reflow_at = Some(Instant::now());
 		self.readers.session.search.queued_navigation = None;
 		self.redraw();
 	}
@@ -521,10 +526,8 @@ impl<P: SendEvent> App<P> {
 			session.scrolling.offset
 		};
 		session.cancel_scroll_animation();
-		session.scrolling.offset = to.clamp(
-			0.0,
-			crate::state::scroll_limit(session.snapshot.height, viewport),
-		);
+		session.scrolling.offset =
+			to.clamp(0.0, session.snapshot.scroll_limit(viewport));
 		session.search.pending_navigation = false;
 		self.worker.prioritize(session.coverage(viewport));
 	}

@@ -61,10 +61,7 @@ impl<P: super::SendEvent> App<P> {
 			self.readers.session.follow_update = false;
 			let to = scroll.clamp(
 				0.0,
-				crate::state::scroll_limit(
-					self.readers.session.snapshot.height,
-					self.viewport(),
-				),
+				self.readers.session.snapshot.scroll_limit(self.viewport()),
 			);
 			if (to - self.readers.session.scrolling.offset).abs() > 0.5 {
 				self.readers.session.animate_scroll_to(to, Instant::now());
