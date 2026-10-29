@@ -11,7 +11,7 @@ async function ready(page) {
 async function target(page) {
   return page.evaluate(() => {
     const box = document.querySelector("#view").getBoundingClientRect();
-    for (let y = 12; y < Math.min(box.height, 180); y += 4) {
+    for (let y = 12; y < box.height; y += 4) {
       for (let x = 20; x < box.width; x += 4) {
         window.mv.pointerMove(x,y);
         if (window.mv.cursor() === "pointer") return { x,y };
